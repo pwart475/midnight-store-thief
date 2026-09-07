@@ -910,7 +910,8 @@ function monitor(x,y,z,ry){
 }
 monitor(0,2.62,0);                  // 中央橫向通道，朝南（走進來時看得到）
 monitor(3.5,2.55,-8.4);             // 後場通道，朝南 —— 進冷凍室前最後一次確認
-monitor(0,2.45,12.4,Math.PI);       // 收銀區，朝北（跑回來撤離時看得到）
+monitor(-7,2.50,11.6,Math.PI);      // 收銀區西側櫃檯上方，朝北（跑回來脫身時看得到）
+                                    // 不能放在 x=0：那條是出生點正前方的通道，會整片擋住視野
 monitor(-19.15,2.35,0,Math.PI/2);   // 西側牆面，朝東
 monitor(-17.2,2.40,3,Math.PI);      // 西側逃生走道，朝北（往出口跑的時候看得到）
 monitor(14,2.50,-14.8);             // 倉庫，朝南
@@ -1326,9 +1327,10 @@ window.addEventListener('blur',function(){
   keys={}; if(G.phase==='play'&&lockFailed){manualPause=true;showPause();}
 });
 
+// 點畫面永遠是「繼續 +（需要時）重新鎖定」，一次點擊解決，不要兩段式
 canvas.addEventListener('mousedown',function(e){
   if(G.phase!=='play')return;
-  if(manualPause){manualPause=false;hidePause();return;}
+  manualPause=false;
   if(!locked&&!lockFailed)requestLock();
 });
 // 免按鍵自由視角
@@ -1489,7 +1491,7 @@ document.addEventListener('pointerlockchange',function(){
 document.getElementById('pause').addEventListener('click',function(){
   if(G.phase!=='play')return;
   manualPause=false;
-  if(lockFailed)hidePause(); else requestLock();
+  if(!locked&&!lockFailed)requestLock();
 });
 window.addEventListener('resize',onResize);
 function onResize(){
@@ -1499,11 +1501,18 @@ function onResize(){
 }
 onResize();
 
-function showPause(){
-  if(document.getElementById('dev').classList.contains('on'))return;
-  document.getElementById('pause').style.display='flex';
+/* 暫停畫面只有一個真相來源：manualPause 與鎖定狀態。
+   之前是各處自己 show/hide，結果出現「遊戲凍住但沒有暫停提示」的死狀態。
+   現在改由主迴圈每一格依狀態算出來，這兩個函式只負責改狀態。 */
+function showPause(){ manualPause=true; }
+function hidePause(){ manualPause=false; }
+function syncPause(){
+  var want = G.phase==='play' && !devOpen() &&
+             (manualPause || (!locked && !lockFailed));
+  var el=document.getElementById('pause');
+  var d = want?'flex':'none';
+  if(el.style.display!==d)el.style.display=d;
 }
-function hidePause(){document.getElementById('pause').style.display='none';}
 
 /* ============================================================
    9. 互動
@@ -2196,6 +2205,7 @@ function frame(now){
   document.body.classList.toggle('playing',
     G.phase==='play'&&!isPaused()&&lookMode==='delta');
   updateFeed(dt,now);
+  syncPause();
   if(G.phase==='catchcam'&&catchCam)stepCatchCam(dt);
   if(G.phase==='play'&&G.run){
     if(!isPaused()){
