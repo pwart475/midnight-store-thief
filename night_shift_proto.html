@@ -1,0 +1,2249 @@
+<meta charset="utf-8">
+<title>午夜超商小偷</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
+<style>
+  :root{
+    --ink:#0A0C0A;
+    --ink-2:#11150F;
+    --panel:rgba(13,17,13,.88);
+    --line:#2C382E;
+    --line-hi:#42513F;
+    --tube:#DCEBD8;
+    --dim:#7E8F80;
+    --dimmer:#56655A;
+    --price:#FFC93C;
+    --fresh:#4ADE80;
+    --danger:#FF3B30;
+    --forbid:#C77DFF;
+    --f-ui:'Noto Sans TC','PingFang TC','Microsoft JhengHei',system-ui,sans-serif;
+    --f-num:'Anton','Noto Sans TC',sans-serif;
+    --f-mono:'IBM Plex Mono','Noto Sans TC',ui-monospace,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;overflow:hidden;background:var(--ink)}
+  body{font-family:var(--f-ui);color:var(--tube);-webkit-font-smoothing:antialiased}
+  button{font-family:inherit;color:inherit}
+
+  #stage{position:fixed;inset:0;background:var(--ink)}
+  #stage canvas{display:block;width:100%;height:100%}
+  body.playing #stage canvas{cursor:none}
+
+  .layer{position:fixed;inset:0;pointer-events:none;z-index:10}
+  .layer.screen{pointer-events:auto;display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(120% 90% at 50% 0%,rgba(20,26,20,.94),rgba(6,8,6,.98));z-index:30}
+  .layer.hidden{display:none}
+
+  /* ---------- HUD ---------- */
+  #crosshair{position:absolute;left:50%;top:50%;width:22px;height:22px;margin:-11px 0 0 -11px}
+  #crosshair i{position:absolute;background:var(--tube);opacity:.72;transition:background .18s,opacity .18s}
+  #crosshair i:nth-child(1){left:0;top:10px;width:7px;height:2px}
+  #crosshair i:nth-child(2){right:0;top:10px;width:7px;height:2px}
+  #crosshair i:nth-child(3){left:10px;top:0;width:2px;height:7px}
+  #crosshair i:nth-child(4){left:10px;bottom:0;width:2px;height:7px}
+  #crosshair.hot i{background:var(--price);opacity:1}
+  #crosshair.forbid i{background:var(--forbid);opacity:1}
+
+  /* 推移轉向的中央靜止圈：游標在圈內不轉，推出去就持續轉 */
+  #steerring{position:absolute;left:50%;top:50%;width:22vmin;height:22vmin;
+    margin:-11vmin 0 0 -11vmin;border:1px dashed rgba(220,235,216,.20);border-radius:50%;
+    display:none}
+  #steerring.on{display:block}
+  #steerring::after{content:'推出圈外持續轉頭';position:absolute;left:50%;bottom:-26px;
+    transform:translateX(-50%);white-space:nowrap;font-size:10.5px;letter-spacing:.1em;
+    color:rgba(126,143,128,.75);font-family:var(--f-mono)}
+
+  #objective{position:absolute;top:26px;left:50%;transform:translateX(-50%);text-align:center;max-width:min(90vw,620px)}
+  #objective .tag{font-size:10px;letter-spacing:.22em;color:var(--dimmer);text-transform:uppercase;margin-bottom:6px}
+  #objective .line,#objective .hint{display:inline-block;padding:3px 12px;
+    background:rgba(6,9,6,.72);border-radius:2px}
+  #objective .line{font-size:17px;font-weight:700;text-wrap:balance;
+    text-shadow:0 2px 14px rgba(0,0,0,.95)}
+  #objective .hint{font-size:13px;color:var(--dim);margin-top:5px;text-wrap:balance;
+    text-shadow:0 2px 10px rgba(0,0,0,.95)}
+  #objective .hint:empty{display:none}
+  #objective.alarm .line{color:var(--danger)}
+
+  #beat{position:absolute;left:50%;top:66%;transform:translate(-50%,-50%);width:min(90vw,560px);
+    text-align:center;background:rgba(8,11,8,.9);border-top:2px solid var(--price);
+    border-bottom:2px solid var(--price);padding:22px 26px;opacity:0;transition:opacity .35s}
+  #beat.on{opacity:1}
+  #beat .b1{font-family:var(--f-num);font-size:30px;color:var(--tube);letter-spacing:.02em}
+  #beat .b2{font-size:15px;color:var(--price);margin-top:10px;line-height:1.6}
+  #beat .b3{font-size:14px;color:var(--dim);margin-top:12px;padding-top:11px;
+    border-top:1px solid var(--line)}
+
+  #basket{position:absolute;left:22px;bottom:22px;width:246px;background:var(--panel);
+    border:1px solid var(--line);border-left:3px solid var(--price);padding:12px 14px 13px;
+    backdrop-filter:blur(6px)}
+  #basket .cap-label{display:flex;justify-content:space-between;align-items:baseline;
+    font-size:10px;letter-spacing:.18em;color:var(--dimmer);text-transform:uppercase}
+  #basket .val{font-family:var(--f-num);font-size:44px;line-height:.92;color:var(--price);
+    letter-spacing:.01em;margin:2px 0 9px;font-variant-numeric:tabular-nums}
+  #basket .val small{font-size:19px;color:var(--dim);margin-left:6px;letter-spacing:.06em}
+  #bar{height:5px;background:#1B231C;border:1px solid var(--line);margin-top:5px;position:relative}
+  #barfill{position:absolute;inset:0 auto 0 0;width:0%;background:var(--fresh);transition:width .16s ease-out}
+  #basket.full #barfill{background:var(--danger)}
+  #basket .cap-num{font-family:var(--f-mono);font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums}
+
+  #status{position:absolute;right:22px;top:22px;text-align:right;font-family:var(--f-mono);font-size:12px;
+    color:var(--dim);line-height:1.7;font-variant-numeric:tabular-nums}
+  #status b{color:var(--tube);font-weight:500}
+  #exitchip{display:inline-block;margin-top:7px;padding:4px 9px;font-family:var(--f-ui);font-size:11px;
+    font-weight:700;letter-spacing:.08em;border:1px solid var(--line);color:var(--dimmer)}
+  #exitchip.on{border-color:var(--fresh);color:var(--fresh);background:rgba(74,222,128,.1)}
+  #exitchip.alarm{border-color:var(--danger);color:var(--danger);background:rgba(255,59,48,.12)}
+
+  #prompt{position:absolute;left:50%;top:calc(50% + 44px);transform:translateX(-50%);
+    font-size:14px;white-space:nowrap;padding:7px 13px;background:rgba(8,11,8,.82);
+    border:1px solid var(--line);opacity:0;transition:opacity .12s}
+  #prompt.on{opacity:1}
+  #prompt kbd{font-family:var(--f-mono);font-size:11px;font-weight:600;background:var(--tube);
+    color:var(--ink);padding:2px 6px;margin-right:9px;letter-spacing:.04em}
+  #prompt .p{color:var(--price);font-family:var(--f-mono);font-weight:600;margin-left:11px}
+  #prompt .s{color:var(--dimmer);font-size:12px;margin-left:9px}
+  #prompt.forbid{border-color:var(--forbid)}
+  #prompt.forbid .p{color:var(--forbid)}
+
+  #toast{position:absolute;left:50%;bottom:120px;transform:translateX(-50%);display:flex;
+    flex-direction:column;align-items:center;gap:4px}
+  #toast div{font-family:var(--f-mono);font-size:12px;color:var(--price);
+    background:rgba(8,11,8,.8);padding:4px 10px;animation:rise 2.1s ease-out forwards}
+  @keyframes rise{0%{opacity:0;transform:translateY(10px)}14%{opacity:1;transform:none}
+    72%{opacity:1}100%{opacity:0;transform:translateY(-12px)}}
+
+  #pa{position:absolute;left:50%;bottom:64px;transform:translateX(-50%);max-width:min(86vw,560px);
+    text-align:center;font-size:14px;color:var(--tube);background:rgba(8,11,8,.86);
+    border-top:1px solid var(--line-hi);border-bottom:1px solid var(--line-hi);padding:9px 18px;opacity:0;
+    transition:opacity .3s}
+  #pa.on{opacity:1}
+  #pa span{color:var(--dimmer);font-family:var(--f-mono);font-size:11px;letter-spacing:.14em;
+    display:block;margin-bottom:4px}
+  #pa em{font-style:normal}
+
+  #vignette{position:absolute;inset:0;opacity:0;transition:opacity .5s;
+    box-shadow:inset 0 0 190px 40px rgba(255,59,48,.42)}
+  #vignette.on{opacity:1}
+
+  #caught{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    opacity:0;transition:opacity .16s;
+    background:radial-gradient(80% 60% at 50% 50%,rgba(40,0,0,.18),rgba(10,0,0,.72))}
+  #caught.on{opacity:1}
+  #caught b{font-family:var(--f-num);font-size:clamp(46px,10.5vw,124px);color:#FF2D20;
+    font-weight:400;letter-spacing:.08em;line-height:1;
+    text-shadow:0 0 50px rgba(255,45,32,.55),0 5px 0 rgba(0,0,0,.55);
+    animation:punch .34s cubic-bezier(.2,1.5,.4,1) both}
+  @keyframes punch{0%{transform:scale(1.9);opacity:0}60%{opacity:1}100%{transform:scale(1);opacity:1}}
+  body.catchcam #crosshair,body.catchcam #prompt,body.catchcam #objective,
+  body.catchcam #beat,body.catchcam #pa{opacity:0}
+  #flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none}
+
+  /* ---------- screens ---------- */
+  .card{width:min(94vw,720px);max-height:88vh;overflow:auto;background:var(--ink-2);
+    border:1px solid var(--line);padding:34px 36px 30px}
+  .eyebrow{font-family:var(--f-mono);font-size:11px;letter-spacing:.26em;color:var(--dimmer);
+    text-transform:uppercase;margin-bottom:12px}
+  h1{font-family:var(--f-num);font-size:clamp(36px,7vw,60px);line-height:.94;margin:0 0 4px;
+    letter-spacing:.02em;font-weight:400}
+  h1 em{font-style:normal;color:var(--price)}
+  .sub{font-size:14px;color:var(--dim);max-width:52ch;line-height:1.75;margin:14px 0 0}
+  .btn{display:inline-flex;align-items:center;gap:11px;margin-top:26px;padding:13px 22px;
+    background:var(--price);color:#141006;border:0;font-weight:900;font-size:15px;letter-spacing:.04em;
+    cursor:pointer;transition:transform .1s,filter .15s}
+  .btn:hover{filter:brightness(1.09)}
+  .btn:active{transform:translateY(1px)}
+  .btn:focus-visible{outline:2px solid var(--tube);outline-offset:3px}
+  .btn.ghost{background:transparent;color:var(--tube);border:1px solid var(--line-hi);font-weight:700}
+  .btn kbd{font-family:var(--f-mono);font-size:11px;background:rgba(0,0,0,.22);padding:2px 6px}
+  .btn.ghost kbd{background:rgba(255,255,255,.08)}
+
+  .loop{display:grid;gap:8px;margin-top:20px;padding:16px 18px;background:#141912;
+    border-left:3px solid var(--price)}
+  .loop div{display:flex;gap:12px;align-items:baseline;font-size:13.5px;color:var(--tube)}
+  .loop b{font-family:var(--f-num);font-size:15px;color:var(--price);min-width:16px;font-weight:400}
+  .keys{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:10px 22px;
+    margin-top:24px;padding-top:20px;border-top:1px solid var(--line)}
+  .keys div{display:flex;gap:10px;align-items:baseline;font-size:13px;color:var(--dim)}
+  .keys b{font-family:var(--f-mono);font-size:11px;font-weight:600;color:var(--tube);
+    background:#1D251E;border:1px solid var(--line-hi);padding:2px 7px;min-width:34px;text-align:center}
+
+  /* receipt */
+  .receipt{width:min(92vw,384px);background:#F2F0E6;color:#1A1A17;font-family:var(--f-mono);
+    font-size:13px;padding:26px 24px 20px;position:relative;line-height:1.62}
+  .receipt::after{content:'';position:absolute;left:0;right:0;bottom:-9px;height:9px;
+    background:repeating-linear-gradient(-45deg,#F2F0E6 0 8px,transparent 8px 16px)}
+  .receipt h2{font-family:var(--f-ui);font-size:16px;font-weight:900;letter-spacing:.16em;
+    text-align:center;margin:0 0 2px}
+  .receipt .meta{text-align:center;font-size:11px;color:#5A5A50;margin-bottom:14px}
+  .receipt .rule{border-top:1px dashed #9A9A8C;margin:11px 0}
+  .receipt .row{display:flex;justify-content:space-between;gap:12px;font-variant-numeric:tabular-nums}
+  .receipt .row span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .receipt .row.f span:first-child{color:#7B2FA8}
+  .receipt .row.mut{color:#5A5A50}
+  .receipt .tot{display:flex;justify-content:space-between;font-family:var(--f-ui);font-weight:900;
+    font-size:19px;margin-top:4px;font-variant-numeric:tabular-nums}
+  .receipt .foot{margin-top:15px;padding-top:11px;border-top:1px dashed #9A9A8C;
+    font-size:11px;color:#5A5A50;text-align:center;line-height:1.7}
+  .stamp{position:absolute;inset:auto 0 auto 0;top:44%;text-align:center;
+    font-family:var(--f-ui);font-weight:900;font-size:38px;letter-spacing:.14em;color:rgba(197,28,20,.82);
+    border:4px solid rgba(197,28,20,.82);padding:5px 0;transform:rotate(-8deg)}
+  .rwrap{display:flex;flex-direction:column;align-items:center;gap:26px}
+
+  /* shop */
+  .shopgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(196px,1fr));gap:12px;margin-top:22px}
+  .up{background:#151A14;border:1px solid var(--line);padding:15px 16px 14px;display:flex;
+    flex-direction:column;gap:6px}
+  .up h3{margin:0;font-size:15px;font-weight:700}
+  .up p{margin:0;font-size:12px;color:var(--dim);line-height:1.6;flex:1}
+  .up .cost{font-family:var(--f-num);font-size:26px;color:var(--price);font-variant-numeric:tabular-nums}
+  .up button{margin-top:4px;padding:8px;background:transparent;border:1px solid var(--line-hi);
+    font-weight:700;font-size:13px;cursor:pointer}
+  .up button:hover:not(:disabled){background:var(--price);color:#141006;border-color:var(--price)}
+  .up button:disabled{opacity:.36;cursor:not-allowed}
+  .up.owned{border-color:var(--fresh)}
+  .up.owned .cost{color:var(--fresh);font-size:15px;font-family:var(--f-ui);font-weight:700}
+  .cash{font-family:var(--f-num);font-size:34px;color:var(--price);font-variant-numeric:tabular-nums}
+
+  /* 戰績卡 */
+  .sh{font-family:var(--f-mono);font-size:10px;letter-spacing:.2em;text-transform:uppercase;
+    color:var(--dimmer);margin:28px 0 0;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  .card-rec{display:grid;grid-template-columns:auto 1fr;gap:26px;margin-top:22px;
+    background:linear-gradient(135deg,#171E15,#131711);border:1px solid var(--line-hi);
+    border-left:4px solid var(--price);padding:20px 24px;align-items:center}
+  .card-rec .ct{font-size:11px;letter-spacing:.18em;color:var(--dimmer);text-transform:uppercase}
+  .card-rec .cn{font-family:var(--f-num);font-size:74px;line-height:.86;color:var(--price);
+    font-variant-numeric:tabular-nums;margin:4px 0 2px}
+  .card-rec .cn em{font-style:normal;font-size:24px;color:var(--dim);margin-left:6px}
+  .card-rec .cb{font-size:12px;font-weight:700;color:var(--fresh);letter-spacing:.06em}
+  .card-rec .cs{font-size:12px;color:var(--dim);font-family:var(--f-mono)}
+  .card-rec .cr{display:grid;gap:7px}
+  .card-rec .cr div{display:flex;justify-content:space-between;gap:14px;align-items:baseline;
+    border-bottom:1px solid #1E261E;padding-bottom:6px}
+  .card-rec .cr span{font-size:12px;color:var(--dim)}
+  .card-rec .cr b{font-family:var(--f-mono);font-size:14px;font-weight:600;
+    font-variant-numeric:tabular-nums;white-space:nowrap}
+  @media (max-width:560px){.card-rec{grid-template-columns:1fr;gap:16px}}
+
+  .nextbox{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:14px}
+  .nextbox div{background:#151A14;border:1px solid var(--line);padding:11px 13px}
+  .nextbox span{display:block;font-size:11px;color:var(--dim);margin-bottom:3px}
+  .nextbox b{font-family:var(--f-num);font-size:22px;color:var(--danger);font-weight:400;
+    font-variant-numeric:tabular-nums}
+
+  .devdata{margin-top:26px;border-top:1px solid var(--line);padding-top:12px}
+  .devdata summary{font-family:var(--f-mono);font-size:11px;color:var(--dimmer);cursor:pointer;
+    letter-spacing:.1em}
+  .devdata summary:hover{color:var(--tube)}
+
+  .receipt .streakbox{margin-top:12px;padding:9px 11px;background:#E4E1D4;
+    border-left:3px solid #7B7B6C;font-size:11.5px;color:#4A4A42;display:flex;
+    justify-content:space-between;gap:10px;align-items:baseline}
+  .receipt .streakbox b{font-family:var(--f-ui);font-size:13px;color:#1A1A17}
+
+  /* metrics */
+  .mtable{width:100%;border-collapse:collapse;margin-top:16px;font-family:var(--f-mono);font-size:12px}
+  .mtable td.good{color:var(--fresh)} .mtable td.bad{color:var(--danger)}
+  .mtable td.mut{color:var(--dimmer)}
+  .mtable td:last-child{text-align:right}
+  .mtable th{text-align:left;font-weight:500;color:var(--dimmer);font-size:10px;letter-spacing:.16em;
+    text-transform:uppercase;padding:0 10px 7px 0;border-bottom:1px solid var(--line)}
+  .mtable td{padding:7px 10px 7px 0;border-bottom:1px solid #1B221C;font-variant-numeric:tabular-nums}
+  .mtable td:last-child{text-align:right;color:var(--tube)}
+  .mtable tr.key td{color:var(--price)}
+  .mtable tr.key td:last-child{color:var(--price);font-weight:600}
+
+  /* dev panel */
+  #dev{position:fixed;right:0;top:0;bottom:0;width:292px;background:rgba(9,12,9,.95);
+    border-left:1px solid var(--line);padding:16px 18px;overflow:auto;z-index:34;
+    transform:translateX(100%);transition:transform .22s ease-out;pointer-events:auto}
+  #dev.on{transform:none}
+  #dev h4{font-family:var(--f-mono);font-size:10px;letter-spacing:.2em;text-transform:uppercase;
+    color:var(--dimmer);margin:20px 0 9px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+  #dev h4:first-child{margin-top:0}
+  .knob{display:grid;grid-template-columns:1fr auto;gap:2px 8px;margin-bottom:11px;align-items:center}
+  .knob label{font-size:12px;color:var(--dim)}
+  .knob output{font-family:var(--f-mono);font-size:12px;color:var(--price);font-variant-numeric:tabular-nums}
+  .knob input{grid-column:1/-1;width:100%;accent-color:var(--price);height:16px}
+  #devlog{font-family:var(--f-mono);font-size:10.5px;line-height:1.65;color:var(--dimmer);
+    max-height:190px;overflow:auto;background:#0D110D;border:1px solid var(--line);padding:8px}
+  #devlog b{color:var(--tube);font-weight:500}
+  #dev .mini{display:flex;gap:7px;margin-top:10px}
+  #dev .mini button{flex:1;padding:7px;font-size:11px;font-weight:700;background:transparent;
+    border:1px solid var(--line-hi);cursor:pointer}
+  #dev .mini button:hover{background:#1B231C}
+  #devtoggle{position:fixed;right:14px;bottom:14px;z-index:35;pointer-events:auto;padding:7px 12px;
+    font-family:var(--f-mono);font-size:11px;letter-spacing:.1em;background:rgba(9,12,9,.9);
+    border:1px solid var(--line-hi);cursor:pointer}
+  #devtoggle:hover{border-color:var(--price);color:var(--price)}
+
+  #pause{position:fixed;inset:0;z-index:28;display:flex;align-items:center;justify-content:center;
+    background:rgba(6,8,6,.86);pointer-events:auto;flex-direction:column;gap:10px;cursor:pointer}
+  #pause .big{font-family:var(--f-num);font-size:30px;letter-spacing:.04em}
+  #pause .s{font-size:13px;color:var(--dim)}
+  /* ---------- 觸控操作（手機橫版） ---------- */
+  html,body{touch-action:none;-webkit-user-select:none;user-select:none;
+    -webkit-tap-highlight-color:transparent}
+  #touch{position:fixed;inset:0;z-index:22;pointer-events:none;display:none}
+  body.touch #touch{display:block}
+  #stickbase{position:absolute;left:6vw;bottom:7vh;width:30vh;height:30vh;max-width:190px;max-height:190px;
+    border:2px solid rgba(220,235,216,.16);border-radius:50%;pointer-events:auto;
+    background:rgba(8,11,8,.28)}
+  #stickbase::after{content:'移動';position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    font-size:11px;letter-spacing:.18em;color:rgba(126,143,128,.5)}
+  #stickknob{position:absolute;left:50%;top:50%;width:38%;height:38%;margin:0;
+    transform:translate(-50%,-50%);border-radius:50%;background:rgba(220,235,216,.28);
+    border:1px solid rgba(220,235,216,.4)}
+  .tbtn{position:absolute;pointer-events:auto;border-radius:50%;display:flex;
+    align-items:center;justify-content:center;font-weight:900;letter-spacing:.04em;
+    border:2px solid var(--line-hi);background:rgba(10,14,10,.62);color:var(--tube);
+    -webkit-user-select:none;user-select:none}
+  .tbtn.act{background:var(--price);color:#141006;border-color:var(--price)}
+  #btnTake{right:6vw;bottom:15vh;width:17vh;height:17vh;max-width:104px;max-height:104px;
+    font-size:min(3.2vh,20px);border-color:var(--price);color:var(--price)}
+  #btnRun {right:24vw;bottom:9vh;width:12vh;height:12vh;max-width:76px;max-height:76px;font-size:min(2.4vh,15px)}
+  #btnDuck{right:6vw;bottom:4vh; width:12vh;height:12vh;max-width:76px;max-height:76px;font-size:min(2.4vh,15px)}
+  #lookhint{position:absolute;right:6vw;top:34%;font-size:11px;color:rgba(126,143,128,.45);
+    letter-spacing:.14em;writing-mode:vertical-rl}
+  body.touch #steerring{display:none!important}
+  body.touch #devtoggle{bottom:auto;top:14px;right:14px}
+
+  #rotate{position:fixed;inset:0;z-index:44;display:none;align-items:center;justify-content:center;
+    background:var(--ink);padding:30px;text-align:center;font-size:15px;line-height:1.9;color:var(--dim);
+    flex-direction:column;gap:16px}
+  #rotate b{color:var(--tube);font-size:19px}
+  body.touch.portrait #rotate{display:flex}
+
+  #narrow{position:fixed;inset:0;z-index:40;display:none;align-items:center;justify-content:center;
+    background:var(--ink);padding:30px;text-align:center;font-size:14px;line-height:1.8;color:var(--dim)}
+  @media (max-width:860px){body:not(.touch) #narrow{display:flex}}
+  @media (prefers-reduced-motion:reduce){
+    *{transition-duration:.01ms!important}
+    #toast div{animation:none;opacity:1}
+  }
+</style>
+
+<div id="stage"></div>
+
+<div class="layer" id="hud">
+  <div id="steerring"></div>
+  <div id="crosshair"><i></i><i></i><i></i><i></i></div>
+  <div id="objective"><div class="tag">當前目標</div><div class="line">—</div><div class="hint"></div></div>
+  <div id="beat"><div class="b1"></div><div class="b2"></div><div class="b3"></div></div>
+  <div id="basket">
+    <div class="cap-label"><span>提袋</span><span class="cap-num" id="capnum">0 / 12 格</span></div>
+    <div class="val" id="bagval">$0</div>
+    <div id="bar"><div id="barfill"></div></div>
+  </div>
+  <div id="status">
+    <div>第 <b id="shiftno">1</b> 次下手</div>
+    <div>時間 <b id="clock">0:00</b></div>
+    <div>所得 <b id="cashhud">$0</b></div>
+    <div>連續 <b id="streakhud">0</b> 次沒被抓</div>
+    <div>姿勢 <b id="posehud">站立</b></div>
+    <div id="exitchip">出口鎖定</div>
+  </div>
+  <div id="prompt"></div>
+  <div id="toast"></div>
+  <div id="pa"><span>店內廣播</span><em id="patext"></em></div>
+  <div id="vignette"></div>
+  <div id="caught"><b>你被抓到了</b></div>
+  <div id="flash"></div>
+</div>
+
+<div class="layer screen" id="s-title">
+  <div class="card">
+    <div class="eyebrow">午夜超商小偷 · 灰盒驗證原型 v1.0</div>
+    <h1>午夜超商<em>小偷</em></h1>
+    <p class="sub">半夜三點，你從後門進來了。事情很簡單：塞滿提袋，從後門出去。
+      越靠裡面的東西越貴，價格標就浮在上面 —— 你看得到哪邊值錢。
+      但提袋只有 12 格，而且店裡還有一個值班的人。</p>
+    <div class="loop">
+      <div><b>一</b>順走東西，提袋裡的金額往上跳</div>
+      <div><b>二</b>拿到 3 件，後門解鎖 —— 現在就能乾淨脫身</div>
+      <div><b>三</b>但冷凍室有一件 $120 的非賣品，拿了會出事</div>
+      <div><b>四</b>脫身、變賣、添裝備，再幹一次</div>
+    </div>
+    <p class="sub">走道上方吊著店裡的監視螢幕。<b style="color:var(--tube)">抬頭看，上面有你和店員的位置</b>
+      —— 但停電之後訊號就斷了。</p>
+    <p class="sub" style="color:var(--dimmer)">這是拋棄式驗證原型，只回答一個問題：<b style="color:var(--price)">明明已經可以乾淨脫身，你還會不會回頭去拿那件最貴的？</b></p>
+    <div class="keys">
+      <div><b>W A S D</b>走路</div>
+      <div><b>滑鼠</b>轉頭 · 點畫面鎖定游標</div>
+      <div><b>Shift</b>衝刺 · 很吵</div>
+      <div><b>C</b>潛行 · 幾乎沒聲音</div>
+      <div><b>E</b>塞進提袋</div>
+      <div><b>M</b>切換視角模式</div>
+      <div><b>Esc</b>解除鎖定</div>
+      <div><b>T</b>調參面板</div>
+    </div>
+    <button class="btn" id="btn-start">第 1 次下手 <kbd>Enter</kbd></button>
+  </div>
+</div>
+
+<div class="layer screen hidden" id="s-result">
+  <div class="rwrap">
+    <div class="receipt" id="receipt"></div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center">
+      <button class="btn" id="btn-next">回到藏身處 <kbd>Enter</kbd></button>
+    </div>
+  </div>
+</div>
+
+<div class="layer screen hidden" id="s-shop">
+  <div class="card">
+    <div class="eyebrow">藏身處 · 兩次下手之間</div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:20px;flex-wrap:wrap">
+      <h1 style="font-size:clamp(28px,5vw,42px)">犯案<em>紀錄</em></h1>
+      <div style="text-align:right"><div class="eyebrow" style="margin:0 0 2px">變賣所得</div>
+        <div class="cash" id="shopcash">$0</div></div>
+    </div>
+    <div id="card" class="card-rec"></div>
+    <h4 class="sh">裝備升級</h4>
+    <div class="shopgrid" id="shopgrid"></div>
+    <h4 class="sh">下一次會變這樣</h4>
+    <div class="nextbox" id="next"></div>
+    <h4 class="sh">歷次犯案</h4>
+    <table class="mtable" id="history"></table>
+    <details class="devdata">
+      <summary>驗證數據（給開發用）</summary>
+      <table class="mtable" id="metrics"></table>
+    </details>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:8px">
+      <button class="btn" id="btn-shift">再幹一次 <kbd>Enter</kbd></button>
+      <button class="btn ghost" id="btn-brag">複製戰績</button>
+      <button class="btn ghost" id="btn-copy">複製原始數據</button>
+    </div>
+  </div>
+</div>
+
+<div id="pause" style="display:none">
+  <div class="big">點擊畫面鎖定滑鼠</div>
+  <div class="s">鎖定後滑鼠不會跑出視窗，轉頭沒有邊界 · Esc 解除</div>
+</div>
+
+<button id="devtoggle">T · 調參</button>
+<div id="dev">
+  <h4>玩家</h4><div id="k-player"></div>
+  <h4>店員</h4><div id="k-clerk"></div>
+  <h4>經濟與節奏</h4><div id="k-econ"></div>
+  <h4>本局事件</h4>
+  <div id="devlog"></div>
+  <div class="mini"><button id="dev-reset">重置參數</button><button id="dev-copy">複製全部數據</button></div>
+</div>
+
+<div id="touch">
+  <div id="stickbase"><div id="stickknob"></div></div>
+  <div id="lookhint">右側拖曳轉頭</div>
+  <button class="tbtn" id="btnTake">拿</button>
+  <button class="tbtn" id="btnRun">衝</button>
+  <button class="tbtn" id="btnDuck">蹲</button>
+</div>
+
+<div id="rotate"><b>請把手機轉成橫向</b>這是第一人稱遊戲，橫向持握才看得清楚。</div>
+
+<div id="narrow">這個原型是桌機第一人稱操作，需要鍵盤與滑鼠。<br>請在寬度 860px 以上的視窗開啟。</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+"use strict";
+if(!window.THREE){document.getElementById('narrow').style.display='flex';
+  document.getElementById('narrow').textContent='3D 引擎載入失敗，請重新整理。';return;}
+
+/* ============================================================
+   0. 可調參數 —— 這是原型的核心產出，全部即時生效
+   ============================================================ */
+var DEF = {
+  walkSpeed:4.2, sprintSpeed:6.8, mouseSens:0.0023,
+  edgeTurn:2.4, steerYaw:3.4, steerPitch:2.0,
+  clerkPatrol:2.5, clerkChase:5.8, visionRange:20, visionAngle:42,
+  loseSight:3.5, catchDist:1.35, hearWalk:8, hearSprint:17,
+  capacity:12, riskBonus:1.2, forbiddenValue:120, extractItems:3
+};
+var CFG = Object.assign({},DEF);
+
+// 觸控裝置：改用虛擬搖桿 + 拖曳轉視角，並降低算繪解析度換取流暢度
+var IS_TOUCH = (navigator.maxTouchPoints||0)>0 || ('ontouchstart' in window);
+
+var KNOBS = [
+  ['k-player','walkSpeed','走路速度',2,8,.1,' m/s'],
+  ['k-player','sprintSpeed','衝刺速度',3,12,.1,' m/s'],
+  ['k-player','mouseSens','滑鼠靈敏度',.0008,.006,.0001,''],
+  ['k-player','steerYaw','推移轉向・左右',1,8,.1,' 弧度/秒'],
+  ['k-player','steerPitch','推移轉向・上下',0.5,5,.1,' 弧度/秒'],
+  ['k-player','edgeTurn','邊緣持續轉向',0,5,.1,' 弧度/秒'],
+  ['k-clerk','clerkPatrol','巡邏速度',1,5,.1,' m/s'],
+  ['k-clerk','clerkChase','追逐速度',3,10,.1,' m/s'],
+  ['k-clerk','visionRange','視線距離',6,34,1,' m'],
+  ['k-clerk','visionAngle','視野半角',15,90,1,'°'],
+  ['k-clerk','loseSight','失去目標時間',1,10,.5,' s'],
+  ['k-clerk','catchDist','抓到距離',.8,3,.05,' m'],
+  ['k-clerk','hearSprint','衝刺聲響半徑',4,34,1,' m'],
+  ['k-econ','capacity','提袋格數',4,30,1,' 格'],
+  ['k-econ','forbiddenValue','禁忌品價值',20,400,10,''],
+  ['k-econ','riskBonus','風險加成',1,2.5,.05,'x'],
+  ['k-econ','extractItems','解鎖撤離所需件數',1,10,1,' 件']
+];
+
+/* ============================================================
+   1. 商品定義 —— data-driven，之後可原樣搬進 Cocos items.json
+   ============================================================ */
+var ITEMS = [
+  {id:'noodle',  name:'天使泡麵',        v:12, slots:1, tier:'common', noise:5, shape:'pack',    color:0xE2523A},
+  {id:'soup',    name:'蛤蜊濃湯罐頭',    v:10, slots:1, tier:'common', noise:6, shape:'can',     color:0xC9403A},
+  {id:'cereal',  name:'早餐穀片',        v:14, slots:1, tier:'common', noise:4, shape:'pack',    color:0xE8A33D},
+  {id:'paper',   name:'抽取式衛生紙',    v:9,  slots:2, tier:'common', noise:3, shape:'roll',    color:0xF2F0E8},
+  {id:'soap',    name:'檸檬洗碗精',      v:11, slots:1, tier:'common', noise:4, shape:'bottle',  color:0x4FB56B},
+  {id:'bread',   name:'厚片吐司',        v:8,  slots:1, tier:'common', noise:2, shape:'loaf',    color:0xD9A867},
+  {id:'milk',    name:'鮮乳一公升',      v:13, slots:1, tier:'common', noise:4, shape:'carton',  color:0xF4F4EE},
+  {id:'battery', name:'鹼性電池四入',    v:18, slots:1, tier:'common', noise:5, shape:'battery', color:0x2E3138},
+  {id:'bulb',    name:'省電燈泡',        v:15, slots:1, tier:'common', noise:6, shape:'bulb',    color:0xF6E9A8},
+  {id:'candy',   name:'綜合糖果包',      v:16, slots:1, tier:'common', noise:3, shape:'bag',     color:0xE05A9A},
+  {id:'chips',   name:'洋芋片家庭號',    v:11, slots:2, tier:'common', noise:7, shape:'bag',     color:0xF0C23A},
+  {id:'water',   name:'礦泉水六瓶裝',    v:12, slots:2, tier:'common', noise:5, shape:'sixpack', color:0x7FC4E8},
+  {id:'coffee',  name:'進口咖啡豆',      v:38, slots:1, tier:'rare',   noise:4, shape:'pack',    color:0x6B4630},
+  {id:'steak',   name:'和牛肋眼',        v:62, slots:2, tier:'rare',   noise:4, shape:'tray',    color:0xC0392B},
+  {id:'whisky',  name:'單一麥芽威士忌',  v:70, slots:2, tier:'rare',   noise:8, shape:'bottle',  color:0xB5762A},
+  {id:'caviar',  name:'魚子醬鐵罐',      v:58, slots:1, tier:'rare',   noise:3, shape:'can',     color:0x2B2B33},
+  {id:'vitamin', name:'綜合維他命禮盒',  v:34, slots:1, tier:'rare',   noise:3, shape:'pack',    color:0xE87A2B},
+  {id:'cheese',  name:'進口熟成乳酪',    v:36, slots:1, tier:'rare',   noise:3, shape:'cheese',  color:0xE8C25A},
+  {id:'cake',    name:'鮮奶油生日蛋糕',  v:42, slots:3, tier:'rare',   noise:2, shape:'cake',    color:0xF6E3E8},
+  {id:'unknown', name:'午夜限定・不明肉品', v:120, slots:2, tier:'forbidden', noise:34, shape:'blob', color:0x8E4BC4}
+];
+var BY_ID={}; ITEMS.forEach(function(d){BY_ID[d.id]=d;});
+
+var UPGRADES = [
+  {id:'shoes',   name:'消音球鞋',   cost:200, desc:'走路與衝刺速度 +12%。跑得掉，才敢多拿一件。'},
+  {id:'bag',     name:'大號提袋',   cost:250, desc:'提袋 +6 格。裝得更多，也走得更久。'},
+  {id:'light',   name:'強光手電筒', cost:300, desc:'停電後照明範圍加大，找路快得多。'},
+  {id:'scanner', name:'贓物估價鏡', cost:340, desc:'價格標可視距離 15m → 26m。整條走道的行情一眼看完。'},
+  {id:'charm',   name:'隨身護身符', cost:420, desc:'被抓時保住提袋裡最貴的一件。冒險的代價變小了。'}
+];
+
+/* 班次難度遞增 —— 沒有這個，「連續 N 班」就沒有意義 */
+function danger(){ return Math.min(1,(G.shift-1)/9); }
+function clerkChaseNow(){ return CFG.clerkChase*(1+0.24*danger()); }
+function visionNow(){ return CFG.visionRange*(1+0.35*danger()); }
+function forbiddenValueNow(){ return Math.round(CFG.forbiddenValue*(1+0.6*danger())); }
+function tagRange(){ return G.upgrades.scanner?26:15; }
+
+/* ============================================================
+   2. 關卡幾何 —— 手工灰盒；碰撞用 AABB 清單
+   ============================================================ */
+var COL=[];
+function box(x0,z0,x1,z1,h,kind){
+  COL.push({x0:Math.min(x0,x1),z0:Math.min(z0,z1),x1:Math.max(x0,x1),z1:Math.max(z0,z1),
+            h:h,kind:kind||'wall'});
+  return COL[COL.length-1];
+}
+// 外牆
+box(-20.4,15.6,20.4,16.4,3.2); box(-20.4,-16.4,20.4,-15.6,3.2);
+box(-20.4,-16.4,-19.6,16.4,3.2); box(19.6,-16.4,20.4,16.4,3.2);
+// 後場隔牆（兩個門口：冷凍室 x-15.5~-12.5，倉庫 x8~11）
+box(-19.6,-10.4,-15.5,-9.6,3.2); box(-12.5,-10.4,8,-9.6,3.2); box(11,-10.4,19.6,-9.6,3.2);
+// 冷凍室 / 倉庫分隔
+box(-6.4,-15.6,-5.6,-9.6,3.2);
+// 貨架 6 排，各切兩段，中間留橫向通道
+var XS=[-14,-8.4,-2.8,2.8,8.4,14], SEGS=[[-6.6,-1.2],[1.2,7.2]];
+XS.forEach(function(x){ SEGS.forEach(function(s){ box(x-0.9,s[0],x+0.9,s[1],1.9,'shelf'); }); });
+// 收銀櫃檯（中央留入口通道）
+box(-10,10.8,-4,12.0,1.0,'shelf'); box(4,10.8,10,12.0,1.0,'shelf');
+// 冷凍室內部
+box(-19.0,-15.0,-17.4,-10.8,2.0,'shelf'); box(-15.6,-15.0,-14.0,-11.6,2.0,'shelf');
+box(-13.0,-14.8,-9.0,-13.8,1.2,'shelf');
+// 冷凍室最深處刻意留一條 1.8m 寬的死路走道 —— 禁忌品放在盡頭的地上，只有一個出口
+// 倉庫棧板
+box(-4.0,-15.0,-1.0,-12.5,1.6,'shelf'); box(1.0,-15.0,4.0,-13.2,1.2,'shelf');
+box(12.5,-15.0,16.5,-12.0,1.9,'shelf');
+
+var EXIT={x0:-3.5,z0:13.8,x1:3.5,z1:15.4};
+var SPAWN={x:0,z:13.4,yaw:0};
+var CLERK_HOME={x:17.6,z:-11.2};
+
+/* ============================================================
+   3. Three.js 場景
+   ============================================================ */
+var scene=new THREE.Scene();
+scene.background=new THREE.Color(0x0A0C0A);
+scene.fog=new THREE.FogExp2(0x0A0C0A,0.019);
+
+var camera=new THREE.PerspectiveCamera(74,1,0.08,140);
+camera.position.set(SPAWN.x,1.65,SPAWN.z);
+scene.add(camera);
+
+var renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,IS_TOUCH?1.4:2));
+document.getElementById('stage').appendChild(renderer.domElement);
+
+var ambient=new THREE.AmbientLight(0x556256,0.74); scene.add(ambient);
+var sky=new THREE.DirectionalLight(0xC8D8C4,0.40); sky.position.set(-4,12,6); scene.add(sky);
+
+var MAT={
+  floor:new THREE.MeshLambertMaterial({color:0x2B322C}),
+  cold :new THREE.MeshLambertMaterial({color:0x28353A}),
+  wall :new THREE.MeshLambertMaterial({color:0x38423A}),
+  shelf:new THREE.MeshLambertMaterial({color:0x4A5A4E}),
+  common:new THREE.MeshLambertMaterial({color:0x8C8A72}),
+  rare :new THREE.MeshStandardMaterial({color:0x6B5A1E,emissive:0xFFC93C,emissiveIntensity:0.55,roughness:.6,metalness:.1}),
+  forbid:new THREE.MeshStandardMaterial({color:0x3A1E52,emissive:0xC77DFF,emissiveIntensity:0.85,roughness:.5,metalness:.1}),
+  tube :new THREE.MeshBasicMaterial({color:0xE4F0DE}),
+  signG:new THREE.MeshBasicMaterial({color:0x4ADE80,side:THREE.DoubleSide}),
+  clerk:new THREE.MeshLambertMaterial({color:0x35564E}),
+  apron:new THREE.MeshLambertMaterial({color:0xC9CBB4}),
+  skin :new THREE.MeshLambertMaterial({color:0xD8C0A4})
+};
+
+// 地板
+var floor=new THREE.Mesh(new THREE.PlaneGeometry(40,32),MAT.floor);
+floor.rotation.x=-Math.PI/2; floor.position.set(0,0,0.2); scene.add(floor);
+var coldFloor=new THREE.Mesh(new THREE.PlaneGeometry(13.2,5.6),MAT.cold);
+coldFloor.rotation.x=-Math.PI/2; coldFloor.position.set(-13,0.02,-12.8); scene.add(coldFloor);
+var grid=new THREE.GridHelper(40,20,0x333D34,0x2C352D);
+grid.material.transparent=true; grid.material.opacity=0.55;
+grid.position.set(0,0.04,0.2); scene.add(grid);
+
+// 牆與貨架
+var boxGeo=new THREE.BoxGeometry(1,1,1);
+COL.forEach(function(c){
+  var m=new THREE.Mesh(boxGeo,c.kind==='shelf'?MAT.shelf:MAT.wall);
+  m.scale.set(c.x1-c.x0,c.h,c.z1-c.z0);
+  m.position.set((c.x0+c.x1)/2,c.h/2,(c.z0+c.z1)/2);
+  scene.add(m); c.mesh=m;
+});
+
+// 貨架層板：商品要有東西可以站，不然方塊會浮在空中
+var ledgeMat=new THREE.MeshLambertMaterial({color:0x5C6E5F});
+XS.forEach(function(x){
+  SEGS.forEach(function(s){
+    var len=s[1]-s[0], cz=(s[0]+s[1])/2;
+    [-1.03,1.03].forEach(function(off){
+      [0.70,1.26].forEach(function(y){
+        var m=new THREE.Mesh(boxGeo,ledgeMat);
+        m.scale.set(0.40,0.055,len); m.position.set(x+off,y,cz); scene.add(m);
+      });
+    });
+  });
+});
+
+// 日光燈管 + 點光源
+var TUBES=[[-13,10],[0,2],[13,10],[-13,-2],[13,-2],[0,9],[-14,-13],[10,-13],[0,-6]];
+var lamps=[],tubeMeshes=[];
+var tubeGeo=new THREE.BoxGeometry(3.4,0.12,0.34);
+TUBES.forEach(function(p){
+  var t=new THREE.Mesh(tubeGeo,MAT.tube.clone());
+  t.position.set(p[0],3.15,p[1]); scene.add(t); tubeMeshes.push(t);
+  var L=new THREE.PointLight(0xD6E6D0,0.62,21,1.4);
+  L.position.set(p[0],3.0,p[1]); scene.add(L); lamps.push(L);
+});
+
+// 出口門與標示
+var exitPad=new THREE.Mesh(new THREE.PlaneGeometry(7,1.7),
+  new THREE.MeshBasicMaterial({color:0x2FA35A,transparent:true,opacity:.62}));
+exitPad.rotation.x=-Math.PI/2; exitPad.position.set(0,0.06,14.6); scene.add(exitPad);
+var signs=[exitPad];
+function makeSign(x,y,z,w,h){
+  var s=new THREE.Mesh(new THREE.PlaneGeometry(w||1.8,h||0.5),MAT.signG.clone());
+  s.position.set(x,y,z); scene.add(s); signs.push(s); return s;
+}
+makeSign(0,2.35,15.35,6.6,0.34);   // 出口招牌下方的燈條
+makeSign(-14,1.32,-9.55,3.0,0.2);  // 冷凍室門口燈條
+makeSign(9.5,1.32,-9.55,2.6,0.2);  // 倉庫門口燈條
+
+// 地面緊急疏散導引燈帶：從冷凍室門口一路帶到出口。停電時變紅並閃動
+var guides=[];
+function guide(x0,z0,x1,z1){
+  var len=Math.hypot(x1-x0,z1-z0);
+  var m=new THREE.Mesh(new THREE.PlaneGeometry(0.20,len),
+    new THREE.MeshBasicMaterial({color:0x3FBF6A,transparent:true,opacity:.30}));
+  m.rotation.x=-Math.PI/2;
+  m.rotation.z=-Math.atan2(x1-x0,z1-z0);
+  m.position.set((x0+x1)/2,0.05,(z0+z1)/2);
+  scene.add(m); guides.push(m); return m;
+}
+guide(-14.0,-9.3,-17.2,-9.3);
+guide(-17.2,-9.3,-17.2, 9.5);
+guide(-17.2, 9.5,  0.0, 9.5);
+guide(  0.0, 9.5,  0.0,14.2);
+// 禁忌品的紫光滲出冷凍室門口
+var forbidGlow=new THREE.PointLight(0xC77DFF,0.0,14,1.5);
+forbidGlow.position.set(-16.5,1.3,-13.3); scene.add(forbidGlow);
+
+// 手電筒
+var flash=new THREE.SpotLight(0xE8F0E0,0.85,24,THREE.MathUtils.degToRad(26),0.5,1.3);
+flash.position.set(0,0,0); camera.add(flash);
+flash.target.position.set(0,0,-1); camera.add(flash.target);
+
+// 光暈 sprite 材質
+function haloTex(){
+  var c=document.createElement('canvas'); c.width=c.height=64;
+  var g=c.getContext('2d'), r=g.createRadialGradient(32,32,0,32,32,32);
+  r.addColorStop(0,'rgba(255,255,255,1)'); r.addColorStop(.35,'rgba(255,255,255,.42)');
+  r.addColorStop(1,'rgba(255,255,255,0)');
+  g.fillStyle=r; g.fillRect(0,0,64,64); return new THREE.CanvasTexture(c);
+}
+var HALO=haloTex();
+
+/* ---------- 商品積木造型（全部程序化生成，不用外部素材） ---------- */
+var GEO={
+  box:new THREE.BoxGeometry(1,1,1),
+  cyl:new THREE.CylinderGeometry(0.5,0.5,1,12),
+  sph:new THREE.SphereGeometry(0.5,12,9)
+};
+var matCache={};
+function itemMat(color,emis){
+  var k=color+'|'+(emis||0);
+  if(!matCache[k]){
+    matCache[k] = emis
+      ? new THREE.MeshStandardMaterial({color:color,emissive:color,
+          emissiveIntensity:emis,roughness:.55,metalness:.15})
+      : new THREE.MeshLambertMaterial({color:color});
+  }
+  return matCache[k];
+}
+function P(geo,color,s,p,emis){
+  var m=new THREE.Mesh(geo,itemMat(color,emis));
+  m.scale.set(s[0],s[1],s[2]); m.position.set(p[0],p[1],p[2]); return m;
+}
+var SHAPES={
+  pack:function(c){return [P(GEO.box,c,[.20,.28,.08],[0,.14,0]),
+    P(GEO.box,0xF4F2E6,[.13,.09,.085],[0,.17,0])];},
+  can:function(c){return [P(GEO.cyl,c,[.14,.17,.14],[0,.085,0]),
+    P(GEO.cyl,0xC3C7BD,[.145,.02,.145],[0,.18,0])];},
+  bottle:function(c){return [P(GEO.cyl,c,[.14,.20,.14],[0,.10,0]),
+    P(GEO.cyl,c,[.06,.10,.06],[0,.25,0]),
+    P(GEO.cyl,0x26282A,[.075,.035,.075],[0,.31,0])];},
+  carton:function(c){return [P(GEO.box,c,[.15,.26,.15],[0,.13,0]),
+    P(GEO.box,c,[.15,.055,.05],[0,.29,0]),
+    P(GEO.box,0x3A6FB0,[.155,.07,.155],[0,.10,0])];},
+  roll:function(c){var a=[];[[-.06,-.06],[.06,-.06],[-.06,.06],[.06,.06]].forEach(function(q){
+    a.push(P(GEO.cyl,c,[.11,.13,.11],[q[0],.065,q[1]]));});
+    a.push(P(GEO.box,0x9CC2DE,[.30,.015,.30],[0,.14,0])); return a;},
+  loaf:function(c){return [P(GEO.box,c,[.26,.13,.15],[0,.065,0]),
+    P(GEO.box,c,[.22,.075,.13],[0,.163,0])];},
+  tray:function(c){return [P(GEO.box,0xE8E8E0,[.24,.045,.18],[0,.022,0]),
+    P(GEO.box,c,[.20,.06,.14],[0,.065,0])];},
+  bag:function(c){return [P(GEO.box,c,[.22,.24,.11],[0,.12,0]),
+    P(GEO.box,c,[.10,.05,.055],[0,.26,0])];},
+  cake:function(c){return [P(GEO.cyl,c,[.24,.11,.24],[0,.055,0]),
+    P(GEO.cyl,0xFFFFFF,[.20,.05,.20],[0,.132,0]),
+    P(GEO.box,0xE0556A,[.022,.09,.022],[0,.20,0])];},
+  bulb:function(c){return [P(GEO.sph,c,[.15,.15,.15],[0,.155,0],0.35),
+    P(GEO.cyl,0xAAAAA2,[.085,.075,.085],[0,.037,0])];},
+  battery:function(c){return [P(GEO.box,0xD8CFA8,[.17,.03,.10],[0,.015,0]),
+    P(GEO.cyl,c,[.048,.14,.048],[-.048,.10,-.022]),
+    P(GEO.cyl,c,[.048,.14,.048],[.048,.10,-.022]),
+    P(GEO.cyl,c,[.048,.14,.048],[-.048,.10,.028]),
+    P(GEO.cyl,c,[.048,.14,.048],[.048,.10,.028])];},
+  cheese:function(c){return [P(GEO.box,c,[.18,.11,.13],[0,.055,0]),
+    P(GEO.box,0xC49A2E,[.19,.028,.14],[0,.118,0])];},
+  sixpack:function(c){var a=[];
+    for(var i=0;i<6;i++)a.push(P(GEO.cyl,c,[.07,.17,.07],[(i%3-1)*.082,.085,i<3?-.045:.045]));
+    a.push(P(GEO.box,0x9CC2DE,[.27,.015,.19],[0,.172,0])); return a;},
+  blob:function(c){return [P(GEO.box,0xE8E4D8,[.42,.02,.34],[0,.008,0]),
+    P(GEO.sph,c,[.34,.24,.30],[0,.13,0],.95),
+    P(GEO.sph,c,[.20,.17,.18],[.11,.20,-.05],.95),
+    P(GEO.sph,c,[.15,.13,.14],[-.13,.17,.06],.95)];}
+};
+function buildModel(def){
+  var g=new THREE.Group();
+  (SHAPES[def.shape]||SHAPES.pack)(def.color).forEach(function(m){g.add(m);});
+  if(def.tier==='rare') g.add(P(GEO.box,0xFFC93C,[.32,.012,.32],[0,.004,0],1.4));
+  return g;
+}
+
+/* ---------- 遠距價格標：讓「越裡面越貴」看得見 ---------- */
+var tagCache={};
+function tagTex(text,css){
+  var k=text+'|'+css; if(tagCache[k])return tagCache[k];
+  var c=document.createElement('canvas'); c.width=160; c.height=64;
+  var g=c.getContext('2d');
+  g.fillStyle='rgba(9,12,9,.9)'; g.fillRect(6,10,148,44);
+  g.strokeStyle=css; g.lineWidth=4; g.strokeRect(6,10,148,44);
+  g.fillStyle=css; g.font='600 30px "IBM Plex Mono",ui-monospace,monospace';
+  g.textAlign='center'; g.textBaseline='middle'; g.fillText(text,80,33);
+  var t=new THREE.CanvasTexture(c); tagCache[k]=t; return t;
+}
+function makeTag(val,tier){
+  var css = tier==='forbidden'?'#C77DFF' : tier==='rare'?'#FFC93C' : '#B9C9B6';
+  var s=new THREE.Sprite(new THREE.SpriteMaterial({map:tagTex('$'+val,css),
+    transparent:true,depthWrite:false,opacity:0}));
+  s.scale.set(0.56,0.224,1); return s;
+}
+
+/* ---------- 區域招牌與警告標示 ---------- */
+function textPlane(text,w,h,css,size,bg){
+  var c=document.createElement('canvas'); c.width=512; c.height=128;
+  var g=c.getContext('2d');
+  g.fillStyle=bg||'rgba(12,16,12,.92)'; g.fillRect(0,0,512,128);
+  g.strokeStyle=css; g.lineWidth=7; g.strokeRect(4,4,504,120);
+  g.fillStyle=css;
+  g.font='900 '+(size||66)+'px "Noto Sans TC","Microsoft JhengHei",sans-serif';
+  g.textAlign='center'; g.textBaseline='middle'; g.fillText(text,256,68);
+  var m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),
+    new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(c),
+      transparent:true,side:THREE.DoubleSide}));
+  return m;
+}
+[['零食',-14],['飲料',-8.4],['日用品',-2.8],['生鮮',2.8],['家用',8.4],['清潔',14]]
+.forEach(function(z){
+  var s=textPlane(z[0],1.85,0.46,'#B9C9B6',66);
+  s.position.set(z[1],2.48,8.1); scene.add(s);
+});
+// 出口：整面牆寬的大招牌，全店最顯眼的東西
+var signExit=textPlane('後門・出口',7.4,1.3,'#5DF39B',96,'rgba(6,30,16,.96)');
+signExit.position.set(0,3.05,15.3); scene.add(signExit);
+// 中繼「出口」招牌放在後場通道 —— 需要指路的是在裡面迷路的時候，不是站在門口
+var signExit2=textPlane('← 出口',2.6,0.62,'#5DF39B',72,'rgba(6,30,16,.96)');
+signExit2.position.set(0,2.55,-8.5); scene.add(signExit2);
+var signExit3=textPlane('出口',2.0,0.5,'#5DF39B',72,'rgba(6,30,16,.96)');
+signExit3.position.set(-17.2,2.55,0); signExit3.rotation.y=Math.PI/2; scene.add(signExit3);
+
+// 冷凍室：發光門框 + 大型警告，讓「那邊有東西」和「那邊很危險」同時成立
+var signFreezer=textPlane('冷凍室',3.8,0.92,'#7FE3F5',96,'rgba(6,24,30,.96)');
+signFreezer.position.set(-14,2.78,-9.5); scene.add(signFreezer);
+var signWarn=textPlane('非賣品・嚴禁取出',5.0,0.72,'#FF5A4A',60,'rgba(30,8,6,.96)');
+signWarn.position.set(-14,1.92,-9.5); scene.add(signWarn);
+[-15.5,-12.5].forEach(function(x){
+  var b=new THREE.Mesh(GEO.box,itemMat(0x7FE3F5,1.1));
+  b.scale.set(0.15,3.2,0.15); b.position.set(x,1.6,-10.0); scene.add(b);
+});
+var frameTop=new THREE.Mesh(GEO.box,itemMat(0x7FE3F5,1.1));
+frameTop.scale.set(3.15,0.15,0.15); frameTop.position.set(-14,3.13,-10.0); scene.add(frameTop);
+var coldPatch=new THREE.Mesh(new THREE.PlaneGeometry(3.0,1.0),
+  new THREE.MeshBasicMaterial({color:0x7FE3F5,transparent:true,opacity:.28}));
+coldPatch.rotation.x=-Math.PI/2; coldPatch.position.set(-14,0.05,-10.0); scene.add(coldPatch);
+
+var signStock=textPlane('倉庫',2.4,0.6,'#DCEBD8',80);
+signStock.position.set(9.5,2.78,-9.5); scene.add(signStock);
+
+/* ============================================================
+   監視螢幕：抬頭就能看到自己和店員在賣場的哪裡。
+   四台共用同一張即時繪製的 canvas 材質，約 9fps 更新，成本極低。
+   ============================================================ */
+var CAM_W=256, CAM_H=192;
+var camCanvas=document.createElement('canvas');
+camCanvas.width=CAM_W; camCanvas.height=CAM_H;
+var camCtx=camCanvas.getContext('2d');
+var camTex=new THREE.CanvasTexture(camCanvas);
+var MAP_S=5.9, MAP_OX=CAM_W/2, MAP_OZ=CAM_H/2+4;
+function mx(x){return MAP_OX+x*MAP_S;}
+function mz(z){return MAP_OZ+z*MAP_S;}
+
+function drawFeed(){
+  var g=camCtx;
+  g.fillStyle='#08120D'; g.fillRect(0,0,CAM_W,CAM_H);
+  // 牆與貨架
+  COL.forEach(function(c){
+    g.fillStyle = c.kind==='shelf' ? '#1E2E27' : '#2A3A33';
+    g.fillRect(mx(c.x0),mz(c.z0),(c.x1-c.x0)*MAP_S,(c.z1-c.z0)*MAP_S);
+  });
+  // 出口與冷凍室
+  g.fillStyle='rgba(63,191,106,.75)';
+  g.fillRect(mx(EXIT.x0),mz(EXIT.z0),(EXIT.x1-EXIT.x0)*MAP_S,(EXIT.z1-EXIT.z0)*MAP_S);
+  g.fillStyle='rgba(127,227,245,.22)';
+  g.fillRect(mx(-19.6),mz(-15.6),13.2*MAP_S,5.6*MAP_S);
+  // 店員（只有他真的在場才會出現在畫面上）
+  if(typeof clerk!=='undefined'&&clerk&&clerk.visible){
+    var cx=mx(clerk.position.x), cz=mz(clerk.position.z);
+    g.fillStyle='rgba(255,59,48,.28)';
+    g.beginPath(); g.arc(cx,cz,9,0,7); g.fill();
+    g.fillStyle='#FF3B30';
+    g.beginPath(); g.arc(cx,cz,3.6,0,7); g.fill();
+    g.font='700 9px ui-monospace,monospace'; g.textAlign='center';
+    g.fillText('店員',cx,cz-11);
+  }
+  // 玩家與視線方向
+  var px=mx(camera.position.x), pz=mz(camera.position.z);
+  var y0=(typeof yaw==='number')?yaw:0;
+  var fx=-Math.sin(y0), fz=-Math.cos(y0);
+  g.strokeStyle='rgba(220,235,216,.55)'; g.lineWidth=1.5;
+  g.beginPath(); g.moveTo(px,pz); g.lineTo(px+fx*11,pz+fz*11); g.stroke();
+  g.fillStyle='#DCEBD8';
+  g.beginPath(); g.arc(px,pz,3.4,0,7); g.fill();
+  // 掃描線與抬頭列
+  g.fillStyle='rgba(0,0,0,.16)';
+  for(var y=0;y<CAM_H;y+=3)g.fillRect(0,y,CAM_W,1);
+  g.fillStyle='rgba(6,12,8,.85)'; g.fillRect(0,0,CAM_W,14);
+  g.fillStyle='#6FBF8C'; g.font='600 10px ui-monospace,monospace'; g.textAlign='left';
+  g.fillText('監視系統  CH1 全區',6,10);
+  g.textAlign='right';
+  var run=(typeof G!=='undefined'&&G)?G.run:null;
+  g.fillText(run?('第 '+G.shift+' 次  '+Math.floor(run.t/60)+':'+
+    String(Math.floor(run.t%60)).padStart(2,'0')):'待機中',CAM_W-6,10);
+}
+function drawStatic(){
+  var g=camCtx;
+  g.fillStyle='#0C0E0C'; g.fillRect(0,0,CAM_W,CAM_H);
+  for(var i=0;i<900;i++){
+    var v=Math.random()*70|0;
+    g.fillStyle='rgb('+v+','+(v+6)+','+v+')';
+    g.fillRect(Math.random()*CAM_W|0,Math.random()*CAM_H|0,2,2);
+  }
+  g.fillStyle='rgba(255,59,48,.85)'; g.font='700 14px ui-monospace,monospace';
+  g.textAlign='center'; g.fillText('訊號中斷',CAM_W/2,CAM_H/2+5);
+}
+var feedT=0;
+function updateFeed(dt,now){
+  feedT-=dt; if(feedT>0)return;
+  feedT=0.11;                                  // 約 9fps，肉眼看是監視器該有的頓感
+  if(G.run&&G.run.danger&&G.phase==='play'){
+    // 停電後畫面斷掉，每 1.6 秒才回來 0.4 秒 —— 最需要情報的時候最看不到
+    if((now%1600)/1600<0.25)drawFeed(); else drawStatic();
+  }else drawFeed();
+  camTex.needsUpdate=true;
+}
+
+/* 螢幕的正面是 +Z（PlaneGeometry 的法線方向），所以機殼一定要放在 -Z 側，
+   否則從前面看到的是被背面剔除掉的那一面 —— 兩邊都會是空的。
+   ry 就是「螢幕面向哪個方向」：0 朝南、Math.PI 朝北、Math.PI/2 朝東。 */
+function monitor(x,y,z,ry){
+  var g=new THREE.Group();
+  g.add(P(GEO.box,0x161A17,[1.36,1.02,0.11],[0,0,-0.065]));      // 機殼在螢幕後面
+  g.add(P(GEO.box,0x2A302B,[0.055,1.3,0.055],[0,0.95,-0.065]));  // 吊桿
+  g.add(P(GEO.box,0x4ADE80,[0.05,0.05,0.02],[0.60,-0.44,0.004],1.6)); // 電源指示燈
+  var scr=new THREE.Mesh(new THREE.PlaneGeometry(1.18,0.84),
+    new THREE.MeshBasicMaterial({map:camTex}));
+  scr.position.z=0.004;                                          // 略微凸出機殼前緣
+  g.add(scr);
+  g.position.set(x,y,z); g.rotation.y=ry||0; scene.add(g);
+  return g;
+}
+monitor(0,2.62,0);                  // 中央橫向通道，朝南（走進來時看得到）
+monitor(3.5,2.55,-8.4);             // 後場通道，朝南 —— 進冷凍室前最後一次確認
+monitor(0,2.45,12.4,Math.PI);       // 收銀區，朝北（跑回來撤離時看得到）
+monitor(-19.15,2.35,0,Math.PI/2);   // 西側牆面，朝東
+monitor(-17.2,2.40,3,Math.PI);      // 西側逃生走道，朝北（往出口跑的時候看得到）
+monitor(14,2.50,-14.8);             // 倉庫，朝南
+drawStatic(); camTex.needsUpdate=true;   // 第一格先給雜訊，主迴圈起來後就換成即時畫面
+
+/* ---------- 店員：麥塊風格方塊人形 ----------
+   朝向為 -Z（與 canSee 的 forward 一致），所以臉在 BoxGeometry 的 -Z 面 = 材質索引 5 */
+var SKIN=0xD8BFA0, SHIRT=0x2F6E5A, APRONC=0xE4E2D2, PANTS=0x2A2E33, CAPC=0xC0392B;
+function mcFace(alert){
+  var c=document.createElement('canvas'); c.width=c.height=64;
+  var g=c.getContext('2d'); g.imageSmoothingEnabled=false;
+  g.fillStyle='#D8BFA0'; g.fillRect(0,0,64,64);
+  g.fillStyle='#C9AE8E'; for(var i=0;i<40;i++){
+    g.fillRect((i*23)%64,(i*37)%64,4,4); }
+  if(alert){
+    g.fillStyle='#FFFFFF'; g.fillRect(10,20,18,16); g.fillRect(36,20,18,16);
+    g.fillStyle='#1A1A20'; g.fillRect(17,26,5,5); g.fillRect(43,26,5,5);
+    g.fillStyle='#3A1A1A'; g.fillRect(14,44,36,12);
+    g.fillStyle='#FFFFFF'; g.fillRect(18,44,4,6); g.fillRect(26,44,4,6);
+    g.fillRect(34,44,4,6); g.fillRect(42,44,4,6);
+  }else{
+    g.fillStyle='#FFFFFF'; g.fillRect(12,24,16,10); g.fillRect(36,24,16,10);
+    g.fillStyle='#1A1A20'; g.fillRect(19,26,6,6); g.fillRect(41,26,6,6);
+    g.fillStyle='#8A5A50'; g.fillRect(18,46,28,4);
+    g.fillRect(14,42,5,4); g.fillRect(45,42,5,4);
+  }
+  g.fillStyle='#4A3A2A'; g.fillRect(12,17,16,3); g.fillRect(36,17,16,3);
+  var t=new THREE.CanvasTexture(c);
+  t.magFilter=THREE.NearestFilter; t.minFilter=THREE.NearestFilter;
+  return t;
+}
+var faceCalm=mcFace(false), faceAlert=mcFace(true);
+var skinMat=itemMat(SKIN);
+var faceMat=new THREE.MeshLambertMaterial({map:faceCalm});
+var clerk=new THREE.Group();
+function blk(color,w,h,d,x,y,z){ return P(GEO.box,color,[w,h,d],[x,y,z]); }
+// 軀幹（0.062m = 麥塊 1 像素）
+clerk.add(blk(SHIRT,0.50,0.744,0.248,0,1.116,0));
+clerk.add(blk(APRONC,0.44,0.56,0.03,0,1.02,-0.14));        // 圍裙
+clerk.add(blk(0xF4F4EE,0.10,0.07,0.03,0.15,1.34,-0.142));  // 名牌
+// 頭
+var head=new THREE.Mesh(GEO.box,[skinMat,skinMat,skinMat,skinMat,skinMat,faceMat]);
+head.scale.set(0.50,0.50,0.50); head.position.y=1.736; clerk.add(head);
+// 制服帽
+var cap=blk(CAPC,0.53,0.13,0.53,0,2.05,0); clerk.add(cap);
+clerk.add(blk(CAPC,0.50,0.05,0.26,0,1.99,-0.36));          // 帽簷
+// 四肢：用 Group 讓旋轉軸在肩／髖
+function limb(color,x,pivotY){
+  var g=new THREE.Group(); g.position.set(x,pivotY,0);
+  g.add(blk(color,0.248,0.744,0.248,0,-0.372,0));
+  clerk.add(g); return g;
+}
+var armL=limb(SHIRT,-0.372,1.488), armR=limb(SHIRT,0.372,1.488);
+var legL=limb(PANTS,-0.124,0.744), legR=limb(PANTS,0.124,0.744);
+var alertHalo=new THREE.Sprite(new THREE.SpriteMaterial({map:HALO,color:0xFF3B30,
+  transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,opacity:0}));
+alertHalo.scale.set(3.4,3.4,1); alertHalo.position.y=1.75; clerk.add(alertHalo);
+clerk.position.set(CLERK_HOME.x,0,CLERK_HOME.z); clerk.visible=false; scene.add(clerk);
+var walkT=0, armLift=0;
+function animClerk(dt,moved,chasing){
+  walkT += moved*5.4;
+  var sw=Math.sin(walkT)*0.62;
+  legL.rotation.x=sw;  legR.rotation.x=-sw;
+  armLift += ((chasing?-1.35:0)-armLift)*Math.min(1,dt*5);
+  armL.rotation.x=armLift-sw*0.75; armR.rotation.x=armLift+sw*0.75;
+  armL.rotation.z=chasing? 0.12:0;  armR.rotation.z=chasing?-0.12:0;
+  head.rotation.x=chasing?0.12:Math.sin(walkT*0.5)*0.04;
+  if(faceMat.map!==(chasing?faceAlert:faceCalm)){
+    faceMat.map=chasing?faceAlert:faceCalm; faceMat.needsUpdate=true;
+  }
+  cap.material=itemMat(chasing?0xFF3B30:CAPC);
+}
+
+/* ============================================================
+   4. 碰撞 / 視線
+   ============================================================ */
+function resolve(p,r){
+  for(var i=0;i<COL.length;i++){var c=COL[i];
+    if(p.x>c.x0-r&&p.x<c.x1+r&&p.z>c.z0-r&&p.z<c.z1+r){
+      var dxl=(p.x)-(c.x0-r), dxr=(c.x1+r)-(p.x),
+          dzl=(p.z)-(c.z0-r), dzr=(c.z1+r)-(p.z);
+      var m=Math.min(dxl,dxr,dzl,dzr);
+      if(m===dxl)p.x=c.x0-r; else if(m===dxr)p.x=c.x1+r;
+      else if(m===dzl)p.z=c.z0-r; else p.z=c.z1+r;
+    }}
+}
+function blocked(ax,az,bx,bz,minH){
+  minH=minH||1.0;
+  var dx=bx-ax, dz=bz-az, len=Math.hypot(dx,dz);
+  if(len<1e-4)return false;
+  for(var i=0;i<COL.length;i++){var c=COL[i];
+    if(c.h<minH)continue;
+    var t0=0,t1=1,ok=true;
+    // X slab
+    if(Math.abs(dx)<1e-6){ if(ax<c.x0||ax>c.x1)ok=false; }
+    else{ var ta=(c.x0-ax)/dx, tb=(c.x1-ax)/dx; if(ta>tb){var s=ta;ta=tb;tb=s;}
+          t0=Math.max(t0,ta); t1=Math.min(t1,tb); if(t0>t1)ok=false; }
+    if(ok){ // Z slab
+      if(Math.abs(dz)<1e-6){ if(az<c.z0||az>c.z1)ok=false; }
+      else{ var tc=(c.z0-az)/dz, td=(c.z1-az)/dz; if(tc>td){var s2=tc;tc=td;td=s2;}
+            t0=Math.max(t0,tc); t1=Math.min(t1,td); if(t0>t1)ok=false; }
+    }
+    if(ok)return true;
+  }
+  return false;
+}
+
+/* ============================================================
+   5. Waypoint 圖 —— 手工節點座標，鄰接由通行性自動建立
+   ============================================================ */
+var WX=[-17.2,-11.2,-5.6,0,5.6,11.2,17.2], WZ=[13.6,8.9,0,-8.2,-13.0];
+var NODES=[];
+function freeAt(x,z,pad){
+  for(var i=0;i<COL.length;i++){var c=COL[i];
+    if(c.h<1.0)continue;
+    if(x>c.x0-pad&&x<c.x1+pad&&z>c.z0-pad&&z<c.z1+pad)return false;}
+  return true;
+}
+WX.forEach(function(x){WZ.forEach(function(z){ if(freeAt(x,z,0.75))NODES.push({x:x,z:z}); });});
+[[-16.5,-11.4],[-16.5,-13.4],[-13.8,-11.0],[-11.0,-11.5],[-8.0,-11.4],
+ [-2.5,-11.0],[2.0,-11.6],[7.0,-11.4],[14.0,-10.8],[18.0,-13.4],
+ [-17.2,4],[-17.2,-4],[17.2,4],[17.2,-4],[0,-4],[0,4],[-11.2,4],[-11.2,-4],
+ [5.6,4],[5.6,-4],[11.2,-4],[-5.6,4],[-5.6,-4]
+].forEach(function(p){ if(freeAt(p[0],p[1],0.7))NODES.push({x:p[0],z:p[1]}); });
+NODES.forEach(function(n){n.adj=[];});
+for(var a=0;a<NODES.length;a++)for(var b=a+1;b<NODES.length;b++){
+  var d=Math.hypot(NODES[a].x-NODES[b].x,NODES[a].z-NODES[b].z);
+  if(d<9.6&&!blocked(NODES[a].x,NODES[a].z,NODES[b].x,NODES[b].z,1.0)){
+    NODES[a].adj.push(b); NODES[b].adj.push(a);
+  }
+}
+function nearestNode(x,z){
+  var best=-1,bd=1e9;
+  for(var i=0;i<NODES.length;i++){
+    var d=Math.hypot(NODES[i].x-x,NODES[i].z-z);
+    if(d<bd&&!blocked(x,z,NODES[i].x,NODES[i].z,1.0)){bd=d;best=i;}
+  }
+  if(best<0){for(var j=0;j<NODES.length;j++){
+    var d2=Math.hypot(NODES[j].x-x,NODES[j].z-z); if(d2<bd){bd=d2;best=j;}}}
+  return best;
+}
+function findPath(si,ti){
+  if(si<0||ti<0)return [];
+  var dist=new Array(NODES.length).fill(Infinity),prev=new Array(NODES.length).fill(-1),
+      seen=new Array(NODES.length).fill(false);
+  dist[si]=0;
+  for(var it=0;it<NODES.length;it++){
+    var u=-1,bd=Infinity;
+    for(var i=0;i<NODES.length;i++) if(!seen[i]&&dist[i]<bd){bd=dist[i];u=i;}
+    if(u<0)break; if(u===ti)break; seen[u]=true;
+    for(var k=0;k<NODES[u].adj.length;k++){var v=NODES[u].adj[k];
+      var nd=dist[u]+Math.hypot(NODES[u].x-NODES[v].x,NODES[u].z-NODES[v].z);
+      if(nd<dist[v]){dist[v]=nd;prev[v]=u;}}
+  }
+  if(dist[ti]===Infinity)return [];
+  var path=[],c=ti; while(c!==-1){path.unshift(c);c=prev[c];} path.shift(); return path;
+}
+
+/* ============================================================
+   6. 音效（純合成，無外部檔案）
+   ============================================================ */
+var AC=null,master=null,drone=null,droneGain=null;
+function audioInit(){
+  if(AC)return;
+  try{
+    AC=new (window.AudioContext||window.webkitAudioContext)();
+    master=AC.createGain(); master.gain.value=0.5; master.connect(AC.destination);
+  }catch(e){AC=null;}
+}
+function beep(f,dur,type,vol,slide){
+  if(!AC)return;
+  var o=AC.createOscillator(),g=AC.createGain();
+  o.type=type||'square'; o.frequency.setValueAtTime(f,AC.currentTime);
+  if(slide)o.frequency.exponentialRampToValueAtTime(Math.max(40,slide),AC.currentTime+dur);
+  g.gain.setValueAtTime(0,AC.currentTime);
+  g.gain.linearRampToValueAtTime(vol||0.14,AC.currentTime+0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+dur);
+  o.connect(g); g.connect(master); o.start(); o.stop(AC.currentTime+dur+0.02);
+}
+function noiseBurst(dur,freq,vol,q){
+  if(!AC)return;
+  var n=Math.floor(AC.sampleRate*dur), buf=AC.createBuffer(1,n,AC.sampleRate),d=buf.getChannelData(0);
+  for(var i=0;i<n;i++)d[i]=(Math.random()*2-1)*(1-i/n);
+  var s=AC.createBufferSource(); s.buffer=buf;
+  var f=AC.createBiquadFilter(); f.type='bandpass'; f.frequency.value=freq||900; f.Q.value=q||1.2;
+  var g=AC.createGain(); g.gain.value=vol||0.12;
+  s.connect(f); f.connect(g); g.connect(master); s.start();
+}
+var SFX={
+  scan:function(){beep(2050,0.05,'square',0.1); setTimeout(function(){beep(2750,0.07,'square',0.1);},58);},
+  deny:function(){beep(220,0.14,'square',0.09);},
+  forbidden:function(){beep(150,1.5,'sawtooth',0.16,42); noiseBurst(0.7,260,0.15,0.7);},
+  chime:function(){beep(784,0.4,'sine',0.1); setTimeout(function(){beep(587,0.65,'sine',0.1);},300);},
+  register:function(){beep(1320,0.07,'square',0.11);
+    setTimeout(function(){beep(1760,0.08,'square',0.11);},80);
+    setTimeout(function(){noiseBurst(0.3,1500,0.09,2);},170);},
+  caught:function(){beep(320,0.9,'sawtooth',0.2,60); noiseBurst(0.5,180,0.18,0.6);},
+  step:function(v){noiseBurst(0.09,150,v,0.9);},
+  unlock:function(){beep(660,0.1,'triangle',0.1);setTimeout(function(){beep(990,0.22,'triangle',0.1);},95);}
+};
+function droneOn(){
+  if(!AC||drone)return;
+  droneGain=AC.createGain(); droneGain.gain.value=0; droneGain.connect(master);
+  drone=[];
+  [58,87.5,116].forEach(function(f){
+    var o=AC.createOscillator(); o.type='sawtooth'; o.frequency.value=f;
+    var g=AC.createGain(); g.gain.value=0.05; o.connect(g); g.connect(droneGain); o.start();
+    drone.push(o);
+  });
+  droneGain.gain.linearRampToValueAtTime(0.5,AC.currentTime+1.2);
+}
+function droneOff(){
+  if(!drone)return;
+  var ds=drone,dg=droneGain; drone=null;
+  try{dg.gain.linearRampToValueAtTime(0,AC.currentTime+0.5);}catch(e){}
+  setTimeout(function(){ds.forEach(function(o){try{o.stop();}catch(e){}});},700);
+}
+
+/* ============================================================
+   7. 遊戲狀態
+   ============================================================ */
+var G={
+  phase:'title',            // title | play | result | shop | paused
+  shift:0, cash:0, upgrades:{},
+  run:null, spawned:[], t:0, lastTime:performance.now()
+};
+var STATS={runs:0,extracted:0,caught:0,forbiddenSeen:0,forbiddenPicked:0,
+  pickedAfterUnlock:0,nextShifts:0,times:[],cashTotal:0,
+  streak:0,bestStreak:0,bestShift:0,forbiddenSurvived:0,deepestShift:0,history:[]};
+
+function newRun(){
+  clearItems();
+  var r={
+    t:0, loot:{}, value:0, used:0, forbiddenTaken:false, forbiddenSeen:false,
+    unlocked:false, danger:false, caught:false, extracted:false, count:0,
+    log:[], noiseTimer:0, firstMoveDone:false, firstPickDone:false,
+    unlockedAt:null, forbiddenAt:null
+  };
+  G.run=r; G.shift++;
+  camera.position.set(SPAWN.x,1.65,SPAWN.z);
+  yaw=SPAWN.yaw; pitch=0; vel.set(0,0,0); crouchNow=false;
+  buildItems(G.shift);
+  setDanger(false);
+  clerk.position.set(CLERK_HOME.x,0,CLERK_HOME.z);
+  clerk.rotation.y=Math.PI;
+  AI.state = (G.shift===1) ? 'DORMANT' : 'PATROL';
+  AI.path=[]; AI.target=null; AI.timer=0; AI.lastSeen=null; AI.stuck=0; AI.stepT=0;
+  clerk.visible = AI.state!=='DORMANT';
+  ev('game_start',{shift:G.shift});
+  STATS.runs++;
+  updateHUD();
+  setObjective('走到商品前面，按 E 塞進提袋',false,
+    '需要 '+CFG.extractItems+' 件才能脫身。櫃檯上就有兩件。');
+  if(G.shift===1) showBeat('已從後門進入',
+    'W A S D 走路，滑鼠轉頭，看到東西按 E。',
+    '走道上方有店裡的監視螢幕，抬頭就看得到誰在哪。',7000);
+}
+
+// 第一次下手的教學腳本：先讓玩家知道「這裡有別人」，之後的選擇才算風險決策
+function runScript(){
+  var r=G.run; if(!r||G.shift!==1)return;
+  if(!r._paWarn&&r.t>26){ r._paWarn=true;
+    pa('本店已於午夜結束營業，全區監視錄影中。非賣品區請勿進入。'); }
+  if(!r._cameo&&r.t>33&&!r.forbiddenTaken){ r._cameo=true; startCameo(); }
+}
+function startCameo(){
+  clerk.position.set(17.4,0,-7.6); clerk.rotation.y=Math.PI; clerk.visible=true;
+  AI.state='CAMEO'; AI.path=[{x:17.4,z:7.0}]; AI.timer=0;
+  ev('clerk_first_seen',{mode:'cameo'});
+}
+function ev(name,data){
+  if(!G.run)return;
+  G.run.log.push({t:+G.run.t.toFixed(2),name:name,data:data||null});
+  renderLog();
+}
+
+/* ---------- 商品生成 ---------- */
+var itemMeshes=[];
+function clearItems(){
+  itemMeshes.forEach(function(o){ scene.remove(o.mesh);
+    if(o.halo)scene.remove(o.halo); if(o.tag)scene.remove(o.tag); });
+  itemMeshes=[];
+  if(beacon){scene.remove(beacon);beacon=null;}
+  forbidGlow.intensity=0;
+}
+var beacon=null;
+function rng(seed){ var s=seed*9301+49297; return function(){ s=(s*9301+49297)%233280; return s/233280; }; }
+
+function buildItems(seed){
+  var rand=rng(seed*7+13);
+  var spots=[];
+  XS.forEach(function(x,ix){
+    SEGS.forEach(function(seg,si){
+      for(var k=0;k<3;k++){
+        var z=seg[0]+(seg[1]-seg[0])*(0.20+0.30*k);
+        // 兩側都放，兩個層板交錯，貨架才不會看起來空空的
+        [-1.06,1.06].forEach(function(off,oi){
+          spots.push({x:x+off,y:((k+oi)%2===0)?0.73:1.29,z:z,deep:si===0});
+        });
+      }
+    });
+  });
+  // 後場高價點
+  var back=[{x:-11.0,y:1.34,z:-14.2},{x:-18.2,y:2.12,z:-12.4},
+            {x:-2.5,y:1.72,z:-13.6},{x:2.5,y:1.32,z:-14.0},{x:14.5,y:2.02,z:-13.4}];
+  var commons=ITEMS.filter(function(d){return d.tier==='common';});
+  var rares=ITEMS.filter(function(d){return d.tier==='rare';});
+
+  // 貨架：深處（北段）有 40% 機率放稀有品
+  spots.forEach(function(s){
+    var def = (s.deep && rand()<0.4) ? rares[Math.floor(rand()*rares.length)]
+                                     : commons[Math.floor(rand()*commons.length)];
+    spawnItem(def,s.x,s.y,s.z);
+  });
+  // 後場全放稀有品
+  back.forEach(function(s){ spawnItem(rares[Math.floor(rand()*rares.length)],s.x,s.y,s.z); });
+  // 入口櫃檯放兩件便宜的：讓玩家 10 秒內就完成第一次「按 E」
+  spawnItem(BY_ID.bread,-6.0,1.0,11.4);
+  spawnItem(BY_ID.milk,  6.0,1.0,11.4);
+  // 禁忌品固定位置：冷凍室死路盡頭的地上
+  spawnItem(BY_ID.unknown,-16.5,0,-13.3);
+  forbidGlow.intensity=1.1;
+  // 光柱：高過牆面，全場都看得見的誘因
+  var bm=new THREE.MeshBasicMaterial({color:0xC77DFF,transparent:true,opacity:.13,
+    blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide});
+  beacon=new THREE.Mesh(new THREE.CylinderGeometry(0.7,1.1,16,10,1,true),bm);
+  beacon.position.set(-16.5,8,-13.3); scene.add(beacon);
+}
+function spawnItem(def,x,y,z){
+  var g=buildModel(def);
+  g.position.set(x,y,z);
+  g.scale.setScalar(def.tier==='forbidden'?1.15:1.32);   // 放大，遠處才看得出是什麼
+  g.rotation.y=(Math.random()-0.5)*0.9;
+  scene.add(g);
+  var val = def.tier==='forbidden'?forbiddenValueNow():def.v;
+  var o={mesh:g,def:def,baseY:y,taken:false,halo:null,tag:null};
+  if(def.tier!=='common'){
+    var col=def.tier==='forbidden'?0xC77DFF:0xFFC93C;
+    var sc=def.tier==='forbidden'?2.8:1.6;
+    var h=new THREE.Sprite(new THREE.SpriteMaterial({map:HALO,color:col,transparent:true,
+      blending:THREE.AdditiveBlending,depthWrite:false,opacity:def.tier==='forbidden'?.75:.5}));
+    h.scale.set(sc,sc,1); h.position.set(x,y+0.18,z); scene.add(h); o.halo=h;
+  }
+  o.tag=makeTag(val,def.tier);
+  o.tag.position.set(x,y+0.56,z); scene.add(o.tag);
+  g.userData.item=o;
+  g.traverse(function(c){c.userData.item=o;});
+  itemMeshes.push(o);
+}
+
+/* ---------- 危險相位 ---------- */
+function setDanger(on){
+  var r=G.run; if(r)r.danger=on;
+  document.getElementById('vignette').classList.toggle('on',on);
+  document.getElementById('objective').classList.toggle('alarm',on);
+  ambient.intensity = on?0.14:0.74;
+  sky.intensity = on?0.07:0.40;
+  lamps.forEach(function(L){L.intensity=on?0.05:0.62;});
+  tubeMeshes.forEach(function(t){t.material.color.setHex(on?0x2A3028:0xE4F0DE);});
+  signs.forEach(function(s){s.material.color.setHex(on?0xFF3B30:0x4ADE80);});
+  guides.forEach(function(m){
+    m.material.color.setHex(on?0xFF3B30:0x3FBF6A);
+    if(!on)m.material.opacity=.30;
+  });
+  scene.fog.density = on?0.045:0.019;
+  if(on){droneOn();}else{droneOff();}
+  updateExitChip();
+}
+function pa(text){
+  var el=document.getElementById('pa');
+  document.getElementById('patext').textContent=text;
+  el.classList.add('on'); SFX.chime();
+  clearTimeout(pa._t); pa._t=setTimeout(function(){el.classList.remove('on');},5200);
+}
+
+/* ============================================================
+   8. 輸入
+   ============================================================ */
+var keys={}, yaw=SPAWN.yaw, pitch=0, vel=new THREE.Vector3();
+var locked=false, lockFailed=false, manualPause=false, cursorX=0.5;
+// 視角模式：delta = 移動轉向（需要指標鎖定才好用）；steer = 推移轉向（游標不會跑出視窗）
+var lookMode='delta', cursorNX=0, cursorNY=0, pointerInside=true;
+var canvas=renderer.domElement;
+function devOpen(){return document.getElementById('dev').classList.contains('on');}
+// 指標鎖定在 artifact 的 iframe 裡通常被封鎖，所以自由視角必須不依賴它
+function isPaused(){
+  return G.phase!=='play' || manualPause || devOpen() || (!locked && !lockFailed);
+}
+
+window.addEventListener('keydown',function(e){
+  var k=e.key.toLowerCase();
+  if(['w','a','s','d','c',' ','arrowup','arrowdown','arrowleft','arrowright'].indexOf(k)>=0)e.preventDefault();
+  keys[k]=true;
+  if(k==='t'){toggleDev();}
+  if(k==='m'&&G.phase==='play'){
+    if(lookMode==='steer'){
+      lockFailed=false; setLookMode('delta');
+      toast('嘗試鎖定滑鼠…'); requestLock();
+    }else{ setLookMode('steer'); toast('推移轉向：把游標推離中央圈就持續轉頭'); }
+  }
+  if(k==='escape'&&G.phase==='play'&&lockFailed){
+    manualPause=!manualPause; if(manualPause)showPause(); else hidePause();
+  }
+  if(k==='e'&&G.phase==='play')tryInteract();
+  if(k==='enter'){
+    if(G.phase==='title')startGame();
+    else if(G.phase==='result')gotoShop();
+    else if(G.phase==='shop')nextShift();
+  }
+});
+window.addEventListener('keyup',function(e){keys[e.key.toLowerCase()]=false;});
+window.addEventListener('blur',function(){
+  keys={}; if(G.phase==='play'&&lockFailed){manualPause=true;showPause();}
+});
+
+canvas.addEventListener('mousedown',function(e){
+  if(G.phase!=='play')return;
+  if(manualPause){manualPause=false;hidePause();return;}
+  if(!locked&&!lockFailed)requestLock();
+});
+// 免按鍵自由視角
+window.addEventListener('mousemove',function(e){
+  var w=Math.max(1,window.innerWidth), h=Math.max(1,window.innerHeight);
+  cursorX = e.clientX/w;
+  cursorNX = (e.clientX/w)*2-1;
+  cursorNY = (e.clientY/h)*2-1;
+  pointerInside=true;
+  if(isPaused()||lookMode!=='delta')return;
+  yaw   -= (e.movementX||0)*CFG.mouseSens;
+  pitch -= (e.movementY||0)*CFG.mouseSens;
+  pitch = Math.max(-1.25,Math.min(1.25,pitch));
+});
+document.addEventListener('mouseleave',function(){ pointerInside=false; });
+document.addEventListener('mouseenter',function(){ pointerInside=true; });
+function setLookMode(m){
+  lookMode=m;
+  document.getElementById('steerring').classList.toggle('on',m==='steer');
+  if(m==='steer'&&document.pointerLockElement)document.exitPointerLock();
+}
+// 鎖定滑鼠是首選：像 CS 一樣游標消失、無限轉頭、不會跑出視窗。
+// unadjustedMovement 關掉作業系統的滑鼠加速，手感才會是 FPS 該有的線性。
+function lockFail(msg){
+  if(lockFailed)return;
+  lockFailed=true; hidePause(); setLookMode('steer');
+  toast(msg||'這個環境不允許鎖定滑鼠 · 已切換為推移轉向 · 按 M 切換');
+}
+/* ---------- 觸控：左搖桿移動、右半邊拖曳轉頭、三顆按鈕 ---------- */
+var touchMove={f:0,s:0,mag:0};
+var stickId=null, stickOX=0, stickOY=0, lookId=null, lookLX=0, lookLY=0;
+var tRun=false, tDuck=false;
+function setupTouch(){
+  if(!IS_TOUCH)return;
+  document.body.classList.add('touch');
+  var base=$('stickbase'), knob=$('stickknob');
+  function stickRect(){return base.getBoundingClientRect();}
+  function applyStick(cx,cy){
+    var r=stickRect(), R=r.width/2;
+    var dx=cx-(r.left+R), dy=cy-(r.top+R);
+    var d=Math.hypot(dx,dy);
+    if(d>R){ dx=dx/d*R; dy=dy/d*R; d=R; }
+    knob.style.transform='translate(calc(-50% + '+dx+'px), calc(-50% + '+dy+'px))';
+    var dead=R*0.16;
+    if(d<dead){ touchMove.f=0; touchMove.s=0; touchMove.mag=0; return; }
+    touchMove.s=dx/R; touchMove.f=-dy/R;
+    touchMove.mag=Math.min(1,(d-dead)/(R-dead));
+  }
+  function clearStick(){
+    stickId=null; touchMove.f=0; touchMove.s=0; touchMove.mag=0;
+    knob.style.transform='translate(-50%,-50%)';
+  }
+  base.addEventListener('touchstart',function(e){
+    e.preventDefault();
+    var t=e.changedTouches[0]; stickId=t.identifier; applyStick(t.clientX,t.clientY);
+  },{passive:false});
+
+  function onStart(e){
+    for(var i=0;i<e.changedTouches.length;i++){
+      var t=e.changedTouches[i];
+      if(t.target&&t.target.closest&&t.target.closest('#touch'))continue;   // 交給搖桿與按鈕
+      if(lookId===null){ lookId=t.identifier; lookLX=t.clientX; lookLY=t.clientY; }
+    }
+  }
+  function onMove(e){
+    e.preventDefault();
+    for(var i=0;i<e.changedTouches.length;i++){
+      var t=e.changedTouches[i];
+      if(t.identifier===stickId){ applyStick(t.clientX,t.clientY); }
+      else if(t.identifier===lookId){
+        if(!isPaused()){
+          yaw   -= (t.clientX-lookLX)*0.0052;
+          pitch -= (t.clientY-lookLY)*0.0042;
+          pitch = Math.max(-1.25,Math.min(1.25,pitch));
+        }
+        lookLX=t.clientX; lookLY=t.clientY;
+      }
+    }
+  }
+  function onEnd(e){
+    for(var i=0;i<e.changedTouches.length;i++){
+      var t=e.changedTouches[i];
+      if(t.identifier===stickId)clearStick();
+      if(t.identifier===lookId)lookId=null;
+    }
+  }
+  document.addEventListener('touchstart',onStart,{passive:true});
+  document.addEventListener('touchmove',onMove,{passive:false});
+  document.addEventListener('touchend',onEnd,{passive:true});
+  document.addEventListener('touchcancel',onEnd,{passive:true});
+
+  function hold(el,on,off){
+    el.addEventListener('touchstart',function(e){e.preventDefault();e.stopPropagation();
+      el.classList.add('act');on();},{passive:false});
+    ['touchend','touchcancel'].forEach(function(k){
+      el.addEventListener(k,function(e){e.preventDefault();e.stopPropagation();
+        el.classList.remove('act');off();},{passive:false});
+    });
+  }
+  $('btnTake').addEventListener('touchstart',function(e){
+    e.preventDefault(); e.stopPropagation();
+    var b=$('btnTake'); b.classList.add('act');
+    setTimeout(function(){b.classList.remove('act');},120);
+    if(G.phase==='play')tryInteract();
+  },{passive:false});
+  hold($('btnRun'),function(){tRun=true;},function(){tRun=false;});
+  $('btnDuck').addEventListener('touchstart',function(e){
+    e.preventDefault(); e.stopPropagation();
+    tDuck=!tDuck; $('btnDuck').classList.toggle('act',tDuck);
+  },{passive:false});
+
+  // 標題頁改成觸控說明
+  var keysEl=document.querySelector('#s-title .keys');
+  if(keysEl)keysEl.innerHTML=
+    '<div><b>左搖桿</b>移動</div>'+
+    '<div><b>右側拖曳</b>轉頭</div>'+
+    '<div><b>拿</b>塞進提袋</div>'+
+    '<div><b>衝</b>按住衝刺・很吵</div>'+
+    '<div><b>蹲</b>切換潛行・幾乎沒聲音</div>'+
+    '<div><b>抬頭</b>看監視螢幕</div>';
+  // 觸控裝置不需要指標鎖定，直接進遊戲
+  lockFailed=true; setLookMode('delta');
+  checkOrient();
+  window.addEventListener('orientationchange',function(){setTimeout(checkOrient,240);});
+}
+function checkOrient(){
+  if(!IS_TOUCH)return;
+  document.body.classList.toggle('portrait',window.innerHeight>window.innerWidth);
+}
+
+function requestLock(){
+  if(IS_TOUCH){lockFailed=true;hidePause();return;}
+  if(lookMode!=='delta')return;
+  if(!canvas.requestPointerLock){ lockFail(); return; }
+  var p;
+  try{ p=canvas.requestPointerLock({unadjustedMovement:true}); }
+  catch(e){ p=null; }
+  if(p&&p.then){
+    p.then(function(){},function(){
+      try{ var p2=canvas.requestPointerLock();
+           if(p2&&p2.then)p2.then(function(){},function(){lockFail();}); }
+      catch(e2){ lockFail(); }
+    });
+  }else{
+    try{ canvas.requestPointerLock(); }catch(e3){ lockFail(); return; }
+  }
+  setTimeout(function(){
+    if(document.pointerLockElement!==canvas&&G.phase==='play')lockFail();
+  },900);
+}
+document.addEventListener('pointerlockerror',function(){
+  lockFailed=true; hidePause(); setLookMode('steer');
+});
+document.addEventListener('pointerlockchange',function(){
+  locked = document.pointerLockElement===canvas;
+  if(G.phase==='play'){ if(locked){manualPause=false;hidePause();} else if(!lockFailed)showPause(); }
+});
+document.getElementById('pause').addEventListener('click',function(){
+  if(G.phase!=='play')return;
+  manualPause=false;
+  if(lockFailed)hidePause(); else requestLock();
+});
+window.addEventListener('resize',onResize);
+function onResize(){
+  var w=window.innerWidth,h=window.innerHeight;
+  camera.aspect=w/h; camera.updateProjectionMatrix(); renderer.setSize(w,h,false);
+  checkOrient();
+}
+onResize();
+
+function showPause(){
+  if(document.getElementById('dev').classList.contains('on'))return;
+  document.getElementById('pause').style.display='flex';
+}
+function hidePause(){document.getElementById('pause').style.display='none';}
+
+/* ============================================================
+   9. 互動
+   ============================================================ */
+var ray=new THREE.Raycaster(); ray.far=2.9;
+var fwd=new THREE.Vector3(), aim=null;
+function updateAim(){
+  var cross=document.getElementById('crosshair'), pr=document.getElementById('prompt');
+  aim=null;
+  if(G.phase!=='play'){ pr.className=''; cross.className=''; return; }
+  camera.getWorldDirection(fwd);
+  ray.set(camera.position,fwd);
+  var live=itemMeshes.filter(function(o){return !o.taken;}).map(function(o){return o.mesh;});
+  var hit=ray.intersectObjects(live,true);
+  if(hit.length){
+    aim=hit[0].object.userData.item;
+    if(!aim){ pr.className=''; cross.className=''; return; }
+    var d=aim.def, forb=d.tier==='forbidden';
+    var fits = G.run.used + d.slots <= CFG.capacity;
+    var val = forb ? forbiddenValueNow() : d.v;
+    pr.className='on'+(forb?' forbid':'');
+    pr.innerHTML='<kbd>E</kbd>'+d.name+
+      '<span class="p">$'+val+'</span>'+
+      '<span class="s">'+d.slots+' 格'+(forb?' · ⚠ 非賣品':'')+(fits?'':' · 提袋放不下')+'</span>';
+    cross.className = forb?'forbid':'hot';
+    if(forb&&!G.run.forbiddenSeen){
+      G.run.forbiddenSeen=true; STATS.forbiddenSeen++; ev('forbidden_seen');
+    }
+  }else{ pr.className=''; cross.className=''; }
+}
+function tryInteract(){
+  if(!aim||aim.taken)return;
+  var d=aim.def, r=G.run;
+  if(r.used+d.slots>CFG.capacity){ SFX.deny(); toast('提袋放不下 '+d.name); return; }
+  var val = d.tier==='forbidden'?forbiddenValueNow():d.v;
+  aim.taken=true; scene.remove(aim.mesh);
+  if(aim.halo)scene.remove(aim.halo); if(aim.tag)scene.remove(aim.tag);
+  r.loot[d.id]=r.loot[d.id]||{def:d,n:0,val:val};
+  r.loot[d.id].n++; r.value+=val; r.used+=d.slots; r.count++;
+  makeNoise(d.noise);
+  SFX.scan(); toast('+ $'+val+'　'+d.name);
+  if(!r.firstPickDone||!r.unlocked){
+    r.firstPickDone=true; if(r.count===1)ev('first_pickup',{id:d.id});
+    setObjective('再拿 '+Math.max(0,CFG.extractItems-r.count)+' 件就能脫身',false,
+      '往裡面走，價格標的數字會變大。提袋只有 '+CFG.capacity+' 格。');
+  }
+  ev('pickup',{id:d.id,v:val});
+
+  if(d.tier==='forbidden'){
+    r.forbiddenTaken=true; r.forbiddenAt=r.t;
+    STATS.forbiddenPicked++;
+    if(r.unlocked)STATS.pickedAfterUnlock++;
+    ev('forbidden_picked',{afterUnlock:r.unlocked});
+    if(beacon){scene.remove(beacon);beacon=null;}
+    forbidGlow.intensity=0;
+    triggerForbidden();
+  }
+  if(!r.unlocked&&r.count>=CFG.extractItems)unlockExit();
+  updateHUD();
+  updateAim();
+}
+function unlockExit(){
+  var r=G.run; r.unlocked=true; r.unlockedAt=r.t;
+  SFX.unlock(); ev('extraction_available');
+  toast('後門已可脫身');
+  updateExitChip();
+  if(r.forbiddenTaken){ setObjective('快回後門！',true); return; }
+  // 這就是整個原型要測的那一刻：把選擇明白攤在玩家面前
+  setObjective('你現在就可以乾淨脫身了',false,
+    '或者，再往裡面走一點。冷凍室那道紫光是一件 $'+forbiddenValueNow()+' 的非賣品。');
+  showBeat('現在就能走',
+    '提袋裡已經有 $'+r.value+'，回到後門就算成功。',
+    '冷凍室那道紫光值 $'+forbiddenValueNow()+'。要走，還是再進去一次？',7500);
+}
+function triggerForbidden(){
+  var r=G.run;
+  flashScreen();
+  setDanger(true);
+  SFX.forbidden();
+  setObjective('放下已經太晚了 —— 衝回後門',true,'Shift 衝刺比店員快，但腳步聲會被聽到。');
+  showBeat('他知道了','冷凍室的門在你身後。','按住 Shift 衝回後門。',5000);
+  setTimeout(function(){ if(G.phase==='play')pa('偵測到非賣品離架。保全程序已啟動，請留在原地不要移動。'); },1600);
+  AI.state='CHASE'; AI.lastSeen={x:camera.position.x,z:camera.position.z}; AI.timer=0;
+  AI.path=[]; clerk.visible=true;
+  // 首次出現：在冷凍室裡但不堵死唯一的門，玩家要從他旁邊擠過去
+  if(G.shift===1) clerk.position.set(-10.5,0,-12.5);
+  ev('chase_started');
+}
+function flashScreen(){
+  var f=document.getElementById('flash');
+  f.style.transition='none'; f.style.opacity='0.85';
+  requestAnimationFrame(function(){ f.style.transition='opacity 1.1s ease-out'; f.style.opacity='0'; });
+}
+function makeNoise(radius){
+  if(!G.run||radius<=0)return;
+  G.run.lastNoise={x:camera.position.x,z:camera.position.z,r:radius,t:G.run.t};
+}
+
+/* ============================================================
+   10. 店員 AI —— 顯式 FSM
+   ============================================================ */
+var AI={state:'DORMANT',path:[],target:null,timer:0,lastSeen:null,stuck:0,
+        prev:new THREE.Vector2(),stepT:0,searchT:0};
+function canSee(){
+  var cx=clerk.position.x,cz=clerk.position.z,px=camera.position.x,pz=camera.position.z;
+  var d=Math.hypot(px-cx,pz-cz);
+  if(d>visionNow())return false;
+  if(blocked(cx,cz,px,pz,poseHeight()))return false;   // 潛行蹲低時，矮掩體才擋得住視線
+  if(d<3.2)return true;
+  var f=new THREE.Vector2(-Math.sin(clerk.rotation.y),-Math.cos(clerk.rotation.y));
+  var to=new THREE.Vector2(px-cx,pz-cz).normalize();
+  var ang=Math.acos(Math.max(-1,Math.min(1,f.dot(to))))*180/Math.PI;
+  return ang<CFG.visionAngle;
+}
+function setPathTo(x,z){
+  var si=nearestNode(clerk.position.x,clerk.position.z), ti=nearestNode(x,z);
+  AI.path=findPath(si,ti).map(function(i){return {x:NODES[i].x,z:NODES[i].z};});
+  AI.path.push({x:x,z:z});
+}
+function stepClerk(dt){
+  if(AI.state==='DORMANT'||!G.run)return;
+  // 客串：只是個在遠處補貨的員工，不會發現玩家
+  if(AI.state==='CAMEO'){
+    AI.timer+=dt;
+    var ct=AI.path[0], cdx=ct.x-clerk.position.x, cdz=ct.z-clerk.position.z,
+        cd=Math.hypot(cdx,cdz);
+    if(cd>0.25){
+      var cstep=CFG.clerkPatrol*dt;
+      clerk.position.x+=cdx/cd*cstep;
+      clerk.position.z+=cdz/cd*cstep;
+      clerk.rotation.y=Math.atan2(-cdx,-cdz);
+      animClerk(dt,cstep,false);
+    }
+    if(cd<=0.5||AI.timer>22){ clerk.visible=false; AI.state='DORMANT'; AI.path=[]; }
+    return;
+  }
+  var r=G.run, sees=canSee();
+  var px=camera.position.x,pz=camera.position.z;
+  var dP=Math.hypot(px-clerk.position.x,pz-clerk.position.z);
+
+  // 聽覺
+  if(r.lastNoise&&AI.state!=='CHASE'){
+    var n=r.lastNoise;
+    if(r.t-n.t<0.6&&Math.hypot(n.x-clerk.position.x,n.z-clerk.position.z)<n.r){
+      AI.state='INVESTIGATE'; AI.timer=0; setPathTo(n.x,n.z);
+      ev('clerk_investigate');
+      r.lastNoise=null;
+    }
+  }
+  if(sees&&AI.state!=='CHASE'){
+    AI.state='CHASE'; AI.timer=0; ev('chase_started'); droneOn();
+    if(!r._seenClerk){r._seenClerk=true;ev('clerk_first_seen');}
+  }
+
+  var speed=CFG.clerkPatrol;
+  switch(AI.state){
+    case 'PATROL':
+      speed=CFG.clerkPatrol;
+      if(!AI.path.length){
+        var t=NODES[Math.floor(Math.random()*NODES.length)];
+        setPathTo(t.x,t.z);
+      }
+      break;
+    case 'INVESTIGATE':
+      speed=CFG.clerkPatrol*1.5; AI.timer+=dt;
+      if(!AI.path.length||AI.timer>16){AI.state='SEARCH';AI.searchT=0;}
+      break;
+    case 'SEARCH':
+      speed=CFG.clerkPatrol*1.25; AI.searchT+=dt;
+      if(!AI.path.length){
+        var near=NODES.filter(function(n){
+          return Math.hypot(n.x-clerk.position.x,n.z-clerk.position.z)<13;});
+        var pick=near[Math.floor(Math.random()*near.length)]||NODES[0];
+        setPathTo(pick.x,pick.z);
+      }
+      if(AI.searchT>10){AI.state='RETURN';AI.path=[];setPathTo(CLERK_HOME.x,CLERK_HOME.z);}
+      break;
+    case 'CHASE':
+      speed=clerkChaseNow();
+      if(sees){AI.lastSeen={x:px,z:pz};AI.timer=0;AI.path=[];}
+      else{
+        AI.timer+=dt;
+        if(AI.timer>CFG.loseSight){
+          AI.state='SEARCH'; AI.searchT=0; AI.path=[];
+          if(AI.lastSeen)setPathTo(AI.lastSeen.x,AI.lastSeen.z);
+          ev('chase_lost'); droneOff();
+        }else if(!AI.path.length&&AI.lastSeen){ setPathTo(AI.lastSeen.x,AI.lastSeen.z); }
+      }
+      if(dP<CFG.catchDist){ caught(); return; }
+      break;
+    case 'RETURN':
+      speed=CFG.clerkPatrol;
+      if(!AI.path.length)AI.state='PATROL';
+      break;
+  }
+
+  // 移動：追逐且視線通暢 → 直接衝；否則沿 waypoint 路徑
+  var tx,tz;
+  if(AI.state==='CHASE'&&sees){ tx=px; tz=pz; }
+  else if(AI.path.length){ tx=AI.path[0].x; tz=AI.path[0].z; }
+  else { return; }
+
+  var dx=tx-clerk.position.x, dz=tz-clerk.position.z, dist=Math.hypot(dx,dz);
+  if(dist<0.55&&AI.path.length){AI.path.shift();}
+  if(dist>0.001){
+    var p={x:clerk.position.x+dx/dist*speed*dt, z:clerk.position.z+dz/dist*speed*dt};
+    resolve(p,0.5);
+    var moved=Math.hypot(p.x-clerk.position.x,p.z-clerk.position.z);
+    clerk.position.x=p.x; clerk.position.z=p.z;
+    animClerk(dt,moved,AI.state==='CHASE');
+    var want=Math.atan2(-dx,-dz);
+    var diff=((want-clerk.rotation.y+Math.PI*3)%(Math.PI*2))-Math.PI;
+    clerk.rotation.y+=diff*Math.min(1,dt*7);
+    // 卡住偵測
+    AI.stuck = moved<speed*dt*0.25 ? AI.stuck+dt : 0;
+    if(AI.stuck>1.2){ AI.path=[]; AI.stuck=0;
+      if(AI.state==='CHASE'&&AI.lastSeen)setPathTo(AI.lastSeen.x,AI.lastSeen.z); }
+    // 腳步聲：距離越近越清楚
+    AI.stepT+=dt*speed;
+    if(AI.stepT>2.6){AI.stepT=0;
+      if(dP<18&&!blocked(clerk.position.x,clerk.position.z,px,pz,2.6)||dP<7)
+        SFX.step(Math.max(0.01,0.16*(1-dP/20)));
+    }
+  }
+  var chasing=AI.state==='CHASE';
+  alertHalo.material.opacity += ((chasing?0.55:0)-alertHalo.material.opacity)*Math.min(1,dt*4);
+}
+
+/* ============================================================
+   11. 局內更新
+   ============================================================ */
+/* 姿勢：站立 / 潛行。
+   潛行用 C 而不是 Ctrl —— 瀏覽器裡 Ctrl+W 會直接關掉分頁，preventDefault 攔不住。 */
+var crouchNow=false;
+function poseHeight(){          // 店員視線判定用的玩家高度
+  return crouchNow?1.05:1.45;
+}
+function poseName(){ return crouchNow?'潛行':'站立'; }
+
+function stepPlayer(dt){
+  var base=CFG.walkSpeed*(G.upgrades.shoes?1.12:1);
+  var sprintS=CFG.sprintSpeed*(G.upgrades.shoes?1.12:1);
+  var load=G.run.used/CFG.capacity, loadMul=1-0.14*Math.min(1,load);
+  var wantSprint=!!(keys['shift']||keys['shiftleft']||tRun);
+  var wantCrouch=!!(keys['c']||tDuck);
+
+  // 推移轉向：游標離開中央圈多遠，就以多快的速度持續轉頭。
+  // 游標只要待在中央附近就能操作，所以在雙螢幕上不會跑出視窗。
+  if(lookMode==='steer'&&pointerInside){
+    var dz=0.11;
+    var ax=Math.abs(cursorNX)>dz ? (Math.abs(cursorNX)-dz)/(1-dz)*(cursorNX<0?-1:1) : 0;
+    var ay=Math.abs(cursorNY)>dz ? (Math.abs(cursorNY)-dz)/(1-dz)*(cursorNY<0?-1:1) : 0;
+    yaw   -= ax*Math.abs(ax)*CFG.steerYaw*dt;
+    pitch -= ay*Math.abs(ay)*CFG.steerPitch*dt;
+    pitch = Math.max(-1.25,Math.min(1.25,pitch));
+  }
+  // 移動轉向模式下，把游標推到畫面左右邊緣可以繼續轉
+  else if(!locked&&lockFailed&&CFG.edgeTurn>0){
+    var edge=0.08;
+    if(cursorX<edge)      yaw += (1-cursorX/edge)*CFG.edgeTurn*dt;
+    else if(cursorX>1-edge) yaw -= (1-(1-cursorX)/edge)*CFG.edgeTurn*dt;
+  }
+  if(keys['arrowleft'])yaw+=dt*1.9;
+  if(keys['arrowright'])yaw-=dt*1.9;
+  if(keys['arrowup'])pitch=Math.min(1.25,pitch+dt*1.3);
+  if(keys['arrowdown'])pitch=Math.max(-1.25,pitch-dt*1.3);
+
+  var f=(keys['w']?1:0)-(keys['s']?1:0), s=(keys['d']?1:0)-(keys['a']?1:0);
+  var analog=1;
+  if(IS_TOUCH&&touchMove.mag>0){ f=touchMove.f; s=touchMove.s; analog=touchMove.mag; }
+  var len=Math.hypot(f,s);
+  var dirX=0,dirZ=0;
+  if(len>0){
+    f/=len; s/=len;
+    var sinY=Math.sin(yaw),cosY=Math.cos(yaw);
+    dirX = -sinY*f + cosY*s;
+    dirZ = -cosY*f - sinY*s;
+    if(!G.run.firstMoveDone){G.run.firstMoveDone=true;ev('first_move');}
+  }
+
+  crouchNow = wantCrouch;
+  var sp, eye=1.65, sprintingNow=false;
+
+  if(crouchNow){ sp=base*0.45*loadMul; eye=1.05; }
+  else if(wantSprint){ sp=sprintS*loadMul; eye=1.65; sprintingNow=true; }
+  else { sp=base*loadMul; }
+
+  sp*=analog;                                   // 搖桿推多少就走多快
+  var wish=new THREE.Vector3(dirX*sp,0,dirZ*sp);
+  vel.x += (wish.x-vel.x)*Math.min(1,dt*13);
+  vel.z += (wish.z-vel.z)*Math.min(1,dt*13);
+
+  var p={x:camera.position.x+vel.x*dt, z:camera.position.z+vel.z*dt};
+  resolve(p,0.36);
+  camera.position.x=p.x; camera.position.z=p.z;
+
+  // 腳步噪音：潛行幾乎沒聲音，這是它真正的用途
+  var moving=Math.hypot(vel.x,vel.z)>0.7;
+  G.run.noiseTimer-=dt;
+  if(moving&&G.run.noiseTimer<=0){
+    G.run.noiseTimer = sprintingNow?0.34:(crouchNow?0.85:0.56);
+    makeNoise(sprintingNow?CFG.hearSprint:(crouchNow?CFG.hearWalk*0.35:CFG.hearWalk));
+  }
+  // 頭部晃動
+  var bob=moving?Math.sin(G.run.t*(sprintingNow?13:9))*(sprintingNow?0.055:0.032):0;
+  camera.position.y=eye+bob;
+  camera.rotation.set(pitch,yaw,0,'YXZ');
+
+  // 撤離判定
+  var inExit = p.x>EXIT.x0&&p.x<EXIT.x1&&p.z>EXIT.z0&&p.z<EXIT.z1;
+  if(inExit&&G.run.unlocked)extract();
+}
+
+function extract(){
+  var r=G.run; if(r.extracted||r.caught)return;
+  r.extracted=true; ev('extracted',{value:r.value,forbidden:r.forbiddenTaken});
+  var bonus = r.forbiddenTaken?CFG.riskBonus:1;
+  r.gross=r.value; r.bonus=Math.round(r.value*(bonus-1)); r.net=Math.round(r.value*bonus);
+  G.cash += r.net;
+  STATS.extracted++; STATS.times.push(r.t); STATS.cashTotal+=r.net;
+  STATS.streak++;
+  r.streakAfter=STATS.streak;
+  r.newRecord = STATS.streak>STATS.bestStreak;
+  if(r.newRecord)STATS.bestStreak=STATS.streak;
+  if(r.net>STATS.bestShift)STATS.bestShift=r.net;
+  if(r.forbiddenTaken){STATS.forbiddenSurvived++; STATS.deepestShift=Math.max(STATS.deepestShift,G.shift);}
+  pushHistory(r,'extract');
+  droneOff(); setDanger(false); SFX.register();
+  save(); endRun();
+}
+function caught(){
+  var r=G.run; if(r.extracted||r.caught)return;
+  r.caught=true; r.gross=r.value; r.bonus=0; r.net=0;
+  ev('caught',{value:r.value,at:+r.t.toFixed(1)});
+  STATS.caught++; STATS.times.push(r.t);
+  // 招財貓：保住最貴的一件
+  if(G.upgrades.charm){
+    var bk=null,bv=-1;
+    Object.keys(r.loot).forEach(function(k){ if(r.loot[k].val>bv){bv=r.loot[k].val;bk=k;} });
+    if(bk){ r.net=r.loot[bk].val; r.charmSaved=r.loot[bk].def.name; G.cash+=r.net;
+            STATS.cashTotal+=r.net; }
+  }
+  r.streakBroken=STATS.streak; STATS.streak=0;
+  pushHistory(r,'caught');
+  droneOff(); SFX.caught();
+  save(); startCatchCam();
+}
+
+/* 被抓：鏡頭轉向店員做特寫定格 —— 不管玩家原本面朝哪邊 */
+var catchCam=null;
+function startCatchCam(){
+  G.phase='catchcam';
+  if(document.pointerLockElement)document.exitPointerLock();
+  hidePause();
+  document.body.classList.add('catchcam');
+  // 店員轉過來直視玩家，換上發現玩家的那張臉
+  var dxc=camera.position.x-clerk.position.x, dzc=camera.position.z-clerk.position.z;
+  clerk.rotation.y=Math.atan2(-dxc,-dzc);
+  clerk.visible=true;
+  armLift=-1.35; armL.rotation.x=-1.35; armR.rotation.x=-1.35;
+  armL.rotation.z=0.12; armR.rotation.z=-0.12;
+  legL.rotation.x=0; legR.rotation.x=0; head.rotation.x=0.1;
+  faceMat.map=faceAlert; faceMat.needsUpdate=true;
+  cap.material=itemMat(0xFF3B30);
+  alertHalo.material.opacity=0.72;
+  // 目標：對準他的頭
+  var tx=clerk.position.x, tz=clerk.position.z, ty=1.74;
+  var hd=Math.max(0.3,Math.hypot(tx-camera.position.x,tz-camera.position.z));
+  var y1=Math.atan2(-(tx-camera.position.x),-(tz-camera.position.z));
+  var diff=((y1-yaw+Math.PI*3)%(Math.PI*2))-Math.PI;   // 走最短路徑轉過去
+  catchCam={t:0,yaw0:yaw,yaw1:yaw+diff,
+    pitch0:pitch,pitch1:Math.atan2(ty-camera.position.y,hd),
+    fov0:camera.fov};
+  $('caught').classList.add('on');
+  $('vignette').classList.add('on');
+}
+function stepCatchCam(dt){
+  catchCam.t+=dt;
+  var k=Math.min(1,catchCam.t/0.28), e=k*k*(3-2*k);
+  yaw   = catchCam.yaw0  +(catchCam.yaw1  -catchCam.yaw0 )*e;
+  pitch = catchCam.pitch0+(catchCam.pitch1-catchCam.pitch0)*e;
+  camera.rotation.set(pitch,yaw,0,'YXZ');
+  camera.fov = catchCam.fov0+(47-catchCam.fov0)*e;
+  camera.updateProjectionMatrix();
+  if(catchCam.t>1.75){
+    camera.fov=catchCam.fov0; camera.updateProjectionMatrix();
+    catchCam=null;
+    $('caught').classList.remove('on');
+    document.body.classList.remove('catchcam');
+    endRun();
+  }
+}
+function pushHistory(r,result){
+  STATS.history.push({shift:G.shift,net:r.net,gross:r.gross,result:result,
+    t:Math.round(r.t),forbidden:!!r.forbiddenTaken});
+  if(STATS.history.length>40)STATS.history.shift();
+}
+function endRun(){
+  G.phase='result';
+  if(document.pointerLockElement)document.exitPointerLock();
+  hidePause();
+  renderReceipt();
+  show('s-result');
+}
+
+/* ============================================================
+   12. HUD
+   ============================================================ */
+var $=function(id){return document.getElementById(id);};
+function setObjective(text,alarm,hint){
+  $('objective').querySelector('.line').textContent=text;
+  $('objective').querySelector('.hint').textContent=hint||'';
+  $('objective').classList.toggle('alarm',!!alarm);
+}
+function showBeat(l1,l2,l3,ms){
+  var b=$('beat');
+  b.querySelector('.b1').textContent=l1;
+  b.querySelector('.b2').textContent=l2||'';
+  b.querySelector('.b3').textContent=l3||'';
+  b.classList.add('on');
+  clearTimeout(showBeat._t);
+  showBeat._t=setTimeout(function(){b.classList.remove('on');},ms||6000);
+}
+function toast(msg){
+  var d=document.createElement('div'); d.textContent=msg;
+  $('toast').appendChild(d);
+  setTimeout(function(){d.remove();},2200);
+}
+function updateExitChip(){
+  var c=$('exitchip'), r=G.run;
+  if(!r){c.className='';c.textContent='後門鎖定';return;}
+  if(r.danger){c.className='alarm';c.textContent='快從後門走';}
+  else if(r.unlocked){c.className='on';c.textContent='可以脫身了';}
+  else{c.className='';c.textContent='還差 '+Math.max(0,CFG.extractItems-r.count)+' 件';}
+}
+function updateHUD(){
+  var r=G.run; if(!r)return;
+  $('bagval').innerHTML='$'+r.value+'<small>'+r.count+' 件</small>';
+  $('capnum').textContent=r.used+' / '+CFG.capacity+' 格';
+  var pct=Math.min(100,r.used/CFG.capacity*100);
+  $('barfill').style.width=pct+'%';
+  $('basket').classList.toggle('full',pct>=100);
+  $('shiftno').textContent=G.shift;
+  $('cashhud').textContent='$'+G.cash;
+  $('streakhud').textContent=STATS.streak;
+  updateExitChip();
+}
+
+/* ============================================================
+   13. 收據 / 商店 / 數據
+   ============================================================ */
+function renderReceipt(){
+  var r=G.run, rows='';
+  var keysL=Object.keys(r.loot);
+  if(!keysL.length)rows='<div class="row mut"><span>（空籃）</span><span>$0</span></div>';
+  keysL.forEach(function(k){
+    var it=r.loot[k];
+    rows+='<div class="row'+(it.def.tier==='forbidden'?' f':'')+'"><span>'+
+      it.def.name+(it.n>1?' ×'+it.n:'')+'</span><span>$'+(it.val*it.n)+'</span></div>';
+  });
+  var mm=Math.floor(r.t/60), ss=Math.floor(r.t%60);
+  var html=
+    '<h2>午夜超商</h2>'+
+    '<div class="meta">未結帳清單 · 第 '+String(G.shift).padStart(3,'0')+' 次 · 停留 '+
+    mm+':'+String(ss).padStart(2,'0')+'</div>'+
+    '<div class="rule"></div>'+ rows +'<div class="rule"></div>'+
+    '<div class="row"><span>贓物小計</span><span>$'+r.gross+'</span></div>'+
+    (r.forbiddenTaken&&!r.caught
+      ? '<div class="row"><span>風險加成 ×'+CFG.riskBonus.toFixed(2)+'</span><span>+$'+r.bonus+'</span></div>'
+      : '')+
+    (r.caught?'<div class="row mut"><span>全部丟在現場</span><span>-$'+r.gross+'</span></div>':'')+
+    (r.charmSaved?'<div class="row"><span>護身符保住</span><span>'+r.charmSaved+'</span></div>':'')+
+    '<div class="rule"></div>'+
+    '<div class="tot"><span>'+(r.caught?'實得':'本次獲利')+'</span><span>$'+r.net+'</span></div>'+
+    '<div class="streakbox">'+
+      (r.caught
+        ? '<b>連續紀錄中斷</b>停在第 '+r.streakBroken+' 次'
+        : '<b>連續 '+r.streakAfter+' 次沒被抓</b>'+
+          (r.newRecord&&r.streakAfter>1?'個人最佳紀錄':'個人最佳 '+STATS.bestStreak+' 次'))+
+    '</div>'+
+    '<div class="foot">'+
+      (r.caught
+        ? '店員抓住你的手腕，提袋掉在地上。<br>已變賣的錢和身上的裝備他拿不走。'
+        : (r.forbiddenTaken
+            ? '你帶著那個不該存在的東西出了後門。<br>沒人問你那是什麼。'
+            : '乾淨脫身。提袋裡沒有奇怪的東西。'))+
+      '<br>累計變賣所得 $'+G.cash+
+    '</div>'+
+    (r.caught?'<div class="stamp">當場被逮</div>':'');
+  $('receipt').innerHTML=html;
+}
+function renderShop(){
+  $('shopcash').textContent='$'+G.cash;
+  renderCard();
+  var g=$('shopgrid'); g.innerHTML='';
+  UPGRADES.forEach(function(u){
+    var owned=!!G.upgrades[u.id], can=!owned&&G.cash>=u.cost;
+    var d=document.createElement('div');
+    d.className='up'+(owned?' owned':'');
+    d.innerHTML='<h3>'+u.name+'</h3><p>'+u.desc+'</p>'+
+      '<div class="cost">'+(owned?'已裝備':'$'+u.cost)+'</div>'+
+      '<button '+(can?'':'disabled')+'>'+(owned?'已擁有':(G.cash>=u.cost?'買下':'錢不夠'))+'</button>';
+    if(can)d.querySelector('button').addEventListener('click',function(){
+      G.cash-=u.cost; G.upgrades[u.id]=true;
+      if(u.id==='bag')CFG.capacity+=6;
+      if(u.id==='light'){flash.intensity=1.5;flash.distance=34;flash.angle=THREE.MathUtils.degToRad(36);}
+      ev('upgrade_bought',{id:u.id}); SFX.register(); renderShop(); save();
+    });
+    g.appendChild(d);
+  });
+  renderNext(); renderHistory(); renderMetrics();
+}
+function renderCard(){
+  var s=STATS;
+  $('card').innerHTML=
+    '<div class="cl">'+
+      '<div class="ct">目前連續沒被抓</div>'+
+      '<div class="cn">'+s.streak+'<em>次</em></div>'+
+      (s.streak>0&&s.streak>=s.bestStreak?'<div class="cb">個人最佳紀錄</div>':
+        '<div class="cs">個人最佳 '+s.bestStreak+' 次</div>')+
+    '</div>'+
+    '<div class="cr">'+
+      '<div><span>單次最高獲利</span><b>$'+s.bestShift+'</b></div>'+
+      '<div><span>帶著非賣品脫身</span><b>'+s.forbiddenSurvived+' 次</b></div>'+
+      '<div><span>最深記錄</span><b>第 '+(s.deepestShift||0)+' 次</b></div>'+
+      '<div><span>總下手 / 被抓</span><b>'+s.runs+' / '+s.caught+'</b></div>'+
+    '</div>';
+}
+function renderNext(){
+  var next=G.shift+1, d=Math.min(1,(next-1)/9);
+  $('next').innerHTML=
+    '<div><span>店員追逐速度</span><b>×'+(1+0.24*d).toFixed(2)+'</b></div>'+
+    '<div><span>店員視線距離</span><b>'+Math.round(CFG.visionRange*(1+0.35*d))+' m</b></div>'+
+    '<div><span>非賣品價值</span><b>$'+Math.round(CFG.forbiddenValue*(1+0.6*d))+'</b></div>';
+}
+function renderHistory(){
+  var h=STATS.history.slice(-10).reverse();
+  if(!h.length){$('history').innerHTML='<tbody><tr><td class="mut">還沒有紀錄</td></tr></tbody>';return;}
+  var html='<thead><tr><th>次數</th><th>結果</th><th>非賣品</th><th>時間</th>'+
+    '<th style="text-align:right">獲利</th></tr></thead><tbody>';
+  h.forEach(function(x){
+    html+='<tr><td>第 '+x.shift+' 次</td>'+
+      '<td class="'+(x.result==='caught'?'bad':'good')+'">'+
+        (x.result==='caught'?'被抓':'脫身')+'</td>'+
+      '<td>'+(x.forbidden?'✓':'—')+'</td>'+
+      '<td>'+Math.floor(x.t/60)+':'+String(x.t%60).padStart(2,'0')+'</td>'+
+      '<td>$'+x.net+'</td></tr>';
+  });
+  $('history').innerHTML=html+'</tbody>';
+}
+function copyBrag(){
+  var s=STATS;
+  var txt='【午夜超商小偷 · 犯案紀錄】\n'+
+    '連續 '+s.streak+' 次沒被抓（個人最佳 '+s.bestStreak+' 次）\n'+
+    '單次最高獲利 $'+s.bestShift+'\n'+
+    '帶著非賣品脫身 '+s.forbiddenSurvived+' 次\n'+
+    '最深撐到第 '+(s.deepestShift||0)+' 次\n'+
+    '總共下手 '+s.runs+' 次，被抓 '+s.caught+' 次';
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(function(){toast('戰績已複製，可以去炫耀了');},
+      function(){console.log(txt);toast('已輸出到 console');});
+  }else{console.log(txt);toast('已輸出到 console');}
+}
+function renderMetrics(){
+  var s=STATS;
+  var avg=s.times.length?(s.times.reduce(function(a,b){return a+b;},0)/s.times.length):0;
+  var rows=[
+    ['下手次數', s.runs],
+    ['成功脫身 / 被抓', s.extracted+' / '+s.caught],
+    ['最長連續沒被抓', s.bestStreak+' 次'],
+    ['平均單局時間', (Math.floor(avg/60))+':'+String(Math.floor(avg%60)).padStart(2,'0')],
+    ['看見非賣品的局數', s.forbiddenSeen],
+    ['拿走非賣品的局數', s.forbiddenPicked, true],
+    ['「已可脫身後」仍去拿的局數', s.pickedAfterUnlock, true],
+    ['點「再幹一次」的次數', s.nextShifts, true],
+    ['累計變賣所得', '$'+s.cashTotal]
+  ];
+  var html='<thead><tr><th>指標</th><th style="text-align:right">值</th></tr></thead><tbody>';
+  rows.forEach(function(r){
+    html+='<tr'+(r[2]?' class="key"':'')+'><td>'+r[0]+'</td><td>'+r[1]+'</td></tr>';
+  });
+  html+='</tbody>';
+  $('metrics').innerHTML=html;
+}
+function exportData(){
+  return JSON.stringify({config:CFG,stats:STATS,cash:G.cash,upgrades:G.upgrades,
+    lastRunLog:G.run?G.run.log:[]},null,2);
+}
+function copyData(){
+  var t=exportData();
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(t).then(function(){toast('數據已複製到剪貼簿');},
+      function(){console.log(t);toast('已輸出到 console');});
+  }else{console.log(t);toast('已輸出到 console');}
+}
+
+/* ============================================================
+   14. 存檔（每位測試者的瀏覽器本地，讀寫都包 try/catch）
+   ============================================================ */
+function save(){
+  try{localStorage.setItem('nightshift_v1',
+    JSON.stringify({cash:G.cash,upgrades:G.upgrades,stats:STATS,shift:G.shift}));}catch(e){}
+}
+function load(){
+  try{
+    var s=localStorage.getItem('nightshift_v1'); if(!s)return;
+    var d=JSON.parse(s);
+    G.cash=d.cash||0; G.upgrades=d.upgrades||{}; G.shift=d.shift||0;
+    if(d.stats)STATS=Object.assign(STATS,d.stats);
+    if(G.upgrades.bag)CFG.capacity=DEF.capacity+6;
+    if(G.upgrades.light){flash.intensity=1.5;flash.distance=34;
+      flash.angle=THREE.MathUtils.degToRad(36);}
+  }catch(e){}
+}
+load();
+setupTouch();
+$('btn-start').innerHTML='第 '+(G.shift+1)+' 次下手 <kbd>Enter</kbd>';
+if(G.shift>0)$('cashhud').textContent='$'+G.cash;
+
+/* ============================================================
+   15. 畫面切換
+   ============================================================ */
+var SCREENS=['s-title','s-result','s-shop'];
+function show(id){ SCREENS.forEach(function(s){ $(s).classList.toggle('hidden',s!==id); }); }
+function hideAll(){ SCREENS.forEach(function(s){ $(s).classList.add('hidden'); }); }
+
+function startGame(){
+  audioInit(); if(AC&&AC.state==='suspended')AC.resume();
+  hideAll(); manualPause=false; G.phase='play'; newRun(); requestLock();
+}
+function gotoShop(){ G.phase='shop'; renderShop(); show('s-shop'); }
+function nextShift(){
+  STATS.nextShifts++; ev('next_shift_started'); save();
+  hideAll(); manualPause=false; G.phase='play'; newRun(); requestLock();
+}
+$('btn-start').addEventListener('click',startGame);
+$('btn-next').addEventListener('click',gotoShop);
+$('btn-shift').addEventListener('click',nextShift);
+$('btn-copy').addEventListener('click',copyData);
+$('btn-brag').addEventListener('click',copyBrag);
+$('dev-copy').addEventListener('click',copyData);
+
+/* ============================================================
+   16. 調參面板
+   ============================================================ */
+function buildKnobs(){
+  KNOBS.forEach(function(k){
+    var wrap=document.createElement('div'); wrap.className='knob';
+    var id='knob-'+k[1];
+    wrap.innerHTML='<label for="'+id+'">'+k[2]+'</label><output id="out-'+k[1]+'"></output>'+
+      '<input id="'+id+'" type="range" min="'+k[3]+'" max="'+k[4]+'" step="'+k[5]+'">';
+    $(k[0]).appendChild(wrap);
+    var input=wrap.querySelector('input'), out=wrap.querySelector('output');
+    function sync(){ out.textContent=(+CFG[k[1]]).toFixed(k[5]<1?(k[5]<0.01?4:2):0)+k[6];
+                     input.value=CFG[k[1]]; }
+    input.addEventListener('input',function(){
+      CFG[k[1]]=parseFloat(input.value); sync(); updateHUD();
+    });
+    k.sync=sync; sync();
+  });
+}
+buildKnobs();
+$('dev-reset').addEventListener('click',function(){
+  Object.keys(DEF).forEach(function(k){CFG[k]=DEF[k];});
+  if(G.upgrades.bag)CFG.capacity=DEF.capacity+6;
+  KNOBS.forEach(function(k){if(k.sync)k.sync();}); updateHUD(); toast('參數已重置');
+});
+function toggleDev(){
+  var d=$('dev'); d.classList.toggle('on');
+  $('devtoggle').textContent = d.classList.contains('on') ? 'T · 收起' : 'T · 調參';
+  if(d.classList.contains('on')&&document.pointerLockElement)document.exitPointerLock();
+}
+$('devtoggle').addEventListener('click',toggleDev);
+function renderLog(){
+  if(!$('dev').classList.contains('on')||!G.run)return;
+  var L=G.run.log.slice(-40).reverse();
+  $('devlog').innerHTML=L.map(function(e){
+    return '<div>'+e.t.toFixed(1)+'s <b>'+e.name+'</b>'+
+      (e.data?' '+JSON.stringify(e.data):'')+'</div>';}).join('');
+}
+
+/* ============================================================
+   17. 主迴圈
+   ============================================================ */
+var flickerT=0;
+function frame(now){
+  requestAnimationFrame(frame);
+  var dt=Math.min(0.05,(now-G.lastTime)/1000); G.lastTime=now;
+
+  document.body.classList.toggle('playing',
+    G.phase==='play'&&!isPaused()&&lookMode==='delta');
+  updateFeed(dt,now);
+  if(G.phase==='catchcam'&&catchCam)stepCatchCam(dt);
+  if(G.phase==='play'&&G.run){
+    if(!isPaused()){
+      G.run.t+=dt;
+      stepPlayer(dt);
+      stepClerk(dt);
+      runScript();
+      updateAim();
+      var mm=Math.floor(G.run.t/60),ss=Math.floor(G.run.t%60);
+      $('clock').textContent=mm+':'+String(ss).padStart(2,'0');
+      $('posehud').textContent=poseName();
+      // 停電閃爍
+      if(G.run.danger){
+        flickerT-=dt;
+        if(flickerT<=0){ flickerT=0.1+Math.random()*0.55;
+          var on=Math.random()<0.22;
+          lamps.forEach(function(L){L.intensity=on?0.3:0.05;});
+          ambient.intensity=on?0.3:0.14;
+        }
+        // 疏散導引燈帶在停電時閃動 —— 黑掉之後這是唯一看得見的路
+        var gp=0.45+Math.abs(Math.sin(now/230))*0.5;
+        guides.forEach(function(m){m.material.opacity=gp;});
+      }
+    }
+  }
+  // 稀有品浮動 + 價格標依距離淡入（越裡面的數字越大，這是貪婪迴圈的核心提示）
+  var t=now/1000;
+  for(var i=0;i<itemMeshes.length;i++){
+    var o=itemMeshes[i]; if(o.taken)continue;
+    if(o.def.tier!=='common'){
+      o.mesh.position.y=o.baseY+Math.sin(t*1.7+i)*0.045;
+      o.mesh.rotation.y+=0.005;
+      if(o.halo){ o.halo.position.y=o.baseY+0.18+Math.sin(t*1.7+i)*0.045;
+        o.halo.material.opacity=(o.def.tier==='forbidden'?0.62:0.42)+Math.sin(t*2.6+i)*0.16; }
+    }
+    if(o.tag){
+      var dd=Math.hypot(o.tag.position.x-camera.position.x,o.tag.position.z-camera.position.z);
+      var TR=tagRange();
+      var vis = dd<TR ? Math.min(1,(TR-dd)/4) : 0;
+      if(o.def.tier==='common')vis*=0.72;
+      o.tag.material.opacity=vis;
+      o.tag.visible=vis>0.02;
+    }
+  }
+  if(beacon)beacon.material.opacity=0.10+Math.sin(t*1.5)*0.045;
+  renderer.render(scene,camera);
+}
+requestAnimationFrame(frame);
+window.addEventListener('beforeunload',save);
+})();
+</script>

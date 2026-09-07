@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0A0C0A">
+<title>午夜超商小偷</title>
+<!--
+  午夜超商小偷 — 灰盒驗證原型 啟動器
+
+  這支檔案做兩件事：
+  1. 用 allow="pointer-lock" 授權鎖定滑鼠（桌機才需要，就是 CS 那種手感）
+  2. 鎖定行動裝置的縮放與捲動，讓橫向全螢幕操作不會被瀏覽器手勢干擾
+
+  使用方式：把 index.html 和 night_shift_proto.html 放在同一個資料夾。
+    · 本機：雙擊 index.html
+    · 網路：整包上傳到 GitHub Pages / itch.io / 自家空間即可
+  兩支檔案都不含美術素材，Three.js 與字型走公開 CDN。
+-->
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#0A0C0A;
+    touch-action:none;-webkit-text-size-adjust:100%}
+  #game{display:block;border:0;width:100%;height:100%}
+  #err{position:fixed;inset:0;display:none;align-items:center;justify-content:center;
+    padding:40px;text-align:center;line-height:1.9;color:#7E8F80;background:#0A0C0A;
+    font-family:'Noto Sans TC','Microsoft JhengHei',system-ui,sans-serif;font-size:14px}
+  #err b{color:#DCEBD8;display:block;margin-bottom:10px;font-size:17px}
+  #err code{font-family:ui-monospace,monospace;color:#FFC93C}
+</style>
+</head>
+<body>
+<iframe id="game" src="night_shift_proto.html"
+        allow="pointer-lock; fullscreen; autoplay"
+        title="午夜超商小偷"></iframe>
+<div id="err">
+  <div>
+    <b>找不到遊戲檔案</b>
+    請確認 <code>night_shift_proto.html</code> 和這支 <code>index.html</code> 放在同一個資料夾。
+  </div>
+</div>
+<script>
+  // 手機瀏覽器的網址列會吃掉高度，用實際可視高度校正
+  function fit(){
+    document.getElementById('game').style.height=window.innerHeight+'px';
+  }
+  window.addEventListener('resize',fit);
+  window.addEventListener('orientationchange',function(){setTimeout(fit,250);});
+  fit();
+
+  // 載入失敗時給一句有用的話，而不是一片黑
+  var f=document.getElementById('game'), ok=false;
+  f.addEventListener('load',function(){ ok=true; });
+  setTimeout(function(){
+    if(!ok){ f.style.display='none'; document.getElementById('err').style.display='flex'; }
+  },5000);
+</script>
+</body>
+</html>
