@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>午夜超商小偷</title>
+  <rect width="512" height="512" fill="#0A0C0A"/>
+  <!-- maskable 安全區：主體收在中央 80% 內 -->
+  <g transform="translate(256 262)">
+    <!-- 冷凍室那道紫光 -->
+    <rect x="-14" y="-190" width="28" height="150" fill="#C77DFF" opacity=".22"/>
+    <!-- 提袋 -->
+    <path d="M-96 -48 h192 l16 176 a20 20 0 0 1 -20 22 h-184 a20 20 0 0 1 -20 -22 z"
+          fill="#FFC93C"/>
+    <!-- 提袋提把 -->
+    <path d="M-52 -48 v-30 a52 52 0 0 1 104 0 v30"
+          fill="none" stroke="#FFC93C" stroke-width="20" stroke-linecap="round"/>
+    <!-- 袋口陰影 -->
+    <rect x="-96" y="-48" width="192" height="20" fill="#0A0C0A" opacity=".22"/>
+    <!-- 露出來的非賣品 -->
+    <circle cx="6" cy="-70" r="26" fill="#C77DFF"/>
+    <circle cx="-22" cy="-58" r="16" fill="#C77DFF" opacity=".85"/>
+  </g>
+</svg>

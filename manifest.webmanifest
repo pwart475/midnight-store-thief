@@ -1,0 +1,27 @@
+{
+  "name": "午夜超商小偷",
+  "short_name": "午夜超商",
+  "description": "半夜潛入超商偷東西。明明已經可以乾淨脫身，你還會不會回頭去拿最貴的那件？",
+  "lang": "zh-Hant",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "landscape",
+  "background_color": "#0A0C0A",
+  "theme_color": "#0A0C0A",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
