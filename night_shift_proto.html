@@ -361,7 +361,8 @@
   body.touch #objective{top:auto;bottom:calc(38vh + 10px);max-width:56vw}
   body.touch #beat{top:auto;bottom:calc(38vh + 60px);transform:translateX(-50%);width:min(70vw,460px)}
   body.touch #pa{bottom:calc(38vh + 6px)}
-  body.touch #toast{bottom:calc(38vh + 110px)}
+  body.touch #toast{bottom:calc(38vh + 62px);max-width:52vw}
+  body.touch #toast div{text-align:center}
 
   /* 全螢幕與調參：擺在正下方中央，兩側留給搖桿和按鈕 */
   #fsbtn{position:fixed;left:50%;bottom:12px;transform:translateX(-100%);margin-left:-5px;
@@ -529,6 +530,8 @@ var CFG = Object.assign({},DEF);
 
 // 觸控裝置：改用虛擬搖桿 + 拖曳轉視角，並降低算繪解析度換取流暢度
 var IS_TOUCH = (navigator.maxTouchPoints||0)>0 || ('ontouchstart' in window);
+// 提示文字要講玩家手上真的有的東西：手機沒有 E 鍵，也沒有 Shift
+function K(desktop,touch){ return IS_TOUCH?touch:desktop; }
 
 var KNOBS = [
   ['k-player','walkSpeed','走路速度',2,8,.1,' m/s'],
@@ -1228,10 +1231,11 @@ function newRun(){
   ev('game_start',{shift:G.shift});
   STATS.runs++;
   updateHUD();
-  setObjective('走到商品前面，按 E 塞進提袋',false,
+  setObjective(K('走到商品前面，按 E 塞進提袋','走到商品前面，按「拿」塞進提袋'),false,
     '需要 '+CFG.extractItems+' 件才能脫身。櫃檯上就有兩件。');
   if(G.shift===1) showBeat('已從後門進入',
-    'W A S D 走路，滑鼠轉頭，看到東西按 E。',
+    K('W A S D 走路，滑鼠轉頭，看到東西按 E。',
+      '左搖桿走路，右半邊拖曳轉頭，看到東西按「拿」。'),
     '走道上方有店裡的監視螢幕，抬頭就看得到誰在哪。',7000);
 }
 
@@ -1517,7 +1521,8 @@ function setupTouch(){
     '<div><b>衝</b>按住衝刺・很吵</div>'+
     '<div><b>蹲</b>切換潛行・幾乎沒聲音</div>'+
     '<div><b>抬頭</b>看監視螢幕</div>'+
-    '<div><b>⛶</b>下方中央可切全螢幕</div>';
+    (fsSupported()?'<div><b>⛶</b>下方中央可切全螢幕</div>'
+      :'<div><b>iOS</b>用 Safari 的「分享 → 加入主畫面」，從主畫面圖示開就沒有瀏覽器介面</div>');
   // 觸控裝置不需要指標鎖定，直接進遊戲
   lockFailed=true; setLookMode('delta');
   checkOrient();
@@ -1604,6 +1609,7 @@ function updateAim(){
     pr.innerHTML='<kbd>E</kbd>'+d.name+
       '<span class="p">$'+val+'</span>'+
       '<span class="s">'+d.slots+' 格'+(forb?' · ⚠ 非賣品':'')+(fits?'':' · 提袋放不下')+'</span>';
+    if(IS_TOUCH)pr.innerHTML=pr.innerHTML.replace('<kbd>E</kbd>','<kbd>拿</kbd>');
     cross.className = forb?'forbid':'hot';
     if(forb&&!G.run.forbiddenSeen){
       G.run.forbiddenSeen=true; STATS.forbiddenSeen++; ev('forbidden_seen');
@@ -1659,8 +1665,10 @@ function triggerForbidden(){
   flashScreen();
   setDanger(true);
   SFX.forbidden();
-  setObjective('放下已經太晚了 —— 衝回後門',true,'Shift 衝刺比店員快，但腳步聲會被聽到。');
-  showBeat('他知道了','冷凍室的門在你身後。','按住 Shift 衝回後門。',5000);
+  setObjective('放下已經太晚了 —— 衝回後門',true,
+    K('Shift 衝刺比店員快，但腳步聲會被聽到。','按住「衝」比店員快，但腳步聲會被聽到。'));
+  showBeat('他知道了','冷凍室的門在你身後。',
+    K('按住 Shift 衝回後門。','按住「衝」跑回後門。'),5000);
   setTimeout(function(){ if(G.phase==='play')pa('偵測到非賣品離架。保全程序已啟動，請留在原地不要移動。'); },1600);
   AI.state='CHASE'; AI.lastSeen={x:camera.position.x,z:camera.position.z}; AI.timer=0;
   AI.path=[]; clerk.visible=true;
@@ -2272,15 +2280,15 @@ function exitFullscreen(){
   if(fn)try{ fn.call(document); }catch(e){}
 }
 function toggleFullscreen(){
-  if(!fsSupported()){
-    toast('這個瀏覽器不支援全螢幕 · iPhone 請用「分享 → 加入主畫面」');
-    return;
-  }
+  if(!fsSupported())return;
   if(fsActive())exitFullscreen(); else goFullscreen();
 }
 function syncFsLabel(){
   var b=document.getElementById('fsbtn');
-  if(b)b.textContent = fsActive()? '⛶ 離開全螢幕' : '⛶ 全螢幕';
+  if(!b)return;
+  // iOS 不支援 Fullscreen API，與其留一顆按了就失敗的按鈕，不如收掉
+  if(!fsSupported()){ b.style.display='none'; return; }
+  b.textContent = fsActive()? '⛶ 離開全螢幕' : '⛶ 全螢幕';
 }
 document.addEventListener('fullscreenchange',function(){ syncFsLabel(); onResize(); });
 document.addEventListener('webkitfullscreenchange',function(){ syncFsLabel(); onResize(); });
