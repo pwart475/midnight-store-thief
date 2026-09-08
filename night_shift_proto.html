@@ -350,10 +350,26 @@
     font-size:min(3.2vh,20px);border-color:var(--price);color:var(--price)}
   #btnRun {right:24vw;bottom:9vh;width:12vh;height:12vh;max-width:76px;max-height:76px;font-size:min(2.4vh,15px)}
   #btnDuck{right:6vw;bottom:4vh; width:12vh;height:12vh;max-width:76px;max-height:76px;font-size:min(2.4vh,15px)}
-  #lookhint{position:absolute;right:6vw;top:34%;font-size:11px;color:rgba(126,143,128,.45);
-    letter-spacing:.14em;writing-mode:vertical-rl}
   body.touch #steerring{display:none!important}
-  body.touch #devtoggle{bottom:auto;top:14px;right:14px}
+
+  /* 觸控版 HUD 重新配置：搖桿在左下，所以提袋面板要讓位到左上 */
+  body.touch #basket{left:10px;top:8px;bottom:auto;width:min(44vw,196px);padding:7px 10px 8px}
+  body.touch #basket .val{font-size:27px;margin:1px 0 6px}
+  body.touch #basket .cap-label{font-size:9px}
+  body.touch #status{right:10px;top:8px;font-size:10.5px;line-height:1.5}
+  body.touch #exitchip{margin-top:5px;padding:3px 7px;font-size:10px}
+  body.touch #objective{top:auto;bottom:calc(38vh + 10px);max-width:56vw}
+  body.touch #beat{top:auto;bottom:calc(38vh + 60px);transform:translateX(-50%);width:min(70vw,460px)}
+  body.touch #pa{bottom:calc(38vh + 6px)}
+  body.touch #toast{bottom:calc(38vh + 110px)}
+
+  /* 全螢幕與調參：擺在正下方中央，兩側留給搖桿和按鈕 */
+  #fsbtn{position:fixed;left:50%;bottom:12px;transform:translateX(-100%);margin-left:-5px;
+    z-index:26;pointer-events:auto;padding:7px 12px;font-family:var(--f-mono);font-size:11px;
+    letter-spacing:.1em;background:rgba(9,12,9,.9);border:1px solid var(--line-hi);
+    color:var(--tube);cursor:pointer}
+  #fsbtn:hover{border-color:var(--price);color:var(--price)}
+  body.touch #devtoggle{left:50%;bottom:12px;right:auto;top:auto;margin-left:5px}
 
   #rotate{position:fixed;inset:0;z-index:44;display:none;align-items:center;justify-content:center;
     background:var(--ink);padding:30px;text-align:center;font-size:15px;line-height:1.9;color:var(--dim);
@@ -470,6 +486,7 @@
   <div class="s">鎖定後滑鼠不會跑出視窗，轉頭沒有邊界 · Esc 解除</div>
 </div>
 
+<button id="fsbtn">⛶ 全螢幕</button>
 <button id="devtoggle">T · 調參</button>
 <div id="dev">
   <h4>玩家</h4><div id="k-player"></div>
@@ -482,7 +499,6 @@
 
 <div id="touch">
   <div id="stickbase"><div id="stickknob"></div></div>
-  <div id="lookhint">右側拖曳轉頭</div>
   <button class="tbtn" id="btnTake">拿</button>
   <button class="tbtn" id="btnRun">衝</button>
   <button class="tbtn" id="btnDuck">蹲</button>
@@ -1355,6 +1371,7 @@ window.addEventListener('keydown',function(e){
   if(['w','a','s','d','c',' ','arrowup','arrowdown','arrowleft','arrowright'].indexOf(k)>=0)e.preventDefault();
   keys[k]=true;
   if(k==='t'){toggleDev();}
+  if(k==='f'){toggleFullscreen();}
   if(k==='m'&&G.phase==='play'){
     if(lookMode==='steer'){
       lockFailed=false; setLookMode('delta');
@@ -1499,7 +1516,8 @@ function setupTouch(){
     '<div><b>拿</b>塞進提袋</div>'+
     '<div><b>衝</b>按住衝刺・很吵</div>'+
     '<div><b>蹲</b>切換潛行・幾乎沒聲音</div>'+
-    '<div><b>抬頭</b>看監視螢幕</div>';
+    '<div><b>抬頭</b>看監視螢幕</div>'+
+    '<div><b>⛶</b>下方中央可切全螢幕</div>';
   // 觸控裝置不需要指標鎖定，直接進遊戲
   lockFailed=true; setLookMode('delta');
   checkOrient();
@@ -2190,6 +2208,8 @@ function hideAll(){ SCREENS.forEach(function(s){ $(s).classList.add('hidden'); }
 
 function startGame(){
   audioInit(); if(AC&&AC.state==='suspended')AC.resume();
+  // 手機上瀏覽器介面會吃掉三分之一畫面，開場就直接進全螢幕
+  if(IS_TOUCH&&!fsActive())goFullscreen();
   hideAll(); manualPause=false; G.phase='play'; newRun(); requestLock();
 }
 function gotoShop(){ G.phase='shop'; renderShop(); show('s-shop'); }
@@ -2229,12 +2249,52 @@ $('dev-reset').addEventListener('click',function(){
   if(G.upgrades.bag)CFG.capacity=DEF.capacity+6;
   KNOBS.forEach(function(k){if(k.sync)k.sync();}); updateHUD(); toast('參數已重置');
 });
+/* ---------- 全螢幕 ----------
+   iframe 上有 allow="fullscreen"，所以從裡面請求是被允許的。
+   例外是 iPhone 版 Safari：它完全沒有 Fullscreen API，
+   那邊唯一的辦法是「分享 → 加入主畫面」，用主畫面圖示啟動就沒有瀏覽器介面。 */
+function fsActive(){
+  return !!(document.fullscreenElement||document.webkitFullscreenElement);
+}
+function fsSupported(){
+  var el=document.documentElement;
+  return !!(el.requestFullscreen||el.webkitRequestFullscreen);
+}
+function goFullscreen(){
+  var el=document.documentElement;
+  var fn=el.requestFullscreen||el.webkitRequestFullscreen;
+  if(!fn)return false;
+  try{ var p=fn.call(el); if(p&&p.catch)p.catch(function(){}); }catch(e){ return false; }
+  return true;
+}
+function exitFullscreen(){
+  var fn=document.exitFullscreen||document.webkitExitFullscreen;
+  if(fn)try{ fn.call(document); }catch(e){}
+}
+function toggleFullscreen(){
+  if(!fsSupported()){
+    toast('這個瀏覽器不支援全螢幕 · iPhone 請用「分享 → 加入主畫面」');
+    return;
+  }
+  if(fsActive())exitFullscreen(); else goFullscreen();
+}
+function syncFsLabel(){
+  var b=document.getElementById('fsbtn');
+  if(b)b.textContent = fsActive()? '⛶ 離開全螢幕' : '⛶ 全螢幕';
+}
+document.addEventListener('fullscreenchange',function(){ syncFsLabel(); onResize(); });
+document.addEventListener('webkitfullscreenchange',function(){ syncFsLabel(); onResize(); });
+
 function toggleDev(){
   var d=$('dev'); d.classList.toggle('on');
   $('devtoggle').textContent = d.classList.contains('on') ? 'T · 收起' : 'T · 調參';
   if(d.classList.contains('on')&&document.pointerLockElement)document.exitPointerLock();
 }
 $('devtoggle').addEventListener('click',toggleDev);
+$('fsbtn').addEventListener('click',function(e){e.stopPropagation();toggleFullscreen();});
+$('fsbtn').addEventListener('touchstart',function(e){
+  e.preventDefault();e.stopPropagation();toggleFullscreen();},{passive:false});
+syncFsLabel();
 function renderLog(){
   if(!$('dev').classList.contains('on')||!G.run)return;
   var L=G.run.log.slice(-40).reverse();
