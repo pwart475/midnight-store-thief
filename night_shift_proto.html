@@ -162,6 +162,34 @@
   .btn kbd{font-family:var(--f-mono);font-size:11px;background:rgba(0,0,0,.22);padding:2px 6px}
   .btn.ghost kbd{background:rgba(255,255,255,.08)}
 
+  /* ---------- 標題選單 ---------- */
+  .menu{width:min(92vw,520px);max-height:92vh;overflow:auto;text-align:center;padding:10px 8px}
+  .menu h1{font-size:clamp(36px,8.5vw,64px);margin:4px 0 0}
+  .tagline{font-size:14px;color:var(--dim);line-height:1.78;margin:16px auto 0;max-width:34ch}
+  .menulist{display:grid;gap:10px;margin-top:30px}
+  .mbtn{display:flex;align-items:center;justify-content:center;gap:11px;padding:15px 20px;
+    background:transparent;border:1px solid var(--line-hi);color:var(--tube);
+    font-size:15px;font-weight:700;letter-spacing:.1em;cursor:pointer;
+    transition:background .14s,border-color .14s,color .14s}
+  .mbtn:hover{border-color:var(--price);color:var(--price);background:rgba(255,201,60,.06)}
+  .mbtn:focus-visible{outline:2px solid var(--tube);outline-offset:3px}
+  .mbtn.primary{background:var(--price);color:#141006;border-color:var(--price);font-weight:900}
+  .mbtn.primary:hover{filter:brightness(1.08);color:#141006;background:var(--price)}
+  .mbtn kbd{font-family:var(--f-mono);font-size:10.5px;font-weight:600;
+    background:rgba(255,255,255,.09);padding:2px 6px}
+  .mbtn.primary kbd{background:rgba(0,0,0,.2)}
+  .menufoot{margin-top:24px;font-family:var(--f-mono);font-size:11.5px;color:var(--dimmer);
+    line-height:1.85}
+  .menufoot b{color:var(--price);font-weight:600}
+  @media (max-height:560px){
+    .menu{max-height:96vh;padding:6px}
+    .menu h1{font-size:clamp(26px,7vh,40px)}
+    .tagline{font-size:12px;margin-top:9px;line-height:1.6}
+    .menulist{margin-top:14px;gap:7px}
+    .mbtn{padding:11px 16px;font-size:13.5px}
+    .menufoot{margin-top:12px;font-size:10.5px;line-height:1.6}
+  }
+
   .loop{display:grid;gap:8px;margin-top:20px;padding:16px 18px;background:#141912;
     border-left:3px solid var(--price)}
   .loop div{display:flex;gap:12px;align-items:baseline;font-size:13.5px;color:var(--tube)}
@@ -331,46 +359,74 @@
     -webkit-tap-highlight-color:transparent}
   #stage,#stage canvas,#touch{touch-action:none}
   .layer.screen,.card,.rwrap,.receipt,#dev{touch-action:pan-y}
+  /* 安全區：橫向持握時 iPhone 的凹口在左右側，home 指示條在下緣 */
+  :root{--sal:env(safe-area-inset-left,0px);--sar:env(safe-area-inset-right,0px);
+        --sab:env(safe-area-inset-bottom,0px);--sat:env(safe-area-inset-top,0px)}
   #touch{position:fixed;inset:0;z-index:22;pointer-events:none;display:none}
   body.touch #touch{display:block}
-  #stickbase{position:absolute;left:6vw;bottom:7vh;width:30vh;height:30vh;max-width:190px;max-height:190px;
-    border:2px solid rgba(220,235,216,.16);border-radius:50%;pointer-events:auto;
-    background:rgba(8,11,8,.28)}
-  #stickbase::after{content:'移動';position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-    font-size:11px;letter-spacing:.18em;color:rgba(126,143,128,.5)}
-  #stickknob{position:absolute;left:50%;top:50%;width:38%;height:38%;margin:0;
-    transform:translate(-50%,-50%);border-radius:50%;background:rgba(220,235,216,.28);
-    border:1px solid rgba(220,235,216,.4)}
+
+  /* 浮動搖桿：左下整塊區域都能起手，不必精準戳到那個圈 */
+  #stickzone{position:absolute;left:0;bottom:0;width:48%;height:62%;pointer-events:auto}
+  #stickbase{position:absolute;width:132px;height:132px;border-radius:50%;margin:0;
+    border:2px solid rgba(220,235,216,.16);background:rgba(8,11,8,.26);
+    left:calc(var(--sal) + 20px);bottom:calc(var(--sab) + 20px);
+    opacity:.5;transition:opacity .12s;pointer-events:none}
+  #stickbase.on{opacity:1;bottom:auto;transform:translate(-50%,-50%)}
+  #stickbase::after{content:'移動';position:absolute;left:50%;top:50%;
+    transform:translate(-50%,-50%);font-size:11px;letter-spacing:.18em;
+    color:rgba(126,143,128,.45)}
+  #stickbase.on::after{content:''}
+  #stickknob{position:absolute;left:50%;top:50%;width:52px;height:52px;
+    transform:translate(-50%,-50%);border-radius:50%;background:rgba(220,235,216,.3);
+    border:1px solid rgba(220,235,216,.45)}
+
+  /* 動作鍵：三角配置，彼此至少留 12px，全部離安全區 14px 以上 */
   .tbtn{position:absolute;pointer-events:auto;border-radius:50%;display:flex;
     align-items:center;justify-content:center;font-weight:900;letter-spacing:.04em;
-    border:2px solid var(--line-hi);background:rgba(10,14,10,.62);color:var(--tube);
+    border:2px solid var(--line-hi);background:rgba(10,14,10,.66);color:var(--tube);
     -webkit-user-select:none;user-select:none}
   .tbtn.act{background:var(--price);color:#141006;border-color:var(--price)}
-  #btnTake{right:6vw;bottom:15vh;width:17vh;height:17vh;max-width:104px;max-height:104px;
-    font-size:min(3.2vh,20px);border-color:var(--price);color:var(--price)}
-  #btnRun {right:24vw;bottom:9vh;width:12vh;height:12vh;max-width:76px;max-height:76px;font-size:min(2.4vh,15px)}
-  #btnDuck{right:6vw;bottom:4vh; width:12vh;height:12vh;max-width:76px;max-height:76px;font-size:min(2.4vh,15px)}
+  #btnTake{width:86px;height:86px;font-size:22px;
+    right:calc(var(--sar) + 16px);bottom:calc(var(--sab) + 16px);
+    border-color:var(--price);color:var(--price);border-width:3px}
+  #btnRun {width:64px;height:64px;font-size:16px;
+    right:calc(var(--sar) + 114px);bottom:calc(var(--sab) + 22px)}
+  #btnDuck{width:64px;height:64px;font-size:16px;
+    right:calc(var(--sar) + 26px);bottom:calc(var(--sab) + 114px)}
   body.touch #steerring{display:none!important}
 
-  /* 觸控版 HUD 重新配置：搖桿在左下，所以提袋面板要讓位到左上 */
-  body.touch #basket{left:10px;top:8px;bottom:auto;width:min(44vw,196px);padding:7px 10px 8px}
-  body.touch #basket .val{font-size:27px;margin:1px 0 6px}
+  /* 觸控版 HUD：上緣放資訊，下緣放操作，中間留空給遊戲畫面 */
+  body.touch #basket{left:calc(var(--sal) + 10px);top:calc(var(--sat) + 8px);bottom:auto;
+    width:min(40vw,180px);padding:6px 10px 8px}
+  body.touch #basket .val{font-size:25px;margin:1px 0 5px}
   body.touch #basket .cap-label{font-size:9px}
-  body.touch #status{right:10px;top:8px;font-size:10.5px;line-height:1.5}
-  body.touch #exitchip{margin-top:5px;padding:3px 7px;font-size:10px}
-  body.touch #objective{top:auto;bottom:calc(38vh + 10px);max-width:56vw}
-  body.touch #beat{top:auto;bottom:calc(38vh + 60px);transform:translateX(-50%);width:min(70vw,460px)}
-  body.touch #pa{bottom:calc(38vh + 6px)}
-  body.touch #toast{bottom:calc(38vh + 62px);max-width:52vw}
+  body.touch #status{right:calc(var(--sar) + 10px);top:calc(var(--sat) + 8px);
+    font-size:10.5px;line-height:1.45}
+  body.touch #exitchip{margin-top:4px;padding:3px 7px;font-size:10px}
+  body.touch #objective{top:calc(var(--sat) + 6px);max-width:44vw}
+  body.touch #objective .tag{display:none}
+  body.touch #objective .line{font-size:13.5px}
+  body.touch #objective .hint{font-size:11px}
+  body.touch #beat{top:auto;bottom:42%;transform:translateX(-50%);width:min(62vw,430px);
+    padding:14px 18px}
+  body.touch #toast{bottom:52%;max-width:46vw}
   body.touch #toast div{text-align:center}
+  /* 廣播放在搖桿與按鍵之間的空檔 */
+  body.touch #pa{bottom:calc(var(--sab) + 12px);max-width:min(40vw,320px);
+    font-size:12px;padding:7px 12px}
+  body.touch #pa span{font-size:9.5px;margin-bottom:2px}
 
-  /* 全螢幕與調參：擺在正下方中央，兩側留給搖桿和按鈕 */
+  /* 全螢幕與調參：移到左上角提袋面板下方。
+     不能放畫面正下方中央 —— 那是 iPhone 的 home 手勢區，會誤觸。 */
   #fsbtn{position:fixed;left:50%;bottom:12px;transform:translateX(-100%);margin-left:-5px;
     z-index:26;pointer-events:auto;padding:7px 12px;font-family:var(--f-mono);font-size:11px;
     letter-spacing:.1em;background:rgba(9,12,9,.9);border:1px solid var(--line-hi);
     color:var(--tube);cursor:pointer}
   #fsbtn:hover{border-color:var(--price);color:var(--price)}
-  body.touch #devtoggle{left:50%;bottom:12px;right:auto;top:auto;margin-left:5px}
+  body.touch #fsbtn{left:calc(var(--sal) + 10px);top:calc(var(--sat) + 84px);
+    bottom:auto;transform:none;margin:0;padding:8px 11px;font-size:10.5px}
+  body.touch #devtoggle{left:calc(var(--sal) + 10px);top:calc(var(--sat) + 122px);
+    right:auto;bottom:auto;padding:8px 11px;font-size:10.5px}
 
   #rotate{position:fixed;inset:0;z-index:44;display:none;align-items:center;justify-content:center;
     background:var(--ink);padding:30px;text-align:center;font-size:15px;line-height:1.9;color:var(--dim);
@@ -417,32 +473,67 @@
 </div>
 
 <div class="layer screen" id="s-title">
-  <div class="card">
-    <div class="eyebrow">午夜超商小偷 · 灰盒驗證原型 v1.0</div>
+  <div class="menu">
+    <div class="eyebrow">灰盒驗證原型 v1.7</div>
     <h1>午夜超商<em>小偷</em></h1>
-    <p class="sub">半夜三點，你從後門進來了。事情很簡單：塞滿提袋，從後門出去。
-      越靠裡面的東西越貴，價格標就浮在上面 —— 你看得到哪邊值錢。
-      但提袋只有 12 格，而且店裡還有一個值班的人。</p>
+    <p class="tagline">半夜三點，你從後門進來了。<br>
+      明明已經可以乾淨脫身，你還會不會回頭去拿最貴的那件？</p>
+    <div class="menulist">
+      <button class="mbtn primary" id="btn-start"><span>開始遊戲</span><kbd>Enter</kbd></button>
+      <button class="mbtn" id="btn-help"><span>遊戲說明</span></button>
+      <button class="mbtn" id="btn-board"><span>排行榜</span></button>
+    </div>
+    <div class="menufoot" id="menufoot"></div>
+  </div>
+</div>
+
+<div class="layer screen hidden" id="s-help">
+  <div class="card">
+    <div class="eyebrow">遊戲說明</div>
+    <h1 style="font-size:clamp(26px,5vw,40px)">怎麼<em>玩</em></h1>
+    <p class="sub">塞滿提袋，從後門出去。越靠裡面的東西越貴，價格標就浮在商品上面
+      —— 你看得到哪邊值錢。但提袋只有 12 格，而且店裡還有一個值班的人。</p>
     <div class="loop">
       <div><b>一</b>順走東西，提袋裡的金額往上跳</div>
       <div><b>二</b>拿到 3 件，後門解鎖 —— 現在就能乾淨脫身</div>
-      <div><b>三</b>但冷凍室有一件 $120 的非賣品，拿了會出事</div>
+      <div><b>三</b>但冷凍室有一件非賣品，拿了會出事</div>
       <div><b>四</b>脫身、變賣、添裝備，再幹一次</div>
     </div>
-    <p class="sub">走道上方吊著店裡的監視螢幕。<b style="color:var(--tube)">抬頭看，上面有你和店員的位置</b>
-      —— 但停電之後訊號就斷了。</p>
-    <p class="sub" style="color:var(--dimmer)">這是拋棄式驗證原型，只回答一個問題：<b style="color:var(--price)">明明已經可以乾淨脫身，你還會不會回頭去拿那件最貴的？</b></p>
+    <h4 class="sh">幾個活下來的訣竅</h4>
+    <div class="loop" style="border-left-color:var(--fresh)">
+      <div><b>·</b>走道上方有監視螢幕，抬頭就看得到店員在哪。停電後會斷訊</div>
+      <div><b>·</b>衝刺很快但很吵；潛行很慢但幾乎沒聲音，還能蹲低躲在櫃檯後面</div>
+      <div><b>·</b>被發現不一定會死 —— 他追一段時間抓不到就會放棄</div>
+      <div><b>·</b>地上那條綠線一路通到後門，停電後會變紅並閃動</div>
+    </div>
+    <h4 class="sh">操作</h4>
     <div class="keys">
       <div><b>W A S D</b>走路</div>
       <div><b>滑鼠</b>轉頭 · 點畫面鎖定游標</div>
       <div><b>Shift</b>衝刺 · 很吵</div>
       <div><b>C</b>潛行 · 幾乎沒聲音</div>
       <div><b>E</b>塞進提袋</div>
+      <div><b>F</b>全螢幕</div>
       <div><b>M</b>切換視角模式</div>
-      <div><b>Esc</b>解除鎖定</div>
       <div><b>T</b>調參面板</div>
     </div>
-    <div class="cardfoot"><button class="btn" id="btn-start">第 1 次下手 <kbd>Enter</kbd></button></div>
+    <div class="cardfoot"><button class="btn" id="btn-help-back">返回 <kbd>Esc</kbd></button></div>
+  </div>
+</div>
+
+<div class="layer screen hidden" id="s-board">
+  <div class="card">
+    <div class="eyebrow">排行榜 · 個人紀錄</div>
+    <h1 style="font-size:clamp(26px,5vw,40px)">排<em>行榜</em></h1>
+    <div id="board" class="card-rec"></div>
+    <h4 class="sh">最近十次</h4>
+    <table class="mtable" id="boardhist"></table>
+    <p class="sub" style="font-size:12px;color:var(--dimmer)">紀錄存在這台裝置的瀏覽器裡，
+      不會上傳、也不會跟別人比。想比的話按「複製戰績」把數字傳給對方。</p>
+    <div class="cardfoot">
+      <button class="btn" id="btn-board-back">返回 <kbd>Esc</kbd></button>
+      <button class="btn ghost" id="btn-board-copy">複製戰績</button>
+    </div>
   </div>
 </div>
 
@@ -499,6 +590,7 @@
 </div>
 
 <div id="touch">
+  <div id="stickzone"></div>
   <div id="stickbase"><div id="stickknob"></div></div>
   <button class="tbtn" id="btnTake">拿</button>
   <button class="tbtn" id="btnRun">衝</button>
@@ -522,8 +614,8 @@ if(!window.THREE){document.getElementById('narrow').style.display='flex';
 var DEF = {
   walkSpeed:4.2, sprintSpeed:6.8, mouseSens:0.0023,
   edgeTurn:2.4, steerYaw:3.4, steerPitch:2.0,
-  clerkPatrol:2.5, clerkChase:5.8, visionRange:20, visionAngle:42,
-  loseSight:3.5, catchDist:1.35, hearWalk:8, hearSprint:17,
+  clerkPatrol:2.5, clerkChase:4.9, visionRange:13, visionAngle:42,
+  loseSight:3.5, chaseGiveUp:10, calmTime:6, catchDist:1.35, hearWalk:8, hearSprint:17,
   capacity:12, riskBonus:1.2, forbiddenValue:120, extractItems:3
 };
 var CFG = Object.assign({},DEF);
@@ -545,6 +637,8 @@ var KNOBS = [
   ['k-clerk','visionRange','視線距離',6,34,1,' m'],
   ['k-clerk','visionAngle','視野半角',15,90,1,'°'],
   ['k-clerk','loseSight','失去目標時間',1,10,.5,' s'],
+  ['k-clerk','chaseGiveUp','追多久就放棄',3,30,1,' s'],
+  ['k-clerk','calmTime','放棄後不理你',0,20,1,' s'],
   ['k-clerk','catchDist','抓到距離',.8,3,.05,' m'],
   ['k-clerk','hearSprint','衝刺聲響半徑',4,34,1,' m'],
   ['k-econ','capacity','提袋格數',4,30,1,' 格'],
@@ -1227,6 +1321,7 @@ function newRun(){
   clerk.rotation.y=Math.PI;
   AI.state = (G.shift===1) ? 'DORMANT' : 'PATROL';
   AI.path=[]; AI.target=null; AI.timer=0; AI.lastSeen=null; AI.stuck=0; AI.stepT=0;
+  AI.chaseT=0; AI.calm=0;
   clerk.visible = AI.state!=='DORMANT';
   ev('game_start',{shift:G.shift});
   STATS.runs++;
@@ -1235,7 +1330,7 @@ function newRun(){
     '需要 '+CFG.extractItems+' 件才能脫身。櫃檯上就有兩件。');
   if(G.shift===1) showBeat('已從後門進入',
     K('W A S D 走路，滑鼠轉頭，看到東西按 E。',
-      '左搖桿走路，右半邊拖曳轉頭，看到東西按「拿」。'),
+      '左下按住拖曳就是搖桿，右半邊拖曳轉頭，看到東西按「拿」。'),
     '走道上方有店裡的監視螢幕，抬頭就看得到誰在哪。',7000);
 }
 
@@ -1382,12 +1477,14 @@ window.addEventListener('keydown',function(e){
       toast('嘗試鎖定滑鼠…'); requestLock();
     }else{ setLookMode('steer'); toast('推移轉向：把游標推離中央圈就持續轉頭'); }
   }
-  if(k==='escape'&&G.phase==='play'&&lockFailed){
-    manualPause=!manualPause; if(manualPause)showPause(); else hidePause();
+  if(k==='escape'){
+    if(G.phase==='help'||G.phase==='board'){gotoTitle();}
+    else if(G.phase==='play'&&lockFailed){ manualPause=!manualPause; }
   }
   if(k==='e'&&G.phase==='play')tryInteract();
   if(k==='enter'){
     if(G.phase==='title')startGame();
+    else if(G.phase==='help'||G.phase==='board')gotoTitle();
     else if(G.phase==='result')gotoShop();
     else if(G.phase==='shop')nextShift();
   }
@@ -1436,26 +1533,32 @@ var tRun=false, tDuck=false;
 function setupTouch(){
   if(!IS_TOUCH)return;
   document.body.classList.add('touch');
-  var base=$('stickbase'), knob=$('stickknob');
-  function stickRect(){return base.getBoundingClientRect();}
+  var base=$('stickbase'), knob=$('stickknob'), zone=$('stickzone');
+  var SR=66;                                    // 搖桿半徑（px）
   function applyStick(cx,cy){
-    var r=stickRect(), R=r.width/2;
-    var dx=cx-(r.left+R), dy=cy-(r.top+R);
-    var d=Math.hypot(dx,dy);
-    if(d>R){ dx=dx/d*R; dy=dy/d*R; d=R; }
+    var dx=cx-stickOX, dy=cy-stickOY, d=Math.hypot(dx,dy);
+    if(d>SR){ dx=dx/d*SR; dy=dy/d*SR; d=SR; }
     knob.style.transform='translate(calc(-50% + '+dx+'px), calc(-50% + '+dy+'px))';
-    var dead=R*0.16;
+    var dead=SR*0.14;
     if(d<dead){ touchMove.f=0; touchMove.s=0; touchMove.mag=0; return; }
-    touchMove.s=dx/R; touchMove.f=-dy/R;
-    touchMove.mag=Math.min(1,(d-dead)/(R-dead));
+    touchMove.s=dx/SR; touchMove.f=-dy/SR;
+    touchMove.mag=Math.min(1,(d-dead)/(SR-dead));
   }
   function clearStick(){
     stickId=null; touchMove.f=0; touchMove.s=0; touchMove.mag=0;
     knob.style.transform='translate(-50%,-50%)';
+    base.classList.remove('on');
+    base.style.left=''; base.style.top='';       // 回到停放位置
   }
-  base.addEventListener('touchstart',function(e){
+  // 浮動搖桿：左下區塊任何一點都能起手，搖桿就長在你手指落下的地方
+  zone.addEventListener('touchstart',function(e){
     e.preventDefault();
-    var t=e.changedTouches[0]; stickId=t.identifier; applyStick(t.clientX,t.clientY);
+    if(stickId!==null)return;
+    var t=e.changedTouches[0];
+    stickId=t.identifier; stickOX=t.clientX; stickOY=t.clientY;
+    base.style.left=stickOX+'px'; base.style.top=stickOY+'px';
+    base.classList.add('on');
+    applyStick(stickOX,stickOY);
   },{passive:false});
 
   function onStart(e){
@@ -1512,10 +1615,10 @@ function setupTouch(){
     tDuck=!tDuck; $('btnDuck').classList.toggle('act',tDuck);
   },{passive:false});
 
-  // 標題頁改成觸控說明
-  var keysEl=document.querySelector('#s-title .keys');
+  // 說明頁改成觸控版操作
+  var keysEl=document.querySelector('#s-help .keys');
   if(keysEl)keysEl.innerHTML=
-    '<div><b>左搖桿</b>移動</div>'+
+    '<div><b>左下</b>按住任一點就是搖桿</div>'+
     '<div><b>右側拖曳</b>轉頭</div>'+
     '<div><b>拿</b>塞進提袋</div>'+
     '<div><b>衝</b>按住衝刺・很吵</div>'+
@@ -1670,8 +1773,8 @@ function triggerForbidden(){
   showBeat('他知道了','冷凍室的門在你身後。',
     K('按住 Shift 衝回後門。','按住「衝」跑回後門。'),5000);
   setTimeout(function(){ if(G.phase==='play')pa('偵測到非賣品離架。保全程序已啟動，請留在原地不要移動。'); },1600);
-  AI.state='CHASE'; AI.lastSeen={x:camera.position.x,z:camera.position.z}; AI.timer=0;
-  AI.path=[]; clerk.visible=true;
+  AI.state='CHASE'; AI.lastSeen={x:camera.position.x,z:camera.position.z};
+  AI.timer=0; AI.chaseT=0; AI.calm=0; AI.path=[]; clerk.visible=true;
   // 首次出現：在冷凍室裡但不堵死唯一的門，玩家要從他旁邊擠過去
   if(G.shift===1) clerk.position.set(-10.5,0,-12.5);
   ev('chase_started');
@@ -1690,7 +1793,21 @@ function makeNoise(radius){
    10. 店員 AI —— 顯式 FSM
    ============================================================ */
 var AI={state:'DORMANT',path:[],target:null,timer:0,lastSeen:null,stuck:0,
-        prev:new THREE.Vector2(),stepT:0,searchT:0};
+        prev:new THREE.Vector2(),stepT:0,searchT:0,chaseT:0,calm:0};
+
+/* 追不到就放棄：追滿 chaseGiveUp 秒還沒抓到，就往離玩家最遠的地方走開，
+   並且有 calmTime 秒完全不理你 —— 否則他一轉身又看到你，等於沒放棄。 */
+function giveUpChase(){
+  AI.state='RETURN'; AI.chaseT=0; AI.calm=CFG.calmTime; AI.path=[];
+  var best=-1,bd=-1;
+  for(var i=0;i<NODES.length;i++){
+    var d=Math.hypot(NODES[i].x-camera.position.x,NODES[i].z-camera.position.z);
+    if(d>bd){bd=d;best=i;}
+  }
+  if(best>=0)setPathTo(NODES[best].x,NODES[best].z);
+  droneOff(); ev('chase_giveup');
+  toast('他停下來了，往別的方向走了');
+}
 function canSee(){
   var cx=clerk.position.x,cz=clerk.position.z,px=camera.position.x,pz=camera.position.z;
   var d=Math.hypot(px-cx,pz-cz);
@@ -1724,12 +1841,15 @@ function stepClerk(dt){
     if(cd<=0.5||AI.timer>22){ clerk.visible=false; AI.state='DORMANT'; AI.path=[]; }
     return;
   }
-  var r=G.run, sees=canSee();
+  var r=G.run;
+  AI.calm-=dt;
+  var calmNow=AI.calm>0;                      // 放棄後的冷靜期：完全不理玩家
+  var sees=calmNow?false:canSee();
   var px=camera.position.x,pz=camera.position.z;
   var dP=Math.hypot(px-clerk.position.x,pz-clerk.position.z);
 
   // 聽覺
-  if(r.lastNoise&&AI.state!=='CHASE'){
+  if(!calmNow&&r.lastNoise&&AI.state!=='CHASE'){
     var n=r.lastNoise;
     if(r.t-n.t<0.6&&Math.hypot(n.x-clerk.position.x,n.z-clerk.position.z)<n.r){
       AI.state='INVESTIGATE'; AI.timer=0; setPathTo(n.x,n.z);
@@ -1738,7 +1858,7 @@ function stepClerk(dt){
     }
   }
   if(sees&&AI.state!=='CHASE'){
-    AI.state='CHASE'; AI.timer=0; ev('chase_started'); droneOn();
+    AI.state='CHASE'; AI.timer=0; AI.chaseT=0; ev('chase_started'); droneOn();
     if(!r._seenClerk){r._seenClerk=true;ev('clerk_first_seen');}
   }
 
@@ -1767,6 +1887,8 @@ function stepClerk(dt){
       break;
     case 'CHASE':
       speed=clerkChaseNow();
+      AI.chaseT+=dt;
+      if(AI.chaseT>CFG.chaseGiveUp){ giveUpChase(); return; }
       if(sees){AI.lastSeen={x:px,z:pz};AI.timer=0;AI.path=[];}
       else{
         AI.timer+=dt;
@@ -2123,9 +2245,10 @@ function renderNext(){
     '<div><span>店員視線距離</span><b>'+Math.round(CFG.visionRange*(1+0.35*d))+' m</b></div>'+
     '<div><span>非賣品價值</span><b>$'+Math.round(CFG.forbiddenValue*(1+0.6*d))+'</b></div>';
 }
-function renderHistory(){
+function renderHistory(){ renderHistoryInto('history'); }
+function renderHistoryInto(id){
   var h=STATS.history.slice(-10).reverse();
-  if(!h.length){$('history').innerHTML='<tbody><tr><td class="mut">還沒有紀錄</td></tr></tbody>';return;}
+  if(!h.length){$(id).innerHTML='<tbody><tr><td class="mut">還沒有紀錄</td></tr></tbody>';return;}
   var html='<thead><tr><th>次數</th><th>結果</th><th>非賣品</th><th>時間</th>'+
     '<th style="text-align:right">獲利</th></tr></thead><tbody>';
   h.forEach(function(x){
@@ -2136,7 +2259,7 @@ function renderHistory(){
       '<td>'+Math.floor(x.t/60)+':'+String(x.t%60).padStart(2,'0')+'</td>'+
       '<td>$'+x.net+'</td></tr>';
   });
-  $('history').innerHTML=html+'</tbody>';
+  $(id).innerHTML=html+'</tbody>';
 }
 function copyBrag(){
   var s=STATS;
@@ -2204,15 +2327,43 @@ function load(){
 }
 load();
 setupTouch();
-$('btn-start').innerHTML='第 '+(G.shift+1)+' 次下手 <kbd>Enter</kbd>';
 if(G.shift>0)$('cashhud').textContent='$'+G.cash;
 
 /* ============================================================
    15. 畫面切換
    ============================================================ */
-var SCREENS=['s-title','s-result','s-shop'];
+var SCREENS=['s-title','s-help','s-board','s-result','s-shop'];
 function show(id){ SCREENS.forEach(function(s){ $(s).classList.toggle('hidden',s!==id); }); }
 function hideAll(){ SCREENS.forEach(function(s){ $(s).classList.add('hidden'); }); }
+
+function gotoTitle(){
+  G.phase='title'; renderMenuFoot(); show('s-title');
+}
+function renderMenuFoot(){
+  var s=STATS, f=$('menufoot');
+  if(!s.runs){ f.innerHTML='第一次來？直接開始就好，需要的東西路上都會說。'; return; }
+  f.innerHTML='已下手 <b>'+s.runs+'</b> 次 · 最長連續沒被抓 <b>'+s.bestStreak+'</b> 次'+
+    '<br>目前連續 <b>'+s.streak+'</b> 次 · 手上有 <b>$'+G.cash+'</b>';
+}
+function gotoHelp(){ G.phase='help'; show('s-help'); }
+function gotoBoard(){ G.phase='board'; renderBoard(); show('s-board'); }
+function renderBoard(){
+  var s=STATS;
+  $('board').innerHTML=
+    '<div class="cl">'+
+      '<div class="ct">最長連續沒被抓</div>'+
+      '<div class="cn">'+s.bestStreak+'<em>次</em></div>'+
+      '<div class="cs">目前連續 '+s.streak+' 次</div>'+
+    '</div>'+
+    '<div class="cr">'+
+      '<div><span>單次最高獲利</span><b>$'+s.bestShift+'</b></div>'+
+      '<div><span>帶著非賣品脫身</span><b>'+s.forbiddenSurvived+' 次</b></div>'+
+      '<div><span>最深記錄</span><b>第 '+(s.deepestShift||0)+' 次</b></div>'+
+      '<div><span>總下手 / 被抓</span><b>'+s.runs+' / '+s.caught+'</b></div>'+
+      '<div><span>累計變賣所得</span><b>$'+s.cashTotal+'</b></div>'+
+    '</div>';
+  renderHistoryInto('boardhist');
+}
 
 function startGame(){
   audioInit(); if(AC&&AC.state==='suspended')AC.resume();
@@ -2226,6 +2377,11 @@ function nextShift(){
   hideAll(); manualPause=false; G.phase='play'; newRun(); requestLock();
 }
 $('btn-start').addEventListener('click',startGame);
+$('btn-help').addEventListener('click',gotoHelp);
+$('btn-board').addEventListener('click',gotoBoard);
+$('btn-help-back').addEventListener('click',gotoTitle);
+$('btn-board-back').addEventListener('click',gotoTitle);
+$('btn-board-copy').addEventListener('click',copyBrag);
 $('btn-next').addEventListener('click',gotoShop);
 $('btn-shift').addEventListener('click',nextShift);
 $('btn-copy').addEventListener('click',copyData);
@@ -2303,6 +2459,7 @@ $('fsbtn').addEventListener('click',function(e){e.stopPropagation();toggleFullsc
 $('fsbtn').addEventListener('touchstart',function(e){
   e.preventDefault();e.stopPropagation();toggleFullscreen();},{passive:false});
 syncFsLabel();
+renderMenuFoot();
 function renderLog(){
   if(!$('dev').classList.contains('on')||!G.run)return;
   var L=G.run.log.slice(-40).reverse();
