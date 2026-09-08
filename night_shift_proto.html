@@ -376,9 +376,16 @@
     transform:translate(-50%,-50%);font-size:11px;letter-spacing:.18em;
     color:rgba(126,143,128,.45)}
   #stickbase.on::after{content:''}
+  /* 外圈 = 衝刺，推到那裡整個圈會亮起來 */
+  #stickring{position:absolute;left:50%;top:50%;width:100%;height:100%;
+    transform:translate(-50%,-50%);border-radius:50%;
+    border:2px dashed rgba(255,201,60,.22);transition:border-color .12s,box-shadow .12s}
+  #stickbase.run #stickring{border-color:var(--price);border-style:solid;
+    box-shadow:0 0 22px rgba(255,201,60,.35) inset}
   #stickknob{position:absolute;left:50%;top:50%;width:52px;height:52px;
     transform:translate(-50%,-50%);border-radius:50%;background:rgba(220,235,216,.3);
-    border:1px solid rgba(220,235,216,.45)}
+    border:1px solid rgba(220,235,216,.45);transition:background .12s}
+  #stickbase.run #stickknob{background:rgba(255,201,60,.55);border-color:var(--price)}
 
   /* 動作鍵：三角配置，彼此至少留 12px，全部離安全區 14px 以上 */
   .tbtn{position:absolute;pointer-events:auto;border-radius:50%;display:flex;
@@ -389,10 +396,8 @@
   #btnTake{width:86px;height:86px;font-size:22px;
     right:calc(var(--sar) + 16px);bottom:calc(var(--sab) + 16px);
     border-color:var(--price);color:var(--price);border-width:3px}
-  #btnRun {width:64px;height:64px;font-size:16px;
-    right:calc(var(--sar) + 114px);bottom:calc(var(--sab) + 22px)}
-  #btnDuck{width:64px;height:64px;font-size:16px;
-    right:calc(var(--sar) + 26px);bottom:calc(var(--sab) + 114px)}
+  #btnDuck{width:68px;height:68px;font-size:17px;
+    right:calc(var(--sar) + 24px);bottom:calc(var(--sab) + 116px)}
   body.touch #steerring{display:none!important}
 
   /* 觸控版 HUD：上緣放資訊，下緣放操作，中間留空給遊戲畫面 */
@@ -591,9 +596,8 @@
 
 <div id="touch">
   <div id="stickzone"></div>
-  <div id="stickbase"><div id="stickknob"></div></div>
+  <div id="stickbase"><div id="stickring"></div><div id="stickknob"></div></div>
   <button class="tbtn" id="btnTake">拿</button>
-  <button class="tbtn" id="btnRun">衝</button>
   <button class="tbtn" id="btnDuck">蹲</button>
 </div>
 
@@ -1330,7 +1334,7 @@ function newRun(){
     '需要 '+CFG.extractItems+' 件才能脫身。櫃檯上就有兩件。');
   if(G.shift===1) showBeat('已從後門進入',
     K('W A S D 走路，滑鼠轉頭，看到東西按 E。',
-      '左下按住拖曳就是搖桿，右半邊拖曳轉頭，看到東西按「拿」。'),
+      '左下按住拖曳走路，推到外圈就是衝刺；右半邊拖曳轉頭，看到東西按「拿」。'),
     '走道上方有店裡的監視螢幕，抬頭就看得到誰在哪。',7000);
 }
 
@@ -1529,7 +1533,8 @@ function lockFail(msg){
 /* ---------- 觸控：左搖桿移動、右半邊拖曳轉頭、三顆按鈕 ---------- */
 var touchMove={f:0,s:0,mag:0};
 var stickId=null, stickOX=0, stickOY=0, lookId=null, lookLX=0, lookLY=0;
-var tRun=false, tDuck=false;
+var tDuck=false;
+var SPRINT_AT=0.62;      // 搖桿推超過這個比例就開始加速到衝刺
 function setupTouch(){
   if(!IS_TOUCH)return;
   document.body.classList.add('touch');
@@ -1543,11 +1548,12 @@ function setupTouch(){
     if(d<dead){ touchMove.f=0; touchMove.s=0; touchMove.mag=0; return; }
     touchMove.s=dx/SR; touchMove.f=-dy/SR;
     touchMove.mag=Math.min(1,(d-dead)/(SR-dead));
+    base.classList.toggle('run',touchMove.mag>SPRINT_AT+0.12);
   }
   function clearStick(){
     stickId=null; touchMove.f=0; touchMove.s=0; touchMove.mag=0;
     knob.style.transform='translate(-50%,-50%)';
-    base.classList.remove('on');
+    base.classList.remove('on'); base.classList.remove('run');
     base.style.left=''; base.style.top='';       // 回到停放位置
   }
   // 浮動搖桿：左下區塊任何一點都能起手，搖桿就長在你手指落下的地方
@@ -1595,21 +1601,12 @@ function setupTouch(){
   document.addEventListener('touchend',onEnd,{passive:true});
   document.addEventListener('touchcancel',onEnd,{passive:true});
 
-  function hold(el,on,off){
-    el.addEventListener('touchstart',function(e){e.preventDefault();e.stopPropagation();
-      el.classList.add('act');on();},{passive:false});
-    ['touchend','touchcancel'].forEach(function(k){
-      el.addEventListener(k,function(e){e.preventDefault();e.stopPropagation();
-        el.classList.remove('act');off();},{passive:false});
-    });
-  }
   $('btnTake').addEventListener('touchstart',function(e){
     e.preventDefault(); e.stopPropagation();
     var b=$('btnTake'); b.classList.add('act');
     setTimeout(function(){b.classList.remove('act');},120);
     if(G.phase==='play')tryInteract();
   },{passive:false});
-  hold($('btnRun'),function(){tRun=true;},function(){tRun=false;});
   $('btnDuck').addEventListener('touchstart',function(e){
     e.preventDefault(); e.stopPropagation();
     tDuck=!tDuck; $('btnDuck').classList.toggle('act',tDuck);
@@ -1619,9 +1616,9 @@ function setupTouch(){
   var keysEl=document.querySelector('#s-help .keys');
   if(keysEl)keysEl.innerHTML=
     '<div><b>左下</b>按住任一點就是搖桿</div>'+
+    '<div><b>推到外圈</b>越外面越快，最外面是衝刺・很吵</div>'+
     '<div><b>右側拖曳</b>轉頭</div>'+
     '<div><b>拿</b>塞進提袋</div>'+
-    '<div><b>衝</b>按住衝刺・很吵</div>'+
     '<div><b>蹲</b>切換潛行・幾乎沒聲音</div>'+
     '<div><b>抬頭</b>看監視螢幕</div>'+
     (fsSupported()?'<div><b>⛶</b>下方中央可切全螢幕</div>'
@@ -1769,9 +1766,9 @@ function triggerForbidden(){
   setDanger(true);
   SFX.forbidden();
   setObjective('放下已經太晚了 —— 衝回後門',true,
-    K('Shift 衝刺比店員快，但腳步聲會被聽到。','按住「衝」比店員快，但腳步聲會被聽到。'));
+    K('Shift 衝刺比店員快，但腳步聲會被聽到。','搖桿推到外圈比店員快，但腳步聲會被聽到。'));
   showBeat('他知道了','冷凍室的門在你身後。',
-    K('按住 Shift 衝回後門。','按住「衝」跑回後門。'),5000);
+    K('按住 Shift 衝回後門。','搖桿推到最外面，衝回後門。'),5000);
   setTimeout(function(){ if(G.phase==='play')pa('偵測到非賣品離架。保全程序已啟動，請留在原地不要移動。'); },1600);
   AI.state='CHASE'; AI.lastSeen={x:camera.position.x,z:camera.position.z};
   AI.timer=0; AI.chaseT=0; AI.calm=0; AI.path=[]; clerk.visible=true;
@@ -1943,18 +1940,19 @@ function stepClerk(dt){
    ============================================================ */
 /* 姿勢：站立 / 潛行。
    潛行用 C 而不是 Ctrl —— 瀏覽器裡 Ctrl+W 會直接關掉分頁，preventDefault 攔不住。 */
-var crouchNow=false;
+var crouchNow=false, sprintFlag=false;
 function poseHeight(){          // 店員視線判定用的玩家高度
   return crouchNow?1.05:1.45;
 }
-function poseName(){ return crouchNow?'潛行':'站立'; }
+function poseName(){ return crouchNow?'潛行':(sprintFlag?'衝刺':'站立'); }
 
 function stepPlayer(dt){
   var base=CFG.walkSpeed*(G.upgrades.shoes?1.12:1);
   var sprintS=CFG.sprintSpeed*(G.upgrades.shoes?1.12:1);
   var load=G.run.used/CFG.capacity, loadMul=1-0.14*Math.min(1,load);
-  var wantSprint=!!(keys['shift']||keys['shiftleft']||tRun);
+  var wantSprint=!!(keys['shift']||keys['shiftleft']);
   var wantCrouch=!!(keys['c']||tDuck);
+  var stickMag=(IS_TOUCH&&touchMove.mag>0)?touchMove.mag:0;
 
   // 推移轉向：游標離開中央圈多遠，就以多快的速度持續轉頭。
   // 游標只要待在中央附近就能操作，所以在雙螢幕上不會跑出視窗。
@@ -1993,11 +1991,25 @@ function stepPlayer(dt){
   crouchNow = wantCrouch;
   var sp, eye=1.65, sprintingNow=false;
 
-  if(crouchNow){ sp=base*0.45*loadMul; eye=1.05; }
+  if(crouchNow){
+    sp=base*0.45*loadMul; eye=1.05;
+    if(stickMag)sp*=Math.min(1,stickMag/SPRINT_AT);
+  }
+  else if(stickMag>0){
+    // 搖桿當油門：內圈慢走，推到外圈才是衝刺。左手一根拇指控制全部移動。
+    if(stickMag<=SPRINT_AT){
+      sp = base*(stickMag/SPRINT_AT)*loadMul;
+    }else{
+      var e2=(stickMag-SPRINT_AT)/(1-SPRINT_AT);
+      sp = (base+(sprintS-base)*e2)*loadMul;
+      sprintingNow = e2>0.45;                  // 真的很快了才算「吵」
+    }
+  }
   else if(wantSprint){ sp=sprintS*loadMul; eye=1.65; sprintingNow=true; }
   else { sp=base*loadMul; }
+  sprintFlag=sprintingNow;
 
-  sp*=analog;                                   // 搖桿推多少就走多快
+  if(!IS_TOUCH)sp*=analog;
   var wish=new THREE.Vector3(dirX*sp,0,dirZ*sp);
   vel.x += (wish.x-vel.x)*Math.min(1,dt*13);
   vel.z += (wish.z-vel.z)*Math.min(1,dt*13);
