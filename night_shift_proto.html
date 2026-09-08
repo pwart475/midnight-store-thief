@@ -85,6 +85,21 @@
   #barfill{position:absolute;inset:0 auto 0 0;width:0%;background:var(--fresh);transition:width .16s ease-out}
   #basket.full #barfill{background:var(--danger)}
   #basket .cap-num{font-family:var(--f-mono);font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums}
+  .heatrow{display:flex;justify-content:space-between;align-items:baseline;margin-top:9px;
+    font-size:9.5px;letter-spacing:.16em;color:var(--dimmer);text-transform:uppercase}
+  .heatrow span:last-child{font-family:var(--f-mono);font-size:11px;color:var(--dim);
+    letter-spacing:0;font-variant-numeric:tabular-nums}
+  #heatbar{height:4px;background:#1B231C;border:1px solid var(--line);margin-top:4px;position:relative}
+  #heatfill{position:absolute;inset:0 auto 0 0;width:0%;background:var(--price);
+    transition:width .25s ease-out,background .25s}
+  #basket.hot #heatfill{background:var(--danger)}
+  #basket.hot .heatrow span:last-child{color:var(--danger)}
+  #items{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap}
+  #items div{font-family:var(--f-mono);font-size:10px;padding:2px 6px;
+    border:1px solid var(--line-hi);color:var(--dim)}
+  #items div.ready{border-color:var(--price);color:var(--price)}
+  #items div.empty{opacity:.35}
+  #items:empty{display:none}
 
   #status{position:absolute;right:22px;top:22px;text-align:right;font-family:var(--f-mono);font-size:12px;
     color:var(--dim);line-height:1.7;font-variant-numeric:tabular-nums}
@@ -266,6 +281,9 @@
   .up{background:#151A14;border:1px solid var(--line);padding:15px 16px 14px;display:flex;
     flex-direction:column;gap:6px}
   .up h3{margin:0;font-size:15px;font-weight:700}
+  .up .tagc{font-style:normal;font-family:var(--f-mono);font-size:9.5px;font-weight:500;
+    color:var(--forbid);border:1px solid var(--forbid);padding:1px 5px;
+    vertical-align:middle;white-space:nowrap}
   .up p{margin:0;font-size:12px;color:var(--dim);line-height:1.6;flex:1}
   .up .cost{font-family:var(--f-num);font-size:26px;color:var(--price);font-variant-numeric:tabular-nums}
   .up button{margin-top:4px;padding:8px;background:transparent;border:1px solid var(--line-hi);
@@ -398,6 +416,14 @@
     border-color:var(--price);color:var(--price);border-width:3px}
   #btnDuck{width:68px;height:68px;font-size:17px;
     right:calc(var(--sar) + 24px);bottom:calc(var(--sab) + 116px)}
+  /* 一次性道具鍵：只有買了才出現，往左邊排開 */
+  #btnTaser{width:60px;height:60px;font-size:16px;
+    right:calc(var(--sar) + 110px);bottom:calc(var(--sab) + 26px);
+    border-color:#7FE3F5;color:#7FE3F5}
+  #btnShrink{width:60px;height:60px;font-size:16px;
+    right:calc(var(--sar) + 104px);bottom:calc(var(--sab) + 128px);
+    border-color:var(--forbid);color:var(--forbid)}
+  .tbtn[hidden]{display:none!important}
   body.touch #steerring{display:none!important}
 
   /* 觸控版 HUD：上緣放資訊，下緣放操作，中間留空給遊戲畫面 */
@@ -460,6 +486,9 @@
     <div class="cap-label"><span>提袋</span><span class="cap-num" id="capnum">0 / 12 格</span></div>
     <div class="val" id="bagval">$0</div>
     <div id="bar"><div id="barfill"></div></div>
+    <div class="heatrow"><span>店員注意度</span><span id="heatnum">0%</span></div>
+    <div id="heatbar"><div id="heatfill"></div></div>
+    <div id="items"></div>
   </div>
   <div id="status">
     <div>第 <b id="shiftno">1</b> 次下手</div>
@@ -510,7 +539,11 @@
       <div><b>·</b>衝刺很快但很吵；潛行很慢但幾乎沒聲音，還能蹲低躲在櫃檯後面</div>
       <div><b>·</b>被發現不一定會死 —— 他追一段時間抓不到就會放棄</div>
       <div><b>·</b>地上那條綠線一路通到後門，停電後會變紅並閃動</div>
+      <div><b>·</b>提袋越滿走越慢（最多慢到 0.6 倍），也越容易被注意到</div>
     </div>
+    <h4 class="sh">注意度</h4>
+    <p class="sub">提袋裡的金額越高，店員的視線和聽力就越敏銳 —— 左下角有一條「店員注意度」，
+      超過三分之二會變紅。<b style="color:var(--price)">貪婪本身就是風險，不是等他來抓你才算。</b></p>
     <h4 class="sh">操作</h4>
     <div class="keys">
       <div><b>W A S D</b>走路</div>
@@ -518,6 +551,8 @@
       <div><b>Shift</b>衝刺 · 很吵</div>
       <div><b>C</b>潛行 · 幾乎沒聲音</div>
       <div><b>E</b>塞進提袋</div>
+      <div><b>Q</b>電擊槍（需購買）</div>
+      <div><b>R</b>縮小劑（需購買）</div>
       <div><b>F</b>全螢幕</div>
       <div><b>M</b>切換視角模式</div>
       <div><b>T</b>調參面板</div>
@@ -599,6 +634,8 @@
   <div id="stickbase"><div id="stickring"></div><div id="stickknob"></div></div>
   <button class="tbtn" id="btnTake">拿</button>
   <button class="tbtn" id="btnDuck">蹲</button>
+  <button class="tbtn" id="btnTaser" hidden>電</button>
+  <button class="tbtn" id="btnShrink" hidden>縮</button>
 </div>
 
 <div id="rotate"><b>請把手機轉成橫向</b>這是第一人稱遊戲，橫向持握才看得清楚。</div>
@@ -620,7 +657,11 @@ var DEF = {
   edgeTurn:2.4, steerYaw:3.4, steerPitch:2.0,
   clerkPatrol:2.5, clerkChase:4.9, visionRange:13, visionAngle:42,
   loseSight:3.5, chaseGiveUp:10, calmTime:6, catchDist:1.35, hearWalk:8, hearSprint:17,
-  capacity:12, riskBonus:1.2, forbiddenValue:120, extractItems:3
+  capacity:12, riskBonus:1.2, forbiddenValue:120, extractItems:3,
+  loadPenalty:0.40,      // 提袋裝滿時最多慢到 0.60 倍
+  heatFullValue:520,     // 提袋金額到這個數字，店員的注意度就滿了
+  heatVision:0.45, heatHearing:0.35,
+  taserRange:16, taserStun:5, shrinkTime:10
 };
 var CFG = Object.assign({},DEF);
 
@@ -645,7 +686,10 @@ var KNOBS = [
   ['k-clerk','calmTime','放棄後不理你',0,20,1,' s'],
   ['k-clerk','catchDist','抓到距離',.8,3,.05,' m'],
   ['k-clerk','hearSprint','衝刺聲響半徑',4,34,1,' m'],
-  ['k-econ','capacity','提袋格數',4,30,1,' 格'],
+  ['k-econ','capacity','提袋格數（基礎）',4,30,1,' 格'],
+  ['k-econ','loadPenalty','裝滿時的減速',0,0.6,.02,''],
+  ['k-econ','heatFullValue','注意度滿的金額',150,1500,10,''],
+  ['k-econ','heatVision','注意度→視線加成',0,1.5,.05,''],
   ['k-econ','forbiddenValue','禁忌品價值',20,400,10,''],
   ['k-econ','riskBonus','風險加成',1,2.5,.05,'x'],
   ['k-econ','extractItems','解鎖撤離所需件數',1,10,1,' 件']
@@ -683,15 +727,39 @@ var UPGRADES = [
   {id:'bag',     name:'大號提袋',   cost:250, desc:'提袋 +6 格。裝得更多，也走得更久。'},
   {id:'light',   name:'強光手電筒', cost:300, desc:'停電後照明範圍加大，找路快得多。'},
   {id:'scanner', name:'贓物估價鏡', cost:340, desc:'價格標可視距離 15m → 26m。整條走道的行情一眼看完。'},
-  {id:'charm',   name:'隨身護身符', cost:420, desc:'被抓時保住提袋裡最貴的一件。冒險的代價變小了。'}
+  {id:'charm',   name:'隨身護身符', cost:420, desc:'被抓時保住提袋裡最貴的一件。'},
+  {id:'padding', name:'防滑內襯',   cost:600, desc:'負重減速砍半。裝滿也不會變成烏龜。'},
+  {id:'shoes2',  name:'碳纖維鞋墊', cost:700, desc:'速度再 +12%，跟消音球鞋疊加。'},
+  {id:'muffler', name:'消音貼片',   cost:800, desc:'腳步聲傳播距離 ×0.6。他更難聽到你在哪。'},
+  {id:'bag2',    name:'加大側袋',   cost:900, desc:'提袋再 +6 格。但別忘了越重越慢。'},
+  {id:'shrink',  name:'縮小劑',     cost:1000, consumable:1,
+    desc:'每次下手可用 1 次。'+CFG.shrinkTime+' 秒內縮到 0.3 倍，矮到幾乎不會被看見。'},
+  {id:'taser',   name:'電擊槍',     cost:1200, consumable:3,
+    desc:'每次下手 3 發。命中店員讓他當場癱 '+CFG.taserStun+' 秒。'},
+  {id:'revive',  name:'備用鑰匙',   cost:1500, consumable:1,
+    desc:'被抓時免費掙脫 1 次，提袋保住 —— 但你會被丟到離後門最遠的地方。'}
 ];
 
-/* 班次難度遞增 —— 沒有這個，「連續 N 班」就沒有意義 */
+/* 班次難度遞增 —— 沒有這個，「連續 N 次」就沒有意義 */
 function danger(){ return Math.min(1,(G.shift-1)/9); }
+
+/* 財富引誚協：提袋裡的金額越高，店員越敏銳。
+   這讓「多拿一件」自己就帶著代價，不必靠次數遞增去追玩家的成長。 */
+function heat(){
+  if(!G.run)return 0;
+  return Math.min(1, G.run.value/Math.max(1,CFG.heatFullValue));
+}
 function clerkChaseNow(){ return CFG.clerkChase*(1+0.24*danger()); }
-function visionNow(){ return CFG.visionRange*(1+0.35*danger()); }
+function visionNow(){ return CFG.visionRange*(1+0.35*danger())*(1+CFG.heatVision*heat()); }
+function hearMul(){ return (1+CFG.heatHearing*heat())*(G.upgrades.muffler?0.6:1); }
 function forbiddenValueNow(){ return Math.round(CFG.forbiddenValue*(1+0.6*danger())); }
 function tagRange(){ return G.upgrades.scanner?26:15; }
+function capacityNow(){
+  return CFG.capacity + (G.upgrades.bag?6:0) + (G.upgrades.bag2?6:0);
+}
+function speedMul(){
+  return 1 + (G.upgrades.shoes?0.12:0) + (G.upgrades.shoes2?0.12:0);
+}
 
 /* ============================================================
    2. 關卡幾何 —— 手工灰盒；碰撞用 AABB 清單
@@ -1276,6 +1344,8 @@ var SFX={
     setTimeout(function(){noiseBurst(0.3,1500,0.09,2);},170);},
   caught:function(){beep(320,0.9,'sawtooth',0.2,60); noiseBurst(0.5,180,0.18,0.6);},
   step:function(v){noiseBurst(0.09,150,v,0.9);},
+  taser:function(){beep(1800,0.09,'square',0.13,300); noiseBurst(0.22,2400,0.1,3);},
+  shrink:function(){beep(420,0.42,'sine',0.1,1500);},
   unlock:function(){beep(660,0.1,'triangle',0.1);setTimeout(function(){beep(990,0.22,'triangle',0.1);},95);}
 };
 function droneOn(){
@@ -1314,8 +1384,13 @@ function newRun(){
     t:0, loot:{}, value:0, used:0, forbiddenTaken:false, forbiddenSeen:false,
     unlocked:false, danger:false, caught:false, extracted:false, count:0,
     log:[], noiseTimer:0, firstMoveDone:false, firstPickDone:false,
-    unlockedAt:null, forbiddenAt:null
+    unlockedAt:null, forbiddenAt:null,
+    // 一次性道具：每次下手重新補滿
+    taser: G.upgrades.taser?3:0,
+    shrink:G.upgrades.shrink?1:0,
+    revive:G.upgrades.revive?1:0
   };
+  shrinkT=0; clerk.rotation.z=0;
   G.run=r; G.shift++;
   camera.position.set(SPAWN.x,1.65,SPAWN.z);
   yaw=SPAWN.yaw; pitch=0; vel.set(0,0,0); crouchNow=false;
@@ -1486,6 +1561,8 @@ window.addEventListener('keydown',function(e){
     else if(G.phase==='play'&&lockFailed){ manualPause=!manualPause; }
   }
   if(k==='e'&&G.phase==='play')tryInteract();
+  if(k==='q'&&G.phase==='play')useTaser();
+  if(k==='r'&&G.phase==='play')useShrink();
   if(k==='enter'){
     if(G.phase==='title')startGame();
     else if(G.phase==='help'||G.phase==='board')gotoTitle();
@@ -1611,6 +1688,16 @@ function setupTouch(){
     e.preventDefault(); e.stopPropagation();
     tDuck=!tDuck; $('btnDuck').classList.toggle('act',tDuck);
   },{passive:false});
+  function tap(id,fn){
+    $(id).addEventListener('touchstart',function(e){
+      e.preventDefault(); e.stopPropagation();
+      var b=$(id); b.classList.add('act');
+      setTimeout(function(){b.classList.remove('act');},120);
+      fn();
+    },{passive:false});
+  }
+  tap('btnTaser',useTaser);
+  tap('btnShrink',useShrink);
 
   // 說明頁改成觸控版操作
   var keysEl=document.querySelector('#s-help .keys');
@@ -1620,6 +1707,7 @@ function setupTouch(){
     '<div><b>右側拖曳</b>轉頭</div>'+
     '<div><b>拿</b>塞進提袋</div>'+
     '<div><b>蹲</b>切換潛行・幾乎沒聲音</div>'+
+    '<div><b>電 / 縮</b>買了才會出現在畫面上</div>'+
     '<div><b>抬頭</b>看監視螢幕</div>'+
     (fsSupported()?'<div><b>⛶</b>下方中央可切全螢幕</div>'
       :'<div><b>iOS</b>用 Safari 的「分享 → 加入主畫面」，從主畫面圖示開就沒有瀏覽器介面</div>');
@@ -1703,7 +1791,7 @@ function updateAim(){
     aim=hit[0].object.userData.item;
     if(!aim){ pr.className=''; cross.className=''; return; }
     var d=aim.def, forb=d.tier==='forbidden';
-    var fits = G.run.used + d.slots <= CFG.capacity;
+    var fits = G.run.used + d.slots <= capacityNow();
     var val = forb ? forbiddenValueNow() : d.v;
     pr.className='on'+(forb?' forbid':'');
     pr.innerHTML='<kbd>E</kbd>'+d.name+
@@ -1719,7 +1807,7 @@ function updateAim(){
 function tryInteract(){
   if(!aim||aim.taken)return;
   var d=aim.def, r=G.run;
-  if(r.used+d.slots>CFG.capacity){ SFX.deny(); toast('提袋放不下 '+d.name); return; }
+  if(r.used+d.slots>capacityNow()){ SFX.deny(); toast('提袋放不下 '+d.name); return; }
   var val = d.tier==='forbidden'?forbiddenValueNow():d.v;
   aim.taken=true; scene.remove(aim.mesh);
   if(aim.halo)scene.remove(aim.halo); if(aim.tag)scene.remove(aim.tag);
@@ -1730,7 +1818,7 @@ function tryInteract(){
   if(!r.firstPickDone||!r.unlocked){
     r.firstPickDone=true; if(r.count===1)ev('first_pickup',{id:d.id});
     setObjective('再拿 '+Math.max(0,CFG.extractItems-r.count)+' 件就能脫身',false,
-      '往裡面走，價格標的數字會變大。提袋只有 '+CFG.capacity+' 格。');
+      '往裡面走，價格標的數字會變大。提袋只有 '+capacityNow()+' 格。');
   }
   ev('pickup',{id:d.id,v:val});
 
@@ -1783,14 +1871,17 @@ function flashScreen(){
 }
 function makeNoise(radius){
   if(!G.run||radius<=0)return;
-  G.run.lastNoise={x:camera.position.x,z:camera.position.z,r:radius,t:G.run.t};
+  // 提袋越值錢，他越注意這邊；消音貼片反過來壓低
+  G.run.lastNoise={x:camera.position.x,z:camera.position.z,
+                   r:radius*hearMul(),t:G.run.t};
 }
 
 /* ============================================================
    10. 店員 AI —— 顯式 FSM
    ============================================================ */
 var AI={state:'DORMANT',path:[],target:null,timer:0,lastSeen:null,stuck:0,
-        prev:new THREE.Vector2(),stepT:0,searchT:0,chaseT:0,calm:0};
+        prev:new THREE.Vector2(),stepT:0,searchT:0,chaseT:0,calm:0,stunT:0};
+function now2(){ return performance.now()/1000; }
 
 /* 追不到就放棄：追滿 chaseGiveUp 秒還沒抓到，就往離玩家最遠的地方走開，
    並且有 calmTime 秒完全不理你 —— 否則他一轉身又看到你，等於沒放棄。 */
@@ -1836,6 +1927,16 @@ function stepClerk(dt){
       animClerk(dt,cstep,false);
     }
     if(cd<=0.5||AI.timer>22){ clerk.visible=false; AI.state='DORMANT'; AI.path=[]; }
+    return;
+  }
+  // 被電擊：整個人癱住，什麼都不做
+  if(AI.state==='STUNNED'){
+    AI.stunT-=dt;
+    clerk.rotation.z=Math.sin(now2()*22)*0.06;   // 抽動
+    if(AI.stunT<=0){
+      clerk.rotation.z=0; AI.state='SEARCH'; AI.searchT=0; AI.path=[];
+      AI.calm=1.5; ev('taser_recovered');
+    }
     return;
   }
   var r=G.run;
@@ -1940,16 +2041,64 @@ function stepClerk(dt){
    ============================================================ */
 /* 姿勢：站立 / 潛行。
    潛行用 C 而不是 Ctrl —— 瀏覽器裡 Ctrl+W 會直接關掉分頁，preventDefault 攔不住。 */
-var crouchNow=false, sprintFlag=false;
+var crouchNow=false, sprintFlag=false, shrinkT=0;
 function poseHeight(){          // 店員視線判定用的玩家高度
+  if(shrinkT>0)return 0.40;     // 縮小後幾乎任何東西都能擋住視線
   return crouchNow?1.05:1.45;
 }
-function poseName(){ return crouchNow?'潛行':(sprintFlag?'衝刺':'站立'); }
+function poseName(){
+  if(shrinkT>0)return '縮小 '+Math.ceil(shrinkT)+'s';
+  return crouchNow?'潛行':(sprintFlag?'衝刺':'站立');
+}
+
+/* ---------- 一次性道具 ---------- */
+function useTaser(){
+  var r=G.run; if(!r||G.phase!=='play')return;
+  if(!G.upgrades.taser){toast('你沒有電擊槍');return;}
+  if(r.taser<=0){toast('電擊槍沒電了');return;}
+  r.taser--;
+  SFX.taser();
+  makeNoise(CFG.hearWalk*0.8);
+  // 從準心射出去：算店員到視線的垂直距離，夠近就算命中
+  camera.getWorldDirection(fwd);
+  var to=new THREE.Vector3(clerk.position.x-camera.position.x,
+                           1.2-camera.position.y,
+                           clerk.position.z-camera.position.z);
+  var along=to.dot(fwd);
+  var hit=false;
+  if(clerk.visible&&along>0&&along<CFG.taserRange){
+    var perp=to.clone().sub(fwd.clone().multiplyScalar(along)).length();
+    if(perp<1.1&&!blocked(camera.position.x,camera.position.z,
+                          clerk.position.x,clerk.position.z,1.0))hit=true;
+  }
+  if(hit){
+    AI.state='STUNNED'; AI.stunT=CFG.taserStun; AI.path=[]; AI.chaseT=0;
+    droneOff(); ev('taser_hit');
+    showBeat('命中','店員癱在地上了。','你有 '+CFG.taserStun+' 秒。',2600);
+  }else{
+    toast('打空了 · 剩 '+r.taser+' 發'); ev('taser_miss');
+  }
+  updateHUD();
+}
+function useShrink(){
+  var r=G.run; if(!r||G.phase!=='play')return;
+  if(!G.upgrades.shrink){toast('你沒有縮小劑');return;}
+  if(r.shrink<=0){toast('縮小劑用完了');return;}
+  if(shrinkT>0)return;
+  r.shrink--; shrinkT=CFG.shrinkTime;
+  SFX.shrink(); ev('shrink_used');
+  showBeat('縮小了','矮到幾乎不會被看見，但走得慢一點。',
+    CFG.shrinkTime+' 秒後恢復。',2600);
+  updateHUD();
+}
 
 function stepPlayer(dt){
-  var base=CFG.walkSpeed*(G.upgrades.shoes?1.12:1);
-  var sprintS=CFG.sprintSpeed*(G.upgrades.shoes?1.12:1);
-  var load=G.run.used/CFG.capacity, loadMul=1-0.14*Math.min(1,load);
+  var base=CFG.walkSpeed*speedMul();
+  var sprintS=CFG.sprintSpeed*speedMul();
+  // 負重：提袋越滿走越慢。多拿一件在物理上就有代價，不必靠店員來懲罰。
+  var pen=CFG.loadPenalty*(G.upgrades.padding?0.5:1);
+  var load=G.run.used/capacityNow(), loadMul=1-pen*Math.min(1,load);
+  if(shrinkT>0)loadMul*=0.8;
   var wantSprint=!!(keys['shift']||keys['shiftleft']);
   var wantCrouch=!!(keys['c']||tDuck);
   var stickMag=(IS_TOUCH&&touchMove.mag>0)?touchMove.mag:0;
@@ -1991,7 +2140,12 @@ function stepPlayer(dt){
   crouchNow = wantCrouch;
   var sp, eye=1.65, sprintingNow=false;
 
-  if(crouchNow){
+  if(shrinkT>0){ shrinkT-=dt; if(shrinkT<=0){shrinkT=0;toast('恢復原本大小');} }
+  if(shrinkT>0){
+    sp=base*0.8*loadMul; eye=0.52;
+    if(stickMag)sp*=Math.min(1,stickMag/SPRINT_AT);
+  }
+  else if(crouchNow){
     sp=base*0.45*loadMul; eye=1.05;
     if(stickMag)sp*=Math.min(1,stickMag/SPRINT_AT);
   }
@@ -2015,7 +2169,7 @@ function stepPlayer(dt){
   vel.z += (wish.z-vel.z)*Math.min(1,dt*13);
 
   var p={x:camera.position.x+vel.x*dt, z:camera.position.z+vel.z*dt};
-  resolve(p,0.36);
+  resolve(p,shrinkT>0?0.20:0.36);
   camera.position.x=p.x; camera.position.z=p.z;
 
   // 腳步噪音：潛行幾乎沒聲音，這是它真正的用途
@@ -2054,6 +2208,23 @@ function extract(){
 }
 function caught(){
   var r=G.run; if(r.extracted||r.caught)return;
+  // 備用鑰匙：掙脫一次，提袋保住，但被丟到離後門最遠的地方
+  if(r.revive>0){
+    r.revive--; ev('revive_used');
+    var best=-1,bd=-1;
+    for(var i=0;i<NODES.length;i++){
+      var d=Math.hypot(NODES[i].x-0,NODES[i].z-14.6);
+      if(d>bd){bd=d;best=i;}
+    }
+    if(best>=0){ camera.position.x=NODES[best].x; camera.position.z=NODES[best].z; }
+    vel.set(0,0,0);
+    AI.state='SEARCH'; AI.searchT=0; AI.calm=8; AI.chaseT=0; AI.path=[];
+    droneOff(); SFX.deny(); flashScreen();
+    showBeat('你掙脫了','備用鑰匙用掉了，提袋還在手上。',
+      '但你現在在賣場最深處，離後門最遠。',4200);
+    updateHUD();
+    return;
+  }
   r.caught=true; r.gross=r.value; r.bonus=0; r.net=0;
   ev('caught',{value:r.value,at:+r.t.toFixed(1)});
   STATS.caught++; STATS.times.push(r.t);
@@ -2160,13 +2331,24 @@ function updateExitChip(){
 function updateHUD(){
   var r=G.run; if(!r)return;
   $('bagval').innerHTML='$'+r.value+'<small>'+r.count+' 件</small>';
-  $('capnum').textContent=r.used+' / '+CFG.capacity+' 格';
-  var pct=Math.min(100,r.used/CFG.capacity*100);
+  $('capnum').textContent=r.used+' / '+capacityNow()+' 格';
+  var pct=Math.min(100,r.used/capacityNow()*100);
   $('barfill').style.width=pct+'%';
   $('basket').classList.toggle('full',pct>=100);
   $('shiftno').textContent=G.shift;
   $('cashhud').textContent='$'+G.cash;
   $('streakhud').textContent=STATS.streak;
+  // 注意度：把「拿越多越危險」變成看得見的數字
+  var h=heat();
+  $('heatfill').style.width=Math.round(h*100)+'%';
+  $('heatnum').textContent=Math.round(h*100)+'%';
+  $('basket').classList.toggle('hot',h>0.66);
+  // 一次性道具存量
+  var it='';
+  if(G.upgrades.taser) it+='<div class="'+(r.taser>0?'ready':'empty')+'">Q 電擊 '+r.taser+'</div>';
+  if(G.upgrades.shrink)it+='<div class="'+(r.shrink>0?'ready':'empty')+'">R 縮小 '+r.shrink+'</div>';
+  if(G.upgrades.revive)it+='<div class="'+(r.revive>0?'ready':'empty')+'">掙脫 '+r.revive+'</div>';
+  $('items').innerHTML=it;
   updateExitChip();
 }
 
@@ -2221,12 +2403,13 @@ function renderShop(){
     var owned=!!G.upgrades[u.id], can=!owned&&G.cash>=u.cost;
     var d=document.createElement('div');
     d.className='up'+(owned?' owned':'');
-    d.innerHTML='<h3>'+u.name+'</h3><p>'+u.desc+'</p>'+
+    d.innerHTML='<h3>'+u.name+
+        (u.consumable?' <em class="tagc">每次 '+u.consumable+' 次</em>':'')+'</h3>'+
+      '<p>'+u.desc+'</p>'+
       '<div class="cost">'+(owned?'已裝備':'$'+u.cost)+'</div>'+
       '<button '+(can?'':'disabled')+'>'+(owned?'已擁有':(G.cash>=u.cost?'買下':'錢不夠'))+'</button>';
     if(can)d.querySelector('button').addEventListener('click',function(){
       G.cash-=u.cost; G.upgrades[u.id]=true;
-      if(u.id==='bag')CFG.capacity+=6;
       if(u.id==='light'){flash.intensity=1.5;flash.distance=34;flash.angle=THREE.MathUtils.degToRad(36);}
       ev('upgrade_bought',{id:u.id}); SFX.register(); renderShop(); save();
     });
@@ -2255,7 +2438,10 @@ function renderNext(){
   $('next').innerHTML=
     '<div><span>店員追逐速度</span><b>×'+(1+0.24*d).toFixed(2)+'</b></div>'+
     '<div><span>店員視線距離</span><b>'+Math.round(CFG.visionRange*(1+0.35*d))+' m</b></div>'+
-    '<div><span>非賣品價值</span><b>$'+Math.round(CFG.forbiddenValue*(1+0.6*d))+'</b></div>';
+    '<div><span>非賣品價值</span><b>$'+Math.round(CFG.forbiddenValue*(1+0.6*d))+'</b></div>'+
+    '<div><span>提袋格數</span><b>'+capacityNow()+'</b></div>'+
+    '<div><span>裝滿時速度</span><b>×'+
+      (1-CFG.loadPenalty*(G.upgrades.padding?0.5:1)).toFixed(2)+'</b></div>';
 }
 function renderHistory(){ renderHistoryInto('history'); }
 function renderHistoryInto(id){
@@ -2332,7 +2518,6 @@ function load(){
     var d=JSON.parse(s);
     G.cash=d.cash||0; G.upgrades=d.upgrades||{}; G.shift=d.shift||0;
     if(d.stats)STATS=Object.assign(STATS,d.stats);
-    if(G.upgrades.bag)CFG.capacity=DEF.capacity+6;
     if(G.upgrades.light){flash.intensity=1.5;flash.distance=34;
       flash.angle=THREE.MathUtils.degToRad(36);}
   }catch(e){}
@@ -2381,12 +2566,17 @@ function startGame(){
   audioInit(); if(AC&&AC.state==='suspended')AC.resume();
   // 手機上瀏覽器介面會吃掉三分之一畫面，開場就直接進全螢幕
   if(IS_TOUCH&&!fsActive())goFullscreen();
-  hideAll(); manualPause=false; G.phase='play'; newRun(); requestLock();
+  hideAll(); manualPause=false; G.phase='play'; newRun(); syncItemButtons(); requestLock();
+}
+function syncItemButtons(){
+  if(!IS_TOUCH)return;
+  $('btnTaser').hidden=!G.upgrades.taser;
+  $('btnShrink').hidden=!G.upgrades.shrink;
 }
 function gotoShop(){ G.phase='shop'; renderShop(); show('s-shop'); }
 function nextShift(){
   STATS.nextShifts++; ev('next_shift_started'); save();
-  hideAll(); manualPause=false; G.phase='play'; newRun(); requestLock();
+  hideAll(); manualPause=false; G.phase='play'; newRun(); syncItemButtons(); requestLock();
 }
 $('btn-start').addEventListener('click',startGame);
 $('btn-help').addEventListener('click',gotoHelp);
@@ -2422,7 +2612,6 @@ function buildKnobs(){
 buildKnobs();
 $('dev-reset').addEventListener('click',function(){
   Object.keys(DEF).forEach(function(k){CFG[k]=DEF[k];});
-  if(G.upgrades.bag)CFG.capacity=DEF.capacity+6;
   KNOBS.forEach(function(k){if(k.sync)k.sync();}); updateHUD(); toast('參數已重置');
 });
 /* ---------- 全螢幕 ----------
