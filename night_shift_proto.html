@@ -64,14 +64,18 @@
   #objective .hint:empty{display:none}
   #objective.alarm .line{color:var(--danger)}
 
-  #beat{position:absolute;left:50%;top:66%;transform:translate(-50%,-50%);width:min(90vw,560px);
-    text-align:center;background:rgba(8,11,8,.9);border-top:2px solid var(--price);
-    border-bottom:2px solid var(--price);padding:22px 26px;opacity:0;transition:opacity .35s}
+  /* 只給真正要做決定的那幾個時刻，其他事件走 #toast 單行 */
+  #beat{position:absolute;left:50%;top:auto;bottom:16%;transform:translateX(-50%);
+    width:min(76vw,460px);text-align:center;background:rgba(8,11,8,.82);
+    border-top:2px solid var(--price);border-bottom:2px solid var(--price);
+    padding:13px 18px;opacity:0;transition:opacity .3s;backdrop-filter:blur(3px)}
   #beat.on{opacity:1}
-  #beat .b1{font-family:var(--f-num);font-size:30px;color:var(--tube);letter-spacing:.02em}
-  #beat .b2{font-size:15px;color:var(--price);margin-top:10px;line-height:1.6}
-  #beat .b3{font-size:14px;color:var(--dim);margin-top:12px;padding-top:11px;
+  #beat .b1{font-family:var(--f-num);font-size:22px;color:var(--tube);letter-spacing:.02em}
+  #beat .b2{font-size:13.5px;color:var(--price);margin-top:6px;line-height:1.55}
+  #beat .b3{font-size:12.5px;color:var(--dim);margin-top:8px;padding-top:7px;
     border-top:1px solid var(--line)}
+  #beat .b2:empty,#beat .b3:empty{display:none}
+  #beat .b3::after{content:'　·　點畫面關閉';color:var(--dimmer);font-size:11px}
 
   #basket{position:absolute;left:22px;bottom:22px;width:246px;background:var(--panel);
     border:1px solid var(--line);border-left:3px solid var(--price);padding:12px 14px 13px;
@@ -441,9 +445,11 @@
   body.touch #objective .tag{display:none}
   body.touch #objective .line{font-size:13.5px}
   body.touch #objective .hint{font-size:11px}
-  body.touch #beat{top:auto;bottom:42%;transform:translateX(-50%);width:min(62vw,430px);
-    padding:14px 18px}
-  body.touch #toast{bottom:52%;max-width:46vw}
+  body.touch #beat{bottom:26%;width:min(58vw,400px);padding:11px 14px}
+  body.touch #beat .b1{font-size:18px}
+  body.touch #beat .b2{font-size:12px}
+  body.touch #beat .b3{font-size:11px}
+  body.touch #toast{bottom:46%;max-width:46vw}
   body.touch #toast div{text-align:center}
   /* 廣播放在搖桿與按鍵之間的空檔 */
   body.touch #pa{bottom:calc(var(--sab) + 12px);max-width:min(40vw,320px);
@@ -1590,8 +1596,8 @@ function newRun(){
     '需要 '+CFG.extractItems+' 件才能脫身。櫃檯上就有兩件。');
   if(G.shift===1) showBeat('已從後門進入',
     K('W A S D 走路，滑鼠轉頭，看到東西按 E。',
-      '左下按住拖曳走路，推到外圈就是衝刺；右半邊拖曳轉頭，看到東西按「拿」。'),
-    '走道上方有店裡的監視螢幕，抬頭就看得到誰在哪。',7000);
+      '左下拖曳走路，推到外圈衝刺；右半邊拖曳轉頭，按「拿」撿東西。'),
+    '',4500);
 }
 
 // 第一次下手的教學腳本：先讓玩家知道「這裡有別人」，之後的選擇才算風險決策
@@ -1695,9 +1701,8 @@ function openSafe(){
   var def = win ? (Math.random()<0.5?BY_ID.goldbar:BY_ID.watch) : BY_ID.coins;
   spawnItem(def,-16.6,0,-11.6);
   SFX.unlock(); ev('safe_opened',{win:win,id:def.id});
-  if(win)showBeat('中了','保險箱裡是 '+def.name+' —— $'+def.v+'。',
-    '這一趟跑得值得。',3600);
-  else showBeat('只有零錢','$'+def.v+'。','鑰匙用掉了，箱子是空的。',3200);
+  toast(win?('保險箱裡是 '+def.name+' · $'+def.v)
+           :('只有一個零錢包 · $'+def.v));
   updateHUD(); updateAim();
 }
 
@@ -1799,6 +1804,7 @@ window.addEventListener('blur',function(){
 // 點畫面永遠是「繼續 +（需要時）重新鎖定」，一次點擊解決，不要兩段式
 canvas.addEventListener('mousedown',function(e){
   if(G.phase!=='play')return;
+  clearBeat();                     // 看完了就點掉，不用等它自己消失
   manualPause=false;
   if(!locked&&!lockFailed)requestLock();
 });
@@ -1832,6 +1838,7 @@ function lockFail(msg){
 var touchMove={f:0,s:0,mag:0};
 var stickId=null, stickOX=0, stickOY=0, lookId=null, lookLX=0, lookLY=0;
 var tDuck=false;
+var releaseTouch=function(){};   // 切到 UI 畫面時要放掉手指，否則會繼續攔捲動
 var SPRINT_AT=0.62;      // 搖桿推超過這個比例就開始加速到衝刺
 function setupTouch(){
   if(!IS_TOUCH)return;
@@ -1857,6 +1864,7 @@ function setupTouch(){
   // 浮動搖桿：左下區塊任何一點都能起手，搖桿就長在你手指落下的地方
   zone.addEventListener('touchstart',function(e){
     e.preventDefault();
+    clearBeat();
     if(stickId!==null)return;
     var t=e.changedTouches[0];
     stickId=t.identifier; stickOX=t.clientX; stickOY=t.clientY;
@@ -1866,6 +1874,8 @@ function setupTouch(){
   },{passive:false});
 
   function onStart(e){
+    if(G.phase!=='play')return;          // 標題／商店／排行榜的觸控要留給 UI
+    clearBeat();
     for(var i=0;i<e.changedTouches.length;i++){
       var t=e.changedTouches[i];
       if(t.target&&t.target.closest&&t.target.closest('#touch'))continue;   // 交給搖桿與按鈕
@@ -1873,6 +1883,9 @@ function setupTouch(){
     }
   }
   function onMove(e){
+    // 只有真的在操作遊戲時才攔預設行為。
+    // 無條件 preventDefault 會讓商店卡片捲不動、按鈕的 tap 也不會變成 click。
+    if(stickId===null&&lookId===null)return;
     e.preventDefault();
     for(var i=0;i<e.changedTouches.length;i++){
       var t=e.changedTouches[i];
@@ -1894,6 +1907,7 @@ function setupTouch(){
       if(t.identifier===lookId)lookId=null;
     }
   }
+  releaseTouch=function(){ clearStick(); lookId=null; };
   document.addEventListener('touchstart',onStart,{passive:true});
   document.addEventListener('touchmove',onMove,{passive:false});
   document.addEventListener('touchend',onEnd,{passive:true});
@@ -1920,6 +1934,27 @@ function setupTouch(){
   tap('btnJump',function(){ tJumpQueued=true; });
   tap('btnTaser',useTaser);
   tap('btnShrink',useShrink);
+
+  /* UI 按鈕的觸控保險：手機上動態生成的按鈕有時 tap 不會轉成 click。
+     用位移門檻區分「點」和「捲」，是點才代打一次 click。 */
+  SCREENS.forEach(function(id){
+    var el=$(id), sx=0, sy=0, moved=false;
+    el.addEventListener('touchstart',function(e){
+      var t=e.touches[0]; if(!t)return;
+      sx=t.clientX; sy=t.clientY; moved=false;
+    },{passive:true});
+    el.addEventListener('touchmove',function(e){
+      var t=e.touches[0]; if(!t)return;
+      if(Math.hypot(t.clientX-sx,t.clientY-sy)>12)moved=true;
+    },{passive:true});
+    el.addEventListener('touchend',function(e){
+      if(moved)return;
+      var b=e.target&&e.target.closest?e.target.closest('button'):null;
+      if(!b||b.disabled)return;
+      e.preventDefault();
+      b.click();
+    },{passive:false});
+  });
 
   // 說明頁改成觸控版操作
   var keysEl=document.querySelector('#s-help .keys');
@@ -2076,8 +2111,9 @@ function tryInteract(){
     if(aim.halo)scene.remove(aim.halo); if(aim.tag)scene.remove(aim.tag);
     G.run.hasKey=true; SFX.unlock(); makeNoise(aim.def.noise);
     ev('key_found');
-    showBeat('拿到鑰匙了','冷凍室裡有一個上鎖的保險箱。',
-      '裡面不一定有東西 —— 但值錢的話會很值錢。',4000);
+    toast('拿到鑰匙 · 冷凍室有個上鎖的保險箱');
+    setObjective(G.run.unlocked?'可以脫身了 —— 或者去開那個保險箱':'繼續拿，順路可以去開保險箱',
+      false,'保險箱在冷凍室走道邊，裡面不一定有東西。');
     updateHUD(); updateAim(); return;
   }
   var d=aim.def, r=G.run;
@@ -2118,9 +2154,9 @@ function unlockExit(){
   // 這就是整個原型要測的那一刻：把選擇明白攤在玩家面前
   setObjective('你現在就可以乾淨脫身了',false,
     '或者，再往裡面走一點。冷凍室那道紫光是一件 $'+forbiddenValueNow()+' 的非賣品。');
-  showBeat('現在就能走',
-    '提袋裡已經有 $'+r.value+'，回到後門就算成功。',
-    '冷凍室那道紫光值 $'+forbiddenValueNow()+'。要走，還是再進去一次？',7500);
+  showBeat('現在就能走 · 提袋 $'+r.value,
+    '但冷凍室那道紫光值 $'+forbiddenValueNow()+'。',
+    '要走，還是再進去一次？',6000);
 }
 function triggerForbidden(){
   var r=G.run;
@@ -2129,8 +2165,8 @@ function triggerForbidden(){
   SFX.forbidden();
   setObjective('放下已經太晚了 —— 衝回後門',true,
     K('Shift 衝刺比店員快，但腳步聲會被聽到。','搖桿推到外圈比店員快，但腳步聲會被聽到。'));
-  showBeat('他知道了','冷凍室的門在你身後。',
-    K('按住 Shift 衝回後門。','搖桿推到最外面，衝回後門。'),5000);
+  showBeat('他知道了',
+    K('按住 Shift 衝回後門。','搖桿推到最外面，衝回後門。'),'',3500);
   setTimeout(function(){ if(G.phase==='play')pa('偵測到非賣品離架。保全程序已啟動，請留在原地不要移動。'); },1600);
   AI.state='CHASE'; AI.lastSeen={x:camera.position.x,z:camera.position.z};
   AI.timer=0; AI.chaseT=0; AI.calm=0; AI.path=[]; clerk.visible=true;
@@ -2350,7 +2386,7 @@ function useTaser(){
   if(hit){
     AI.state='STUNNED'; AI.stunT=CFG.taserStun; AI.path=[]; AI.chaseT=0;
     droneOff(); ev('taser_hit');
-    showBeat('命中','店員癱在地上了。','你有 '+CFG.taserStun+' 秒。',2600);
+    toast('命中 · 他癱了 '+CFG.taserStun+' 秒 · 剩 '+r.taser+' 發');
   }else{
     toast('打空了 · 剩 '+r.taser+' 發'); ev('taser_miss');
   }
@@ -2363,8 +2399,7 @@ function useShrink(){
   if(shrinkT>0)return;
   r.shrink--; shrinkT=CFG.shrinkTime;
   SFX.shrink(); ev('shrink_used');
-  showBeat('縮小了','矮到幾乎不會被看見，但走得慢一點。',
-    CFG.shrinkTime+' 秒後恢復。',2600);
+  toast('縮小 '+CFG.shrinkTime+' 秒 · 矮到幾乎看不見你');
   updateHUD();
 }
 
@@ -2510,8 +2545,7 @@ function caught(){
     vel.set(0,0,0);
     AI.state='SEARCH'; AI.searchT=0; AI.calm=8; AI.chaseT=0; AI.path=[];
     droneOff(); SFX.deny(); flashScreen();
-    showBeat('你掙脫了','備用鑰匙用掉了，提袋還在手上。',
-      '但你現在在賣場最深處，離後門最遠。',4200);
+    showBeat('你掙脫了','提袋還在手上，但你被丟到離後門最遠的地方。','',3500);
     updateHUD();
     return;
   }
@@ -2593,9 +2627,15 @@ function endRun(){
    ============================================================ */
 var $=function(id){return document.getElementById(id);};
 function setObjective(text,alarm,hint){
-  $('objective').querySelector('.line').textContent=text;
-  $('objective').querySelector('.hint').textContent=hint||'';
-  $('objective').classList.toggle('alarm',!!alarm);
+  var o=$('objective');
+  o.querySelector('.line').textContent=text;
+  o.querySelector('.hint').textContent=hint||'';
+  o.classList.toggle('alarm',!!alarm);
+  // 補充說明看過就好，9 秒後自己收掉，只留一行目標
+  clearTimeout(setObjective._t);
+  if(hint)setObjective._t=setTimeout(function(){
+    o.querySelector('.hint').textContent='';
+  },9000);
 }
 function showBeat(l1,l2,l3,ms){
   var b=$('beat');
@@ -2604,7 +2644,11 @@ function showBeat(l1,l2,l3,ms){
   b.querySelector('.b3').textContent=l3||'';
   b.classList.add('on');
   clearTimeout(showBeat._t);
-  showBeat._t=setTimeout(function(){b.classList.remove('on');},ms||6000);
+  showBeat._t=setTimeout(function(){b.classList.remove('on');},ms||4500);
+}
+function clearBeat(){
+  clearTimeout(showBeat._t);
+  $('beat').classList.remove('on');
 }
 function toast(msg){
   var d=document.createElement('div'); d.textContent=msg;
@@ -2836,8 +2880,14 @@ if(G.shift>0)$('cashhud').textContent='$'+G.cash;
    15. 畫面切換
    ============================================================ */
 var SCREENS=['s-title','s-help','s-board','s-result','s-shop'];
-function show(id){ SCREENS.forEach(function(s){ $(s).classList.toggle('hidden',s!==id); }); }
-function hideAll(){ SCREENS.forEach(function(s){ $(s).classList.add('hidden'); }); }
+function show(id){
+  releaseTouch();
+  SCREENS.forEach(function(s){ $(s).classList.toggle('hidden',s!==id); });
+}
+function hideAll(){
+  releaseTouch();
+  SCREENS.forEach(function(s){ $(s).classList.add('hidden'); });
+}
 
 function gotoTitle(){
   G.phase='title'; renderMenuFoot(); show('s-title');
