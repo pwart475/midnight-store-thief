@@ -218,6 +218,11 @@
   .mbtn kbd{font-family:var(--f-mono);font-size:10.5px;font-weight:600;
     background:rgba(255,255,255,.09);padding:2px 6px}
   .mbtn.primary kbd{background:rgba(0,0,0,.2)}
+  .mbtn.wipe{font-size:12.5px;font-weight:500;letter-spacing:.06em;padding:10px 16px;
+    border-color:#33403A;color:var(--dimmer)}
+  .mbtn.wipe:hover{border-color:var(--danger);color:var(--danger);background:rgba(255,59,48,.06)}
+  .mbtn.wipe.armed{border-color:var(--danger);color:var(--danger);
+    background:rgba(255,59,48,.12);font-weight:700}
   .menufoot{margin-top:24px;font-family:var(--f-mono);font-size:11.5px;color:var(--dimmer);
     line-height:1.85}
   .menufoot b{color:var(--price);font-weight:600}
@@ -344,6 +349,25 @@
   .nextbox span{display:block;font-size:11px;color:var(--dim);margin-bottom:3px}
   .nextbox b{font-family:var(--f-num);font-size:22px;color:var(--danger);font-weight:400;
     font-variant-numeric:tabular-nums}
+
+  /* 裝備欄 */
+  .gearrow{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:baseline;
+    padding:9px 0;border-bottom:1px solid #1B221C}
+  .gearrow b{font-size:13.5px;font-weight:700;white-space:nowrap}
+  .gearrow span{font-size:11.5px;color:var(--dim);line-height:1.5}
+  .gearrow em{font-style:normal;font-family:var(--f-mono);font-size:10px;
+    white-space:nowrap;padding:2px 6px;border:1px solid var(--line-hi);color:var(--dimmer)}
+  .gearrow.consum b{color:var(--forbid)}
+  .gearrow.consum em{border-color:var(--forbid);color:var(--forbid)}
+  .gearempty{font-size:12.5px;color:var(--dimmer);padding:12px 0}
+  .gearlost{margin-top:12px;padding:9px 12px;background:rgba(255,59,48,.09);
+    border-left:3px solid var(--danger);font-size:12px;color:var(--tube)}
+  .gearlost b{color:var(--danger)}
+  @media (max-height:560px){
+    .gearrow{grid-template-columns:auto 1fr;padding:6px 0}
+    .gearrow em{grid-column:2;justify-self:start}
+    .gearrow span{font-size:11px}
+  }
 
   .devdata{margin-top:26px;border-top:1px solid var(--line);padding-top:12px}
   .devdata summary{font-family:var(--f-mono);font-size:11px;color:var(--dimmer);cursor:pointer;
@@ -554,6 +578,7 @@
       <button class="mbtn primary" id="btn-start"><span>開始遊戲</span><kbd>Enter</kbd></button>
       <button class="mbtn" id="btn-help"><span>遊戲說明</span></button>
       <button class="mbtn" id="btn-board"><span>排行榜</span></button>
+      <button class="mbtn wipe" id="btn-wipe"><span>清除犯案紀錄</span></button>
     </div>
     <div class="menufoot" id="menufoot"></div>
   </div>
@@ -577,7 +602,9 @@
       <div><b>·</b>衝刺很快但很吵；潛行很慢但幾乎沒聲音，還能蹲低躲在櫃檯後面</div>
       <div><b>·</b>被發現不一定會死 —— 他追一段時間抓不到就會放棄</div>
       <div><b>·</b><b style="color:var(--danger)">被抓到的代價</b>：現金歸零、隨機沒收兩件裝備、關卡回到第 1 次。
-        有護身符的話會自動啟用把裝備保下來。犯案紀錄永遠留著</div>
+        有護身符的話會自動啟用把裝備保下來</div>
+      <div><b>·</b>關掉瀏覽器也會從零開始 —— 錢和裝備都不跨次保留。
+        <b style="color:var(--price)">只有犯案紀錄永遠留著</b>，那是唯一的成績</div>
       <div><b>·</b>地上那條綠線一路通到後門，停電後會變紅並閃動</div>
       <div><b>·</b>提袋裝過八成會慢 10%，而且金額越高越容易被注意到</div>
       <div><b>·</b>賣場裡藏著一把鑰匙，冷凍室有個上鎖的保險箱 —— 值不值得繞去找，你自己決定</div>
@@ -641,6 +668,8 @@
     <h4 class="sh">今晚的貨 · 每次都不一樣</h4>
     <div class="shopgrid" id="shopgrid"></div>
     <button class="btn ghost" id="btn-reroll" style="margin-top:12px">換一批</button>
+    <h4 class="sh">現有裝備</h4>
+    <div id="gearlist"></div>
     <h4 class="sh">下一次會變這樣</h4>
     <div class="nextbox" id="next"></div>
     <h4 class="sh">歷次犯案</h4>
@@ -693,7 +722,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v3.3';
+var BUILD='v3.6';
 
 /* 手機上沒有 console，一旦初始化丟錯就只剩黑畫面、完全無從查起。
    所以把錯誤直接印在畫面上。 */
@@ -2645,6 +2674,7 @@ function caught(){
   r.gearSaved=!!G.upgrades.charm;
   r.lostCash=G.cash;
   r.lostList=resetProgress().map(gearName);
+  G.lastLost=r.lostList.slice();     // 留給裝備欄顯示「上次被沒收什麼」
   ev('progress_wiped',{gearSaved:r.gearSaved,cash:r.lostCash,lost:r.lostList});
   droneOff(); SFX.caught();
   save(); startCatchCam();
@@ -2804,7 +2834,7 @@ function renderReceipt(){
     (r.caught&&r.gearSaved
       ? '<div class="row"><span>護身符自動啟用</span><span>裝備全保</span></div>'
       : (r.caught&&r.lostList&&r.lostList.length
-          ? '<div class="row mut"><span>裝備被沒收</span><span>'+
+          ? '<div class="row f"><span>沒收裝備</span><span>'+
             r.lostList.join('、')+'</span></div>' : ''))+
     '<div class="rule"></div>'+
     '<div class="tot"><span>'+(r.caught?'實得':'本次獲利')+'</span><span>$'+r.net+'</span></div>'+
@@ -2861,7 +2891,25 @@ function renderShop(){
   rb.textContent='換一批 · $'+CFG.rerollCost;
   rb.disabled = G.cash<CFG.rerollCost || poolLeft<=CFG.shopSlots;
   rb.style.opacity = rb.disabled?'.4':'1';
-  renderNext(); renderHistory(); renderMetrics();
+  renderGear(); renderNext(); renderHistory(); renderMetrics();
+}
+function renderGear(){
+  var el=$('gearlist'), html='';
+  var owned=UPGRADES.filter(function(u){return G.upgrades[u.id];});
+  if(!owned.length){
+    html+='<div class="gearempty">身上什麼都沒有。買一件再進去吧。</div>';
+  }else{
+    owned.forEach(function(u){
+      html+='<div class="gearrow'+(u.consumable?' consum':'')+'">'+
+        '<b>'+u.name+'</b><span>'+u.desc+'</span>'+
+        '<em>'+(u.consumable?('每次 '+u.consumable+' 用'):'永久')+'</em></div>';
+    });
+  }
+  if(G.lastLost&&G.lastLost.length){
+    html+='<div class="gearlost">上次被抓，店員沒收了 <b>'+
+      G.lastLost.join('、')+'</b>。</div>';
+  }
+  el.innerHTML=html;
 }
 function renderCard(){
   var s=STATS;
@@ -2959,15 +3007,18 @@ function copyData(){
    14. 存檔（每位測試者的瀏覽器本地，讀寫都包 try/catch）
    ============================================================ */
 function save(){
+  // 只存紀錄。現金、裝備、關卡進度刻意不存 ——
+  // 關掉瀏覽器就是新的一輪，每次開啟都從第 1 次、身上什麼都沒有開始。
   try{localStorage.setItem('nightshift_v1',
-    JSON.stringify({cash:G.cash,upgrades:G.upgrades,stats:STATS,shift:G.shift}));}catch(e){}
+    JSON.stringify({stats:STATS}));}catch(e){}
 }
 function load(){
   try{
     var s=localStorage.getItem('nightshift_v1'); if(!s)return;
     var d=JSON.parse(s);
-    G.cash=d.cash||0; G.upgrades=d.upgrades||{}; G.shift=d.shift||0;
     if(d.stats)STATS=Object.assign(STATS,d.stats);
+    // 連續紀錄是「這次開啟期間」的成績；個人最佳才是跨越所有工作階段的
+    STATS.streak=0;
     applyFlashlight();
   }catch(e){}
 }
@@ -3021,9 +3072,42 @@ function gotoTitle(){
 }
 function renderMenuFoot(){
   var s=STATS, f=$('menufoot');
-  if(!s.runs){ f.innerHTML='第一次來？直接開始就好，需要的東西路上都會說。'; return; }
+  var gear=Object.keys(G.upgrades).length;
+  if(!s.runs&&!gear){ f.innerHTML='第一次來？直接開始就好，需要的東西路上都會說。'; return; }
   f.innerHTML='已下手 <b>'+s.runs+'</b> 次 · 最長連續沒被抓 <b>'+s.bestStreak+'</b> 次'+
-    '<br>目前連續 <b>'+s.streak+'</b> 次 · 手上有 <b>$'+G.cash+'</b>';
+    '<br>目前連續 <b>'+s.streak+'</b> 次 · 手上有 <b>$'+G.cash+'</b>'+
+    ' · 裝備 <b>'+gear+'</b> 件'+
+    '<br><span style="opacity:.7">關掉瀏覽器就從零開始。只有犯案紀錄會留著。</span>';
+}
+/* 清除犯案紀錄：兩段式確認。
+   進度本來就不跨工作階段（關掉就從零開始），
+   所以唯一需要手動清的是紀錄 —— 那是唯一會累積的東西。 */
+var wipeArmed=false;
+function wipeSave(){
+  var b=$('btn-wipe');
+  if(!wipeArmed){
+    wipeArmed=true; b.classList.add('armed');
+    b.querySelector('span').textContent='確定清除？所有紀錄都會消失';
+    clearTimeout(wipeSave._t);
+    wipeSave._t=setTimeout(function(){
+      wipeArmed=false; b.classList.remove('armed');
+      b.querySelector('span').textContent='清除犯案紀錄';
+    },5000);
+    return;
+  }
+  clearTimeout(wipeSave._t);
+  try{ localStorage.removeItem('nightshift_v1'); }catch(e){}
+  G.cash=0; G.upgrades={}; G.shift=0;
+  G.offer=null; G.offerShift=-1; G.rerolls=0; G.lastLost=[];
+  CFG.capacity=DEF.capacity;
+  STATS={runs:0,extracted:0,caught:0,forbiddenSeen:0,forbiddenPicked:0,
+    pickedAfterUnlock:0,nextShifts:0,times:[],cashTotal:0,
+    streak:0,bestStreak:0,bestShift:0,forbiddenSurvived:0,deepestShift:0,history:[]};
+  applyFlashlight(); syncItemButtons();
+  wipeArmed=false; b.classList.remove('armed');
+  b.querySelector('span').textContent='已清除，全新開始';
+  renderMenuFoot();
+  setTimeout(function(){ b.querySelector('span').textContent='清除犯案紀錄'; },2500);
 }
 function gotoHelp(){ G.phase='help'; show('s-help'); }
 function gotoBoard(){ G.phase='board'; renderBoard(); show('s-board'); }
@@ -3031,7 +3115,7 @@ function renderBoard(){
   var s=STATS;
   $('board').innerHTML=
     '<div class="cl">'+
-      '<div class="ct">最長連續沒被抓</div>'+
+      '<div class="ct">最長連續沒被抓 · 歷史最佳</div>'+
       '<div class="cn">'+s.bestStreak+'<em>次</em></div>'+
       '<div class="cs">目前連續 '+s.streak+' 次</div>'+
     '</div>'+
@@ -3089,6 +3173,7 @@ function nextShift(){
 $('btn-start').addEventListener('click',startGame);
 $('btn-help').addEventListener('click',gotoHelp);
 $('btn-board').addEventListener('click',gotoBoard);
+$('btn-wipe').addEventListener('click',wipeSave);
 $('btn-help-back').addEventListener('click',gotoTitle);
 $('btn-board-back').addEventListener('click',gotoTitle);
 $('btn-board-copy').addEventListener('click',copyBrag);
