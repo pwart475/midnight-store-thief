@@ -666,7 +666,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v2.9';
+var BUILD='v3.0';
 
 /* 手機上沒有 console，一旦初始化丟錯就只剩黑畫面、完全無從查起。
    所以把錯誤直接印在畫面上。 */
@@ -1358,25 +1358,30 @@ drawStatic(); camTex.needsUpdate=true;   // 第一格先給雜訊，主迴圈起
 /* ---------- 店員：麥塊風格方塊人形 ----------
    朝向為 -Z（與 canSee 的 forward 一致），所以臉在 BoxGeometry 的 -Z 面 = 材質索引 5 */
 var SKIN=0xD8BFA0, SHIRT=0x2F6E5A, APRONC=0xE4E2D2, PANTS=0x2A2E33, CAPC=0xC0392B;
+/* 店員的臉：交接包要的是「可愛但微詭異」，不是恐怖。
+   所以沒有牙齒、沒有下垂的怒眉 —— 發現玩家時是「驚訝」而不是「猙獰」。
+   追逐的威脅感交給紅帽子、舉起的雙手和紅光，不靠臉去嚇人。 */
 function mcFace(alert){
   var c=document.createElement('canvas'); c.width=c.height=64;
   var g=c.getContext('2d'); g.imageSmoothingEnabled=false;
-  g.fillStyle='#D8BFA0'; g.fillRect(0,0,64,64);
-  g.fillStyle='#C9AE8E'; for(var i=0;i<40;i++){
+  g.fillStyle='#E4C9A8'; g.fillRect(0,0,64,64);
+  g.fillStyle='#D9BC98'; for(var i=0;i<28;i++){
     g.fillRect((i*23)%64,(i*37)%64,4,4); }
+  // 腮紅：讓他先讀起來是卡通人物
+  g.fillStyle='#E8A090'; g.fillRect(6,38,10,7); g.fillRect(48,38,10,7);
   if(alert){
-    g.fillStyle='#FFFFFF'; g.fillRect(10,20,18,16); g.fillRect(36,20,18,16);
-    g.fillStyle='#1A1A20'; g.fillRect(17,26,5,5); g.fillRect(43,26,5,5);
-    g.fillStyle='#3A1A1A'; g.fillRect(14,44,36,12);
-    g.fillStyle='#FFFFFF'; g.fillRect(18,44,4,6); g.fillRect(26,44,4,6);
-    g.fillRect(34,44,4,6); g.fillRect(42,44,4,6);
+    // 驚訝：眼睛睜大、眉毛往上、嘴巴變小圓
+    g.fillStyle='#FFFFFF'; g.fillRect(13,22,15,14); g.fillRect(36,22,15,14);
+    g.fillStyle='#2A2620'; g.fillRect(18,26,6,7);  g.fillRect(41,26,6,7);
+    g.fillStyle='#8A5A50'; g.fillRect(27,47,10,4); g.fillRect(29,45,6,8);
+    g.fillStyle='#B08C64'; g.fillRect(14,15,13,3); g.fillRect(37,15,13,3);
   }else{
-    g.fillStyle='#FFFFFF'; g.fillRect(12,24,16,10); g.fillRect(36,24,16,10);
-    g.fillStyle='#1A1A20'; g.fillRect(19,26,6,6); g.fillRect(41,26,6,6);
-    g.fillStyle='#8A5A50'; g.fillRect(18,46,28,4);
-    g.fillRect(14,42,5,4); g.fillRect(45,42,5,4);
+    // 平常：兩顆圓點眼 + 一抹小微笑
+    g.fillStyle='#2A2620'; g.fillRect(17,25,7,9); g.fillRect(40,25,7,9);
+    g.fillStyle='#FFFFFF'; g.fillRect(19,26,3,3); g.fillRect(42,26,3,3);
+    g.fillStyle='#8A5A50'; g.fillRect(24,48,16,3);
+    g.fillRect(21,45,3,3); g.fillRect(40,45,3,3);
   }
-  g.fillStyle='#4A3A2A'; g.fillRect(12,17,16,3); g.fillRect(36,17,16,3);
   var t=new THREE.CanvasTexture(c);
   t.magFilter=THREE.NearestFilter; t.minFilter=THREE.NearestFilter;
   return t;

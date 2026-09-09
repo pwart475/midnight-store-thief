@@ -36,7 +36,7 @@
 </style>
 </head>
 <body>
-<iframe id="game" src="night_shift_proto.html"
+<iframe id="game"
         allow="pointer-lock; fullscreen; autoplay"
         title="午夜超商小偷"></iframe>
 <div id="err">
@@ -46,6 +46,11 @@
   </div>
 </div>
 <script>
+  /* 一定要帶時間戳載入遊戲檔。
+     手機瀏覽器的 HTML 快取非常頑固，改版後常常還在跑舊檔案，
+     結果看起來像「新版沒修好」，其實是根本沒載到新版。 */
+  document.getElementById('game').src='night_shift_proto.html?t='+Date.now();
+
   // 手機瀏覽器的網址列會吃掉高度，用實際可視高度校正
   function fit(){
     document.getElementById('game').style.height=window.innerHeight+'px';
