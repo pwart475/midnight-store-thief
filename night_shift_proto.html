@@ -252,6 +252,10 @@
   .menufoot{margin-top:24px;font-family:var(--f-mono);font-size:11.5px;color:var(--dimmer);
     line-height:1.85}
   .menufoot b{color:var(--price);font-weight:600}
+  /* iPhone 的靜音鍵提醒 —— 這個問題看起來像程式壞了，所以講得直接一點 */
+  .audionote{margin-top:16px;padding:10px 13px;font-size:12px;line-height:1.7;
+    color:#FFF3C4;background:rgba(255,243,196,.07);border-left:2px solid #8A7A46}
+  .audionote b{color:#FFF3C4}
   @media (max-height:560px){
     .menu{max-height:96vh;padding:6px}
     .menu h1{font-size:clamp(26px,7vh,40px)}
@@ -658,8 +662,10 @@
       <button class="mbtn primary" id="btn-start"><span>開始遊戲</span><kbd>Enter</kbd></button>
       <button class="mbtn" id="btn-help"><span>遊戲說明</span></button>
       <button class="mbtn" id="btn-board"><span>排行榜</span></button>
+      <button class="mbtn" id="btn-sound"><span>測試音效</span></button>
       <button class="mbtn wipe" id="btn-wipe"><span>清除犯案紀錄</span></button>
     </div>
+    <div class="audionote" id="audionote" hidden></div>
     <div class="menufoot" id="menufoot"></div>
   </div>
 </div>
@@ -827,7 +833,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v4.6';
+var BUILD='v4.7';
 
 /* 手機上沒有 console，一旦初始化丟錯就只剩黑畫面、完全無從查起。
    所以把錯誤直接印在畫面上。 */
@@ -883,6 +889,19 @@ var CFG = Object.assign({},DEF);
 
 // 觸控裝置：改用虛擬搖桿 + 拖曳轉視角，並降低算繪解析度換取流暢度
 var IS_TOUCH = (navigator.maxTouchPoints||0)>0 || ('ontouchstart' in window);
+var IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+             (navigator.platform==='MacIntel'&&(navigator.maxTouchPoints||0)>1);
+
+/* 手機的音量要另外一組。
+   原因不是「手機比較小聲」，是手機喇叭在 500Hz 以下幾乎沒有輸出 ——
+   我原本整套音效都建在低頻上（腳步 150Hz、後門 96Hz、日光燈 60Hz），
+   戴耳機很好聽，用 iPhone 喇叭放等於沒有聲音。
+   所以除了整體調大，各個音效本身也加了中頻的成分（見 SFX）。 */
+if(IS_TOUCH){
+  var LOUD={volume:0.72, ambience:0.085, stepVol:0.07,
+            clerkStepVol:0.40, doorPingVol:0.16};
+  Object.assign(DEF,LOUD); Object.assign(CFG,LOUD);
+}
 // 提示文字要講玩家手上真的有的東西：手機沒有 E 鍵，也沒有 Shift
 function K(desktop,touch){ return IS_TOUCH?touch:desktop; }
 
@@ -1848,8 +1867,54 @@ function audioInit(){
     AC=new (window.AudioContext||window.webkitAudioContext)();
     master=AC.createGain(); master.gain.value=CFG.volume; master.connect(AC.destination);
   }catch(e){AC=null;}
+  iosUnmute();
 }
 function setVolume(v){ if(master)try{master.gain.value=v;}catch(e){} }
+
+/* ---------- iPhone 沒聲音 ----------
+   iOS 把 WebAudio 歸在 ambient 類別，會被機身側邊的實體靜音鍵整個切掉 ——
+   而且瀏覽器完全不會回報這件事，看起來就像程式壞了。
+
+   下面這招是把一段（幾乎）無聲的音檔用 HTMLAudioElement 播起來，
+   讓整個 audio session 升級成 media playback 類別，就不再受靜音鍵管。
+   它不是保證有效（iOS 每一版行為都在變），所以標題頁也直接寫一行提醒 ——
+   靜音鍵沒關的話，那才是真正的解法。
+
+   波形不能是全零：完全無聲的檔案有機會被系統當成沒東西在播而不建立 session，
+   所以振幅給 1 個 LSB。 */
+var unmuteEl=null;
+function iosUnmute(){
+  if(!IS_IOS||unmuteEl)return;
+  try{
+    var sr=8000, n=sr;                      // 1 秒
+    var buf=new ArrayBuffer(44+n*2), d=new DataView(buf);
+    function ascii(o,s){ for(var i=0;i<s.length;i++)d.setUint8(o+i,s.charCodeAt(i)); }
+    ascii(0,'RIFF'); d.setUint32(4,36+n*2,true); ascii(8,'WAVEfmt ');
+    d.setUint32(16,16,true); d.setUint16(20,1,true); d.setUint16(22,1,true);
+    d.setUint32(24,sr,true); d.setUint32(28,sr*2,true);
+    d.setUint16(32,2,true);  d.setUint16(34,16,true);
+    ascii(36,'data'); d.setUint32(40,n*2,true);
+    for(var i=0;i<n;i++)d.setInt16(44+i*2,(i%2)?1:-1,true);
+    unmuteEl=new Audio(URL.createObjectURL(new Blob([buf],{type:'audio/wav'})));
+    unmuteEl.loop=true; unmuteEl.volume=0.002;
+    unmuteEl.setAttribute('playsinline','');
+    var pr=unmuteEl.play();
+    if(pr&&pr.catch)pr.catch(function(){});
+  }catch(e){ unmuteEl=null; }
+}
+/* iOS 會在切到背景、來電、甚至只是閒置之後把 AudioContext 掛起來，
+   而且不會自己醒。所以每一次使用者互動都試著喚醒它。 */
+function audioWake(){
+  if(!AC)return;
+  try{ if(AC.state==='suspended')AC.resume(); }catch(e){}
+  if(unmuteEl&&unmuteEl.paused){ try{ unmuteEl.play(); }catch(e){} }
+}
+['touchend','pointerdown','click','keydown'].forEach(function(t){
+  window.addEventListener(t,audioWake,{passive:true});
+});
+document.addEventListener('visibilitychange',function(){
+  if(document.visibilityState==='visible')audioWake();
+});
 
 /* ---------- 方位音效 ----------
    潛行遊戲最該精通的技能之一是「用耳朵知道他在哪條走道」。
@@ -1923,9 +1988,14 @@ function ambienceOn(){
        這是店裡唯一一個固定的聽覺地標 —— 停電之後你看不到「冷凍室」那塊招牌，
        但那個嗡嗡還在原地，轉頭就知道自己面朝哪邊。 */
     var cp=panAt(-14,1.2,-11.6,ambGain);
+    // 兩段：190Hz 是壓縮機的機殼震動（耳機聽得到），
+    // 1100Hz 是風扇的沙沙聲（手機喇叭只放得出這一段）
     var bp=AC.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=190; bp.Q.value=0.9;
-    var cg=AC.createGain(); cg.gain.value=cp?0.42:0;
-    src.connect(bp); bp.connect(cg); cg.connect(cp||ambGain);
+    var bp2=AC.createBiquadFilter(); bp2.type='bandpass'; bp2.frequency.value=1100; bp2.Q.value=0.7;
+    var cg=AC.createGain(); cg.gain.value=cp?0.50:0;
+    src.connect(bp); bp.connect(cg);
+    src.connect(bp2); bp2.connect(cg);
+    cg.connect(cp||ambGain);
     o1.start(); o2.start(); src.start();
     amb={o1:o1,o2:o2,src:src,hum:g1,hum2:g2};
     ambGain.gain.linearRampToValueAtTime(CFG.ambience,AC.currentTime+1.6);
@@ -1970,15 +2040,23 @@ var SFX={
   caught:function(){beep(320,0.9,'sawtooth',0.2,60); noiseBurst(0.5,180,0.18,0.6);},
   /* 店員腳步：這是全遊戲最重要的一個方位音效。
      距離衰減交給 panner，所以這裡傳的是「原音量」而不是算好的值。
-     兩下一組（腳跟落地 + 鞋底），比單一 burst 好認方向。 */
+
+     三層刻意分開頻段：
+       1500Hz 的鞋底摩擦 —— 手機喇叭唯一放得出來的部分，也最好定位
+        170Hz 的落地悶響 —— 耳機才聽得到，負責重量感
+        620Hz 的第二下   —— 隔 44ms，把「一步」變成有前後的兩下
+     之前只有下面兩層，所以在 iPhone 上等於沒聲音。 */
   step:function(v,x,z){
     var p=panAt(x,0.22,z);
-    noiseBurst(0.09,150,v,0.9,p);
-    setTimeout(function(){ noiseBurst(0.05,240,v*0.45,1.6,p); },42);
+    noiseBurst(0.05,1500,v*0.62,1.0,p);
+    noiseBurst(0.09,170,v,0.9,p);
+    setTimeout(function(){ noiseBurst(0.05,620,v*0.5,1.5,p); },44);
   },
-  // 後門的低頻脈衝：解鎖後才有，停電時它就是導引燈帶的聽覺版
+  // 後門脈衝：解鎖後才有，停電時它就是導引燈帶的聽覺版。
+  // 中頻那一聲是給手機喇叭的，低頻那一聲是給耳機的。
   doorPing:function(x,z){
     var p=panAt(x,1.1,z);
+    beep(760,0.17,'triangle',CFG.doorPingVol*0.9,560,p);
     beep(96,0.5,'sine',CFG.doorPingVol,72,p);
   },
   // 玩家腳步：走／衝／潛行三種音量與頻率，加一點隨機避免像節拍器
@@ -1987,6 +2065,8 @@ var SFX={
     var v = kind==='run'?CFG.stepVol*1.7 : kind==='sneak'?CFG.stepVol*0.4 : CFG.stepVol;
     var f = (kind==='run'?185:145)*(0.88+Math.random()*0.3);
     noiseBurst(0.07,f,v,1.2);
+    // 中頻的鞋底聲，手機喇叭只放得出這一層
+    noiseBurst(0.04,1250*(0.9+Math.random()*0.25),v*0.7,1.0);
   },
   jump:function(){noiseBurst(0.06,700,0.05,1.4);},
   land:function(){noiseBurst(0.13,110,0.13,0.8);},
@@ -3800,6 +3880,43 @@ $('btn-start').addEventListener('click',startGame);
 $('btn-help').addEventListener('click',gotoHelp);
 $('btn-board').addEventListener('click',gotoBoard);
 $('btn-wipe').addEventListener('click',wipeSave);
+
+/* 音效測試：不進遊戲就能確認「有沒有聲音」和「左右分不分得出來」。
+   在店員腳步聲的位置放三組音，聽者暫時擺在原點朝北 ——
+   左邊三下、右邊三下、後門一聲。聽不到就是被靜音鍵切掉了。 */
+$('btn-sound').addEventListener('click',function(){
+  audioInit(); audioWake(); setVolume(CFG.volume);
+  var L=AC&&AC.listener;
+  if(L)try{
+    if(L.positionX){ L.positionX.value=0;L.positionY.value=1.6;L.positionZ.value=0;
+      L.forwardX.value=0;L.forwardY.value=0;L.forwardZ.value=-1;
+      L.upX.value=0;L.upY.value=1;L.upZ.value=0; }
+    else { L.setPosition(0,1.6,0); L.setOrientation(0,0,-1,0,1,0); }
+  }catch(e){}
+  var seq=[[0,-4,-2,0],[220,-4,-2,0],[440,-4,-2,0],
+           [1000,4,-2,0],[1220,4,-2,0],[1440,4,-2,0],
+           [2100,0,-6,1]];
+  seq.forEach(function(s){
+    setTimeout(function(){
+      if(s[3])SFX.doorPing(s[1],s[2]);
+      else SFX.step(CFG.clerkStepVol,s[1],s[2]);
+    },s[0]);
+  });
+  var n=$('audionote'); n.hidden=false;
+  n.innerHTML='左邊三下 → 右邊三下 → 後門一聲低音。<br>'+
+    (IS_IOS
+      ? '<b>完全聽不到？</b>請確認 iPhone 機身左側的<b>靜音鍵</b>沒有撥到靜音 —— '+
+        'iOS 的實體靜音鍵會把網頁遊戲的聲音整個關掉，而且不會有任何提示。<br>'+
+        '還是不行就把系統音量調高，或戴耳機。'
+      : '聽不到就檢查系統音量與瀏覽器分頁有沒有被靜音。')+
+    '<br><span style="opacity:.6">按 T 可以開調參面板單獨調每個音量。</span>';
+});
+if(IS_IOS){
+  var an=$('audionote'); an.hidden=false;
+  an.innerHTML='<b>iPhone 請先確認機身左側的靜音鍵沒有打開。</b>'+
+    'iOS 的實體靜音鍵會把網頁遊戲的聲音整個切掉 —— '+
+    '按上面的「測試音效」可以直接驗證。戴耳機的話還聽得出方向。';
+}
 $('btn-help-back').addEventListener('click',gotoTitle);
 $('btn-board-back').addEventListener('click',gotoTitle);
 $('btn-board-copy').addEventListener('click',copyBrag);
