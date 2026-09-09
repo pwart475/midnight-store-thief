@@ -116,6 +116,18 @@
   #exitchip.on{border-color:var(--fresh);color:var(--fresh);background:rgba(74,222,128,.1)}
   #exitchip.alarm{border-color:var(--danger);color:var(--danger);background:rgba(255,59,48,.12)}
 
+  /* 被發現進度：從「看到」到「開始追」之間的那段窗口。
+     看得見它，玩家才學得會警戒距離在哪、以及切斷視線有沒有用。 */
+  #spot{position:absolute;left:50%;top:calc(50% - 54px);transform:translateX(-50%);
+    width:104px;opacity:0;transition:opacity .12s;text-align:center}
+  #spot.on{opacity:1}
+  #spot .lbl{font-size:10px;letter-spacing:.2em;color:var(--price);margin-bottom:4px;
+    text-shadow:0 1px 6px rgba(0,0,0,.9)}
+  #spot .track{height:4px;background:rgba(8,11,8,.7);border:1px solid var(--line-hi)}
+  #spot .fill{height:100%;width:0%;background:var(--price);transition:width .06s linear}
+  #spot.hot .lbl{color:var(--danger)}
+  #spot.hot .fill{background:var(--danger)}
+
   #prompt{position:absolute;left:50%;top:calc(50% + 44px);transform:translateX(-50%);
     font-size:14px;white-space:nowrap;padding:7px 13px;background:rgba(8,11,8,.82);
     border:1px solid var(--line);opacity:0;transition:opacity .12s}
@@ -538,6 +550,7 @@
 <div class="layer" id="hud">
   <div id="steerring"></div>
   <div id="crosshair"><i></i><i></i><i></i><i></i></div>
+  <div id="spot"><div class="lbl">被發現中</div><div class="track"><div class="fill"></div></div></div>
   <div id="objective"><div class="tag">當前目標</div><div class="line">—</div><div class="hint"></div></div>
   <div id="beat"><div class="b1"></div><div class="b2"></div><div class="b3"></div></div>
   <div id="basket">
@@ -598,7 +611,12 @@
     </div>
     <h4 class="sh">幾個活下來的訣竅</h4>
     <div class="loop" style="border-left-color:var(--fresh)">
-      <div><b>·</b>走道上方有監視螢幕，抬頭就看得到店員在哪。停電後會斷訊</div>
+      <div><b>·</b>走道上方有監視螢幕（冷凍室裡也有一台），抬頭就看得到店員在哪、
+        以及他的<b style="color:var(--price)">視線扇形</b>——那就是警戒範圍。停電後會斷訊</div>
+      <div><b>·</b>他頭上會冒符號：<b style="color:var(--price)">?</b> 是聽到聲音正在過來，
+        <b style="color:var(--danger)">!</b> 是已經發現你</div>
+      <div><b>·</b>被看到不是瞬間就完蛋 —— 畫面中央會出現「被發現中」進度條，
+        <b style="color:var(--tube)">在它滿之前切斷視線就能溜掉</b></div>
       <div><b>·</b>衝刺很快但很吵；潛行很慢但幾乎沒聲音，還能蹲低躲在櫃檯後面</div>
       <div><b>·</b>被發現不一定會死 —— 他追一段時間抓不到就會放棄</div>
       <div><b>·</b><b style="color:var(--danger)">被抓到的代價</b>：現金歸零、隨機沒收兩件裝備、關卡回到第 1 次。
@@ -722,7 +740,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v3.6';
+var BUILD='v3.7';
 
 /* 手機上沒有 console，一旦初始化丟錯就只剩黑畫面、完全無從查起。
    所以把錯誤直接印在畫面上。 */
@@ -748,6 +766,7 @@ var DEF = {
   edgeTurn:2.4, steerYaw:3.4, steerPitch:2.0,
   clerkPatrol:2.5, clerkChase:4.9, visionRange:13, visionAngle:42,
   loseSight:3.5, chaseGiveUp:10, calmTime:6, catchDist:1.0, hearWalk:8, hearSprint:17,
+  spotTime:0.6,          // 被看到多久才真的變成追逐 —— 這段就是你的反應窗口
   capacity:12, riskBonus:1.2, forbiddenValue:120, extractItems:3,
   // 負重：只有超過門檻才罰，且是固定一級，不是連續遞減
   loadThreshold:0.80, loadPenalty:0.10,
@@ -786,6 +805,7 @@ var KNOBS = [
   ['k-clerk','clerkChase','追逐速度',3,10,.1,' m/s'],
   ['k-clerk','visionRange','視線距離',6,34,1,' m'],
   ['k-clerk','visionAngle','視野半角',15,90,1,'°'],
+  ['k-clerk','spotTime','被發現的反應窗口',0.1,3,.05,' s'],
   ['k-clerk','loseSight','失去目標時間',1,10,.5,' s'],
   ['k-clerk','chaseGiveUp','追多久就放棄',3,30,1,' s'],
   ['k-clerk','calmTime','放棄後不理你',0,20,1,' s'],
@@ -1377,6 +1397,18 @@ function drawFeed(){
   // 店員（只有他真的在場才會出現在畫面上）
   if(typeof clerk!=='undefined'&&clerk&&clerk.visible){
     var cx=mx(clerk.position.x), cz=mz(clerk.position.z);
+    // 視線扇形：把「警戒距離」畫出來。它會隨注意度變大，玩家看得到自己讓他變敏銳了。
+    if(typeof AI!=='undefined'&&AI.state!=='STUNNED'){
+      var fx=-Math.sin(clerk.rotation.y), fz=-Math.cos(clerk.rotation.y);
+      var mid=Math.atan2(fz,fx);
+      var half=CFG.visionAngle*Math.PI/180;
+      var rad=visionNow()*MAP_S;
+      g.fillStyle=(AI.state==='CHASE')?'rgba(255,59,48,.20)':'rgba(255,201,60,.13)';
+      g.beginPath(); g.moveTo(cx,cz);
+      g.arc(cx,cz,rad,mid-half,mid+half); g.closePath(); g.fill();
+      g.strokeStyle=(AI.state==='CHASE')?'rgba(255,59,48,.5)':'rgba(255,201,60,.32)';
+      g.lineWidth=1; g.stroke();
+    }
     g.fillStyle='rgba(255,59,48,.28)';
     g.beginPath(); g.arc(cx,cz,9,0,7); g.fill();
     g.fillStyle='#FF3B30';
@@ -1447,6 +1479,8 @@ monitor(-7,2.50,11.6,Math.PI);      // 收銀區西側櫃檯上方，朝北（�
 monitor(-19.15,2.35,0,Math.PI/2);   // 西側牆面，朝東
 monitor(-17.2,2.40,3,Math.PI);      // 西側逃生走道，朝北（往出口跑的時候看得到）
 monitor(14,2.50,-14.8);             // 倉庫，朝南
+// 冷凍室裡面：拿非賣品前後最需要知道他在哪的地方
+monitor(-11.5,2.45,-12.0,Math.PI/2*3);
 drawStatic(); camTex.needsUpdate=true;   // 第一格先給雜訊，主迴圈起來後就換成即時畫面
 
 /* ---------- 店員：麥塊風格方塊人形 ----------
@@ -1506,6 +1540,30 @@ var legL=limb(PANTS,-0.124,0.744), legR=limb(PANTS,0.124,0.744);
 var alertHalo=new THREE.Sprite(new THREE.SpriteMaterial({map:HALO,color:0xFF3B30,
   transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,opacity:0}));
 alertHalo.scale.set(3.4,3.4,1); alertHalo.position.y=1.75; clerk.add(alertHalo);
+
+/* 頭上的狀態符號：? = 聽到了正在過來，! = 已經發現你。
+   店員的內部狀態原本完全看不見，玩家沒辦法從行為學到任何東西。 */
+function markTex(ch,css){
+  var c=document.createElement('canvas'); c.width=c.height=64;
+  var g=c.getContext('2d');
+  g.font='900 56px "Noto Sans TC",sans-serif';
+  g.textAlign='center'; g.textBaseline='middle';
+  g.lineWidth=8; g.strokeStyle='rgba(6,9,6,.85)'; g.strokeText(ch,32,34);
+  g.fillStyle=css; g.fillText(ch,32,34);
+  var t=new THREE.CanvasTexture(c); return t;
+}
+var markQ=markTex('?','#FFC93C'), markX=markTex('!','#FF3B30');
+var mark=new THREE.Sprite(new THREE.SpriteMaterial({map:markQ,
+  transparent:true,depthTest:false,opacity:0}));
+mark.scale.set(0.7,0.7,1); mark.position.y=2.62; mark.renderOrder=10;
+clerk.add(mark);
+function setMark(kind){          // 'q' | 'x' | null
+  var m=mark.material;
+  if(!kind){ m.opacity=0; return; }
+  var want=(kind==='x')?markX:markQ;
+  if(m.map!==want){ m.map=want; m.needsUpdate=true; }
+  m.opacity=1;
+}
 clerk.position.set(CLERK_HOME.x,0,CLERK_HOME.z); clerk.visible=false; scene.add(clerk);
 var walkT=0, armLift=0;
 function animClerk(dt,moved,chasing){
@@ -1719,7 +1777,8 @@ function newRun(){
   clerk.rotation.y=Math.PI;
   AI.state = (G.shift===1) ? 'DORMANT' : 'PATROL';
   AI.path=[]; AI.target=null; AI.timer=0; AI.lastSeen=null; AI.stuck=0; AI.stepT=0;
-  AI.chaseT=0; AI.calm=0;
+  AI.chaseT=0; AI.calm=0; AI.aware=0; AI.stunT=0;
+  setMark(null);
   clerk.visible = AI.state!=='DORMANT';
   ev('game_start',{shift:G.shift});
   STATS.runs++;
@@ -2301,7 +2360,7 @@ function makeNoise(radius){
    10. 店員 AI —— 顯式 FSM
    ============================================================ */
 var AI={state:'DORMANT',path:[],target:null,timer:0,lastSeen:null,stuck:0,
-        prev:new THREE.Vector2(),stepT:0,searchT:0,chaseT:0,calm:0,stunT:0};
+        prev:new THREE.Vector2(),stepT:0,searchT:0,chaseT:0,calm:0,stunT:0,aware:0};
 function now2(){ return performance.now()/1000; }
 
 /* 追不到就放棄：追滿 chaseGiveUp 秒還沒抓到，就往離玩家最遠的地方走開，
@@ -2376,10 +2435,20 @@ function stepClerk(dt){
       r.lastNoise=null;
     }
   }
-  if(sees&&AI.state!=='CHASE'){
-    AI.state='CHASE'; AI.timer=0; AI.chaseT=0; ev('chase_started'); droneOn();
-    if(!r._seenClerk){r._seenClerk=true;ev('clerk_first_seen');}
-  }
+  /* 發現不再是瞬間的：看到你之後要累積 spotTime 秒才轉成追逐。
+     這段時間就是玩家的反應窗口 —— 切斷視線就會退回去。
+     沒有這個窗口，「警戒距離」是學不會的，因為越線的瞬間就已經結束了。 */
+  if(AI.state!=='CHASE'){
+    if(sees){
+      AI.aware=Math.min(1,AI.aware+dt/Math.max(0.05,CFG.spotTime));
+      if(AI.aware>=1){
+        AI.state='CHASE'; AI.timer=0; AI.chaseT=0; ev('chase_started'); droneOn();
+        if(!r._seenClerk){r._seenClerk=true;ev('clerk_first_seen');}
+      }
+    }else{
+      AI.aware=Math.max(0,AI.aware-dt/(Math.max(0.05,CFG.spotTime)*1.6));
+    }
+  }else AI.aware=1;
 
   var speed=CFG.clerkPatrol;
   switch(AI.state){
@@ -2455,6 +2524,10 @@ function stepClerk(dt){
   }
   var chasing=AI.state==='CHASE';
   alertHalo.material.opacity += ((chasing?0.55:0)-alertHalo.material.opacity)*Math.min(1,dt*4);
+  // 頭上符號：追逐或已鎖定 → !；正在被看／調查／搜尋 → ?
+  if(chasing||AI.aware>=1)setMark('x');
+  else if(AI.aware>0.05||AI.state==='INVESTIGATE'||AI.state==='SEARCH')setMark('q');
+  else setMark(null);
 }
 
 /* ============================================================
@@ -3280,6 +3353,14 @@ function frame(now){
   // 被追的紅框：狀態直接驅動，不用等 stepClerk 有移動才更新
   document.body.classList.toggle('chased',
     G.phase==='play'&&!isPaused()&&AI.state==='CHASE');
+  // 被發現進度條：只在「正在被看但還沒變成追逐」的窗口顯示
+  var sp=$('spot');
+  var showSpot=G.phase==='play'&&AI.aware>0.02&&AI.state!=='CHASE';
+  sp.classList.toggle('on',showSpot);
+  if(showSpot){
+    sp.querySelector('.fill').style.width=Math.round(AI.aware*100)+'%';
+    sp.classList.toggle('hot',AI.aware>0.6);
+  }
   if(G.phase==='catchcam'&&catchCam)stepCatchCam(dt);
   if(G.phase==='play'&&G.run){
     if(!isPaused()){
