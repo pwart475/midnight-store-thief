@@ -348,6 +348,21 @@
   .up button:disabled{opacity:.36;cursor:not-allowed}
   .up.owned{border-color:var(--fresh)}
   .up.owned .cost{color:var(--fresh);font-size:15px;font-family:var(--f-ui);font-weight:700}
+  /* 買不起的不藏起來，只是壓暗 —— 它得留在畫面上當目標 */
+  .up.far{opacity:.62}
+  .up.far .cost{color:var(--dim)}
+  /* 隱藏技能：金色，鎖著的時候只給價格與條件 */
+  .up.secret{border-color:#8A7A46;background:#191708}
+  .up.secret h3{color:#FFF3C4}
+  .up.secret .cost{color:#FFF3C4}
+  .up.secret .tagc{border-color:#8A7A46;color:#FFF3C4}
+  .up.secret button:hover:not(:disabled){background:#FFF3C4;color:#141006;border-color:#FFF3C4}
+  .up.locked{opacity:1}
+  .up.locked p{color:#B9A874}
+  .up .need{margin-top:4px;padding:8px;text-align:center;font-family:var(--f-mono);
+    font-size:11px;letter-spacing:.14em;color:#8A7A46;border:1px dashed #55492A}
+  .shopgoal{margin-top:14px;font-size:12.5px;color:var(--dim);line-height:1.7}
+  .shopgoal b{color:var(--price);font-family:var(--f-num);font-size:15px}
   .cash{font-family:var(--f-num);font-size:34px;color:var(--price);font-variant-numeric:tabular-nums}
 
   /* 戰績卡 */
@@ -385,6 +400,8 @@
     white-space:nowrap;padding:2px 6px;border:1px solid var(--line-hi);color:var(--dimmer)}
   .gearrow.consum b{color:var(--forbid)}
   .gearrow.consum em{border-color:var(--forbid);color:var(--forbid)}
+  .gearrow.secretrow b{color:#FFF3C4}
+  .gearrow.secretrow em{border-color:#8A7A46;color:#FFF3C4}
   .gearempty{font-size:12.5px;color:var(--dimmer);padding:12px 0}
   .gearlost{margin-top:12px;padding:9px 12px;background:rgba(255,59,48,.09);
     border-left:3px solid var(--danger);font-size:12px;color:var(--tube)}
@@ -457,6 +474,25 @@
     background:rgba(6,8,6,.86);pointer-events:auto;flex-direction:column;gap:10px;cursor:pointer}
   #pause .big{font-family:var(--f-num);font-size:30px;letter-spacing:.04em}
   #pause .s{font-size:13px;color:var(--dim)}
+
+  /* ---------- 午夜鐘：時間停止 ----------
+     刻意做成「畫面被抽掉顏色」而不是加特效蓋住畫面 ——
+     你在停止期間還是要看得清楚貨架與店員的位置，那八秒是要用來做決定的。 */
+  #stopfx{position:fixed;inset:0;z-index:12;pointer-events:none;opacity:0;
+    transition:opacity .28s ease-out;
+    background:
+      radial-gradient(120% 100% at 50% 50%,rgba(255,243,196,0) 34%,rgba(255,243,196,.10) 72%,rgba(120,110,70,.30) 100%),
+      repeating-linear-gradient(0deg,rgba(255,243,196,.05) 0 1px,transparent 1px 4px)}
+  body.stopped #stopfx{opacity:1}
+  body.stopped #stage canvas{filter:saturate(.28) brightness(1.06) contrast(1.06)}
+  #stopfx .ring{position:absolute;left:50%;top:calc(50% - 96px);transform:translateX(-50%);
+    text-align:center;font-family:var(--f-num);color:#FFF3C4;
+    text-shadow:0 0 22px rgba(255,243,196,.55)}
+  #stopfx .ring b{display:block;font-size:52px;line-height:1;font-variant-numeric:tabular-nums}
+  #stopfx .ring span{display:block;margin-top:4px;font-family:var(--f-mono);font-size:11px;
+    letter-spacing:.34em;opacity:.8}
+  body.touch #stopfx .ring{top:calc(50% - 74px)}
+  body.touch #stopfx .ring b{font-size:38px}
   /* ---------- 觸控操作（手機橫版） ----------
      touch-action:none 只能加在 3D 畫面與虛擬按鍵上。
      加在 html/body 會連卡片內部的捲動一起擋掉，手機就永遠按不到開始按鈕。 */
@@ -513,6 +549,9 @@
   #btnShrink{width:60px;height:60px;font-size:16px;
     right:calc(var(--sar) + 190px);bottom:calc(var(--sab) + 60px);
     border-color:var(--forbid);color:var(--forbid)}
+  #btnStop{width:60px;height:60px;font-size:16px;
+    right:calc(var(--sar) + 186px);bottom:calc(var(--sab) + 132px);
+    border-color:#FFF3C4;color:#FFF3C4;box-shadow:0 0 14px rgba(255,243,196,.3)}
   .tbtn[hidden]{display:none!important}
   body.touch #steerring{display:none!important}
 
@@ -660,6 +699,10 @@
       <div><b>·</b>冷凍室有個上鎖的保險箱。鑰匙<b style="color:var(--price)">每次只有一半機率會出現</b>，
         位置隨機 —— 沒看到鑰匙就別浪費時間繞過去</div>
       <div><b>·</b>每次下手商品位置都重新洗牌，記路線沒有用</div>
+      <div><b>·</b>藏身處的<b style="color:var(--price)">貨全部公開</b>，最便宜到最貴一次看完 ——
+        你會知道還差多少錢，也會知道自己在為什麼多拿那一件</div>
+      <div><b>·</b>架上有一樣<b style="color:#FFF3C4">$3000 的東西看不到名字</b>。
+        它不是靠玩久就買得到的，你得先證明你敢拿非賣品</div>
     </div>
     <h4 class="sh">注意度</h4>
     <p class="sub">提袋裡的金額越高，店員的視線和聽力就越敏銳 —— 左下角有一條「店員注意度」，
@@ -674,6 +717,7 @@
       <div><b>空白</b>小跳（需購買）</div>
       <div><b>Q</b>電擊槍（需購買）</div>
       <div><b>R</b>縮小劑（需購買）</div>
+      <div><b>X</b>午夜鐘（需購買）</div>
       <div><b>F</b>全螢幕</div>
       <div><b>M</b>切換視角模式</div>
       <div><b>T</b>調參面板</div>
@@ -716,9 +760,9 @@
         <div class="cash" id="shopcash">$0</div></div>
     </div>
     <div id="card" class="card-rec"></div>
-    <h4 class="sh">今晚的貨 · 每次都不一樣</h4>
+    <h4 class="sh">架上的貨 · 全部公開</h4>
+    <div class="shopgoal" id="shopgoal"></div>
     <div class="shopgrid" id="shopgrid"></div>
-    <button class="btn ghost" id="btn-reroll" style="margin-top:12px">換一批</button>
     <h4 class="sh">現有裝備</h4>
     <div id="gearlist"></div>
     <h4 class="sh">下一次會變這樣</h4>
@@ -735,6 +779,10 @@
       <button class="btn ghost" id="btn-copy">複製原始數據</button>
     </div>
   </div>
+</div>
+
+<div id="stopfx">
+  <div class="ring"><b id="stopnum">0.0</b><span>時 間 停 止</span></div>
 </div>
 
 <div id="pause" style="display:none">
@@ -762,6 +810,7 @@
   <button class="tbtn" id="btnJump" hidden>跳</button>
   <button class="tbtn" id="btnTaser" hidden>電</button>
   <button class="tbtn" id="btnShrink" hidden>縮</button>
+  <button class="tbtn" id="btnStop" hidden>鐘</button>
 </div>
 
 <div id="rotate"><b>請把手機轉成橫向</b>這是第一人稱遊戲，橫向持握才看得清楚。</div>
@@ -774,7 +823,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v4.4';
+var BUILD='v4.5';
 
 /* 手機上沒有 console，一旦初始化丟錯就只剩黑畫面、完全無從查起。
    所以把錯誤直接印在畫面上。 */
@@ -815,7 +864,9 @@ var DEF = {
   gearLost:2,            // 被抓時隨機沒收幾件裝備
   // 小跳：峰值 0.68m，視點衝到 2.33m，剛好越過 1.9m 的貨架看一眼
   jumpSpeed:4.2, gravity:13,
-  shopSlots:4, rerollCost:120, safeChance:0.5, keyChance:0.5,
+  safeChance:0.5, keyChance:0.5,
+  // 隱藏技能「午夜鐘」：停止時間。刻意做得很強，但只租給你三回合。
+  stopTime:8, stopUses:2, stopRuns:3, stopNeed:3,
   volume:0.40, ambience:0.055, stepVol:0.045,   // 音量。刻意壓低，環境音只是襯底
   setChance:0.65,        // 三件組出現的機率
   hideFov:38,            // 躲在櫃子裡的視野角，越小越像從門縫看出去
@@ -870,7 +921,11 @@ var KNOBS = [
   ['k-econ','heatVision','注意度→視線加成',0,1.5,.05,''],
   ['k-econ','forbiddenValue','禁忌品價值',20,400,10,''],
   ['k-econ','riskBonus','風險加成',1,2.5,.05,'x'],
-  ['k-econ','extractItems','解鎖撤離所需件數',1,10,1,' 件']
+  ['k-econ','extractItems','解鎖撤離所需件數',1,10,1,' 件'],
+  ['k-econ','stopTime','午夜鐘停止秒數',2,20,.5,' s'],
+  ['k-econ','stopUses','午夜鐘每局次數',1,6,1,' 次'],
+  ['k-econ','stopRuns','午夜鐘可用回合',1,10,1,' 回'],
+  ['k-econ','stopNeed','午夜鐘解鎖門檻',1,10,1,' 次']
 ];
 
 /* ============================================================
@@ -936,8 +991,21 @@ var UPGRADES = [
   {id:'taser',   name:'電擊槍',     cost:1200, consumable:3,
     desc:'每次下手 3 發。命中店員讓他當場癱 '+CFG.taserStun+' 秒。'},
   {id:'revive',  name:'備用鑰匙',   cost:1500, consumable:1,
-    desc:'被抓時免費掙脫 1 次，提袋保住 —— 但你會被丟到離後門最遠的地方。'}
+    desc:'被抓時免費掙脫 1 次，提袋保住 —— 但你會被丟到離後門最遠的地方。'},
+  /* 隱藏技能。刻意做得比其他所有裝備強一個量級，
+     代價不是「更貴」，而是「會過期」—— 只跟你三回合。
+     它存在的意義是給你一個非常遠、非常清楚的目標：$3000 是連續脫身很多次才湊得到的數字。 */
+  {id:'timestop', name:'午夜鐘', cost:3000, consumable:2, secret:1,
+    desc:K('按 X','按「鐘」')+'讓整間店停下來 '+DEF.stopTime+
+         ' 秒 —— 店員不動、不看、不聽，你照常走。'+
+         '每次下手可用 '+DEF.stopUses+' 次，只跟你 '+DEF.stopRuns+' 回合，然後它就走了。',
+    hint:'帶著非賣品脫身 '+DEF.stopNeed+' 次，架上才會出現它。'}
 ];
+/* 隱藏技能的解鎖條件刻意綁在「膽量」而不是「時數」上：
+   你必須真的拿過非賣品並活著出去，不是玩得夠久就好。
+   STATS 不會因為被抓而清空，所以解鎖一次就是永久的。 */
+function secretOpen(){ return STATS.forbiddenSurvived>=CFG.stopNeed; }
+function stopRunsLeft(){ return G.upgrades.timestop?(G.stopRuns||0):0; }
 
 /* 班次難度遞增 —— 沒有這個，「連續 N 次」就沒有意義。
    店員改成每三次下手加 2%（很緩），主要壓力交給注意度那條動態機制。 */
@@ -995,7 +1063,7 @@ function resetProgress(){
     }
   }
   G.shift=0;                          // 下一次下手會是第 1 次
-  G.offer=null; G.offerShift=-1; G.rerolls=0;
+  if(!G.upgrades.timestop)G.stopRuns=0;
   applyFlashlight();
   return lost;
 }
@@ -1845,6 +1913,11 @@ var SFX={
   land:function(){noiseBurst(0.13,110,0.13,0.8);},
   taser:function(){beep(1800,0.09,'square',0.13,300); noiseBurst(0.22,2400,0.1,3);},
   shrink:function(){beep(420,0.42,'sine',0.1,1500);},
+  // 午夜鐘：一聲很低的鐘，然後所有聲音被抽掉
+  bell:function(){beep(147,2.2,'sine',0.19,73); beep(294,1.4,'triangle',0.07,147);
+    noiseBurst(0.5,320,0.07,0.6);},
+  // 時間恢復：鐘聲倒著回來
+  bellBack:function(){beep(196,0.5,'sine',0.11,392); beep(392,0.3,'triangle',0.05,784);},
   unlock:function(){beep(660,0.1,'triangle',0.1);setTimeout(function(){beep(990,0.22,'triangle',0.1);},95);}
 };
 function droneOn(){
@@ -1870,7 +1943,7 @@ function droneOff(){
    ============================================================ */
 var G={
   phase:'title',            // title | play | result | shop | paused
-  shift:0, cash:0, upgrades:{},
+  shift:0, cash:0, upgrades:{}, stopRuns:0,
   run:null, spawned:[], t:0, lastTime:performance.now()
 };
 var STATS={runs:0,extracted:0,caught:0,forbiddenSeen:0,forbiddenPicked:0,
@@ -1896,10 +1969,12 @@ function newRun(){
     taser: G.upgrades.taser?3:0,
     shrink:G.upgrades.shrink?1:0,
     revive:G.upgrades.revive?1:0,
+    stop:  stopRunsLeft()>0?CFG.stopUses:0,
     hasKey:false,
     spotted:0, maxHeat:0, usedItem:false     // 評分用
   };
-  shrinkT=0; clerk.rotation.z=0;
+  shrinkT=0; stopT=0; document.body.classList.remove('stopped');
+  clerk.rotation.z=0;
   G.run=r; G.shift++;
   camera.position.set(SPAWN.x,1.65,SPAWN.z);
   yaw=SPAWN.yaw; pitch=0; vel.set(0,0,0); crouchNow=false;
@@ -2175,6 +2250,7 @@ window.addEventListener('keydown',function(e){
   if(k==='e'&&G.phase==='play')tryInteract();
   if(k==='q'&&G.phase==='play')useTaser();
   if(k==='r'&&G.phase==='play')useShrink();
+  if(k==='x'&&G.phase==='play')useStop();
   if(k==='enter'){
     if(G.phase==='title')startGame();
     else if(G.phase==='help'||G.phase==='board')gotoTitle();
@@ -2320,6 +2396,7 @@ function setupTouch(){
   tap('btnJump',function(){ tJumpQueued=true; });
   tap('btnTaser',useTaser);
   tap('btnShrink',useShrink);
+  tap('btnStop',useStop);
 
   // 說明頁改成觸控版操作
   var keysEl=document.querySelector('#s-help .keys');
@@ -2329,7 +2406,7 @@ function setupTouch(){
     '<div><b>右側拖曳</b>轉頭</div>'+
     '<div><b>拿</b>塞進提袋</div>'+
     '<div><b>蹲</b>切換潛行・幾乎沒聲音</div>'+
-    '<div><b>跳 / 電 / 縮</b>買了才會出現在畫面上</div>'+
+    '<div><b>跳 / 電 / 縮 / 鐘</b>買了才會出現在畫面上</div>'+
     '<div><b>抬頭</b>看監視螢幕</div>'+
     (fsSupported()?'<div><b>⛶</b>下方中央可切全螢幕</div>'
       :'<div><b>iOS</b>用 Safari 的「分享 → 加入主畫面」，從主畫面圖示開就沒有瀏覽器介面</div>');
@@ -2587,6 +2664,7 @@ function flashScreen(){
 }
 function makeNoise(radius){
   if(!G.run||radius<=0)return;
+  if(stopT>0)return;      // 時間停止時他聽不到 —— 空氣沒有在動
   // 提袋越值錢，他越注意這邊；消音貼片反過來壓低
   G.run.lastNoise={x:camera.position.x,z:camera.position.z,
                    r:radius*hearMul(),t:G.run.t};
@@ -2774,7 +2852,7 @@ function stepClerk(dt){
    ============================================================ */
 /* 姿勢：站立 / 潛行。
    潛行用 C 而不是 Ctrl —— 瀏覽器裡 Ctrl+W 會直接關掉分頁，preventDefault 攔不住。 */
-var crouchNow=false, sprintFlag=false, shrinkT=0;
+var crouchNow=false, sprintFlag=false, shrinkT=0, stopT=0;
 var hiding=null, hideYaw=0;      // 躲在櫃子裡的狀態
 function enterHide(o){
   hiding=o; hideYaw=o.spot.ry+Math.PI;      // 面向櫃門外
@@ -2848,6 +2926,39 @@ function useShrink(){
   SFX.shrink(); ev('shrink_used');
   toast('縮小 '+CFG.shrinkTime+' 秒 · 矮到幾乎看不見你');
   updateHUD();
+}
+
+/* ---------- 隱藏技能：午夜鐘 ----------
+   停止時間。這是全遊戲唯一「直接關掉店員」的東西，所以：
+   1. 它不能常駐 —— 只跟你三回合，過期自動消失。
+   2. 它不能無限用 —— 每局兩次，用在哪一段是你的決定。
+   3. 它不移除執行難度 —— 你還是得自己走過去、拿到手、走回後門。
+      停下來的八秒不會幫你搬東西，只是把「他現在在哪」這個變數暫時拿掉。 */
+function useStop(){
+  var r=G.run; if(!r||G.phase!=='play')return;
+  if(!G.upgrades.timestop){toast('你沒有午夜鐘');return;}
+  if(stopT>0)return;
+  if(r.stop<=0){toast('午夜鐘這局用完了');return;}
+  r.stop--; stopT=CFG.stopTime;
+  document.body.classList.add('stopped');
+  SFX.bell(); ambienceHum(false); droneQuiet(true);
+  ev('timestop_used',{left:r.stop});
+  toast('時間停止 '+CFG.stopTime+' 秒 · 剩 '+r.stop+' 次');
+  updateHUD();
+}
+function endStop(){
+  stopT=0;
+  document.body.classList.remove('stopped');
+  SFX.bellBack(); droneQuiet(false);
+  if(G.run&&!G.run.danger)ambienceHum(true);
+  toast('時間動了');
+  updateHUD();
+}
+// 停止期間把追逐的低頻壓掉，不然「全店靜止」聽起來還是很吵
+function droneQuiet(on){
+  // 只在追逐低頻真的還在播的時候動它，不然會把已經停掉的震盪器又叫醒
+  if(!AC||!drone||!droneGain)return;
+  try{droneGain.gain.linearRampToValueAtTime(on?0.02:0.5,AC.currentTime+0.3);}catch(e){}
 }
 
 function stepPlayer(dt){
@@ -3083,6 +3194,15 @@ function pushHistory(r,result){
 }
 function endRun(){
   G.phase='result';
+  if(stopT>0){ stopT=0; document.body.classList.remove('stopped'); droneQuiet(false); }
+  /* 午夜鐘按「回合」而不是「次數」過期：
+     不管你這局有沒有按下去，它都少一回合。
+     這樣它就不會被存起來當保險，你會被迫在剩下的三次下手裡把它花掉。 */
+  G.lastStopExpired=false;
+  if(G.upgrades.timestop){
+    G.stopRuns=Math.max(0,(G.stopRuns||0)-1);
+    if(G.stopRuns<=0){ delete G.upgrades.timestop; G.lastStopExpired=true; }
+  }
   if(document.pointerLockElement)document.exitPointerLock();
   hidePause();
   renderReceipt();
@@ -3154,6 +3274,11 @@ function updateHUD(){
   if(G.upgrades.taser) it+='<div class="'+(r.taser>0?'ready':'empty')+'">Q 電擊 '+r.taser+'</div>';
   if(G.upgrades.shrink)it+='<div class="'+(r.shrink>0?'ready':'empty')+'">R 縮小 '+r.shrink+'</div>';
   if(G.upgrades.revive)it+='<div class="'+(r.revive>0?'ready':'empty')+'">掙脫 '+r.revive+'</div>';
+  if(stopRunsLeft()>0)
+    it+='<div class="'+(r.stop>0?'ready':'empty')+'" '+
+        'style="border-color:#FFF3C4;color:#FFF3C4">'+
+        K('X','鐘')+' 午夜鐘 '+r.stop+'　<small style="opacity:.6">剩 '+
+        stopRunsLeft()+' 回合</small></div>';
   if(r.hasKey)it+='<div class="ready" style="border-color:#7FE3F5;color:#7FE3F5">鑰匙</div>';
   // 三件組進度：撿到第一件才顯示，之後它就是你這局的目標
   if(G.setThisRun){
@@ -3245,39 +3370,58 @@ function renderReceipt(){
     (r.caught?'<div class="stamp">當場被逮</div>':'');
   $('receipt').innerHTML=html;
 }
+/* 商店全開 —— 不再是每次隨機四選。
+   理由：隨機四選讓「存錢」變得沒有意義，因為你不知道下次架上會出現什麼，
+   最理性的打法反而是有什麼就買什麼。
+   全部攤開之後，那條由便宜到 $3000 的價目表本身就是一份目標清單：
+   你會看著自己買不起的那幾張卡決定今晚要多貪一點。 */
 function renderShop(){
   $('shopcash').textContent='$'+G.cash;
   renderCard();
   var g=$('shopgrid'); g.innerHTML='';
-  var offer=(G.offer||[]).map(function(id){
-    return UPGRADES.filter(function(u){return u.id===id;})[0];
-  }).filter(Boolean);
-  if(!offer.length){
-    g.innerHTML='<div class="up"><h3>架上空了</h3>'+
-      '<p>所有裝備都到手了。剩下的只有你自己的手氣。</p></div>';
-    renderNext(); renderHistory(); renderMetrics(); return;
-  }
-  offer.forEach(function(u){
-    var owned=!!G.upgrades[u.id], can=!owned&&G.cash>=u.cost;
+  var list=UPGRADES.slice().sort(function(a,b){return a.cost-b.cost;});
+  var target=null;               // 下一個買不起的東西 —— 這就是今晚的目標
+  list.forEach(function(u){
+    var owned=!!G.upgrades[u.id];
+    var locked=!!u.secret&&!secretOpen();
+    var can=!owned&&!locked&&G.cash>=u.cost;
+    if(!owned&&!locked&&G.cash<u.cost&&!target)target=u;
     var d=document.createElement('div');
-    d.className='up'+(owned?' owned':'');
-    d.innerHTML='<h3>'+u.name+
-        (u.consumable?' <em class="tagc">每次 '+u.consumable+' 次</em>':'')+'</h3>'+
-      '<p>'+u.desc+'</p>'+
-      '<div class="cost">'+(owned?'已裝備':'$'+u.cost)+'</div>'+
-      '<button '+(can?'':'disabled')+'>'+(owned?'已擁有':(G.cash>=u.cost?'買下':'錢不夠'))+'</button>';
+    d.className='up'+(owned?' owned':'')+(locked?' locked':'')+
+      (u.secret?' secret':'')+(!owned&&!locked&&G.cash<u.cost?' far':'');
+    if(locked){
+      // 鎖著也要看得見價格。看不到名字會好奇，看不到價格只會被忽略。
+      d.innerHTML='<h3>？？？ <em class="tagc">隱藏</em></h3>'+
+        '<p>'+u.hint+'</p>'+
+        '<div class="cost">$'+u.cost+'</div>'+
+        '<div class="need">進度 '+Math.min(STATS.forbiddenSurvived,CFG.stopNeed)+
+          ' / '+CFG.stopNeed+'</div>';
+    }else{
+      d.innerHTML='<h3>'+u.name+
+          (u.secret?' <em class="tagc">只跟你 '+CFG.stopRuns+' 回合</em>'
+                   :(u.consumable?' <em class="tagc">每次 '+u.consumable+' 次</em>':''))+'</h3>'+
+        '<p>'+u.desc+'</p>'+
+        '<div class="cost">'+(owned?'已裝備':'$'+u.cost)+'</div>'+
+        (owned?'<button disabled>已擁有</button>'
+              :'<button '+(can?'':'disabled')+'>'+
+                (can?'買下':'還差 $'+(u.cost-G.cash))+'</button>');
+    }
     if(can)d.querySelector('button').addEventListener('click',function(){
       G.cash-=u.cost; G.upgrades[u.id]=true;
       if(u.id==='light')applyFlashlight();
+      if(u.id==='timestop'){
+        G.stopRuns=CFG.stopRuns;
+        toast('午夜鐘上手了 · 只跟你 '+CFG.stopRuns+' 回合');
+      }
       ev('upgrade_bought',{id:u.id}); SFX.register(); renderShop(); save();
     });
     g.appendChild(d);
   });
-  var rb=$('btn-reroll');
-  var poolLeft=UPGRADES.filter(function(u){return !G.upgrades[u.id];}).length;
-  rb.textContent='換一批 · $'+CFG.rerollCost;
-  rb.disabled = G.cash<CFG.rerollCost || poolLeft<=CFG.shopSlots;
-  rb.style.opacity = rb.disabled?'.4':'1';
+  // 一句話把「還差多少」講清楚，不用自己去減
+  var gl=$('shopgoal');
+  if(target)gl.innerHTML='下一個買得起的是 <b>'+target.name+'</b> —— 還差 <b>$'+
+    (target.cost-G.cash)+'</b>。';
+  else gl.innerHTML='架上你買得起的都買得起了。';
   renderGear(); renderNext(); renderHistory(); renderMetrics();
 }
 function renderGear(){
@@ -3287,10 +3431,18 @@ function renderGear(){
     html+='<div class="gearempty">身上什麼都沒有。買一件再進去吧。</div>';
   }else{
     owned.forEach(function(u){
-      html+='<div class="gearrow'+(u.consumable?' consum':'')+'">'+
+      var tail = u.secret ? ('剩 '+stopRunsLeft()+' 回合')
+               : (u.consumable?('每次 '+u.consumable+' 用'):'永久');
+      html+='<div class="gearrow'+(u.consumable?' consum':'')+
+        (u.secret?' secretrow':'')+'">'+
         '<b>'+u.name+'</b><span>'+u.desc+'</span>'+
-        '<em>'+(u.consumable?('每次 '+u.consumable+' 用'):'永久')+'</em></div>';
+        '<em>'+tail+'</em></div>';
     });
+  }
+  if(G.lastStopExpired){
+    html+='<div class="gearlost">午夜鐘的三回合用完了，它已經不在你身上。'+
+      '想再拿一次就得再湊 $'+
+      UPGRADES.filter(function(u){return u.id==='timestop';})[0].cost+'。</div>';
   }
   if(G.lastLost&&G.lastLost.length){
     html+='<div class="gearlost">上次被抓，店員沒收了 <b>'+
@@ -3470,7 +3622,13 @@ function renderMenuFoot(){
   f.innerHTML='已下手 <b>'+s.runs+'</b> 次 · 最長連續沒被抓 <b>'+s.bestStreak+'</b> 次'+
     '<br>目前連續 <b>'+s.streak+'</b> 次 · 手上有 <b>$'+G.cash+'</b>'+
     ' · 裝備 <b>'+gear+'</b> 件'+
-    '<br><span style="opacity:.7">關掉瀏覽器就從零開始。只有犯案紀錄會留著。</span>';
+    '<br><span style="opacity:.7">關掉瀏覽器就從零開始。只有犯案紀錄會留著。</span>'+
+    /* 隱藏技能的解鎖狀態放在標題頁 —— 它是唯一永久的東西，
+       所以它必須是玩家一開遊戲就看得到的那個目標。 */
+    (secretOpen()
+      ? '<br><span style="color:#FFF3C4">午夜鐘已解鎖 · 存到 $3000 就能帶走它</span>'
+      : '<br><span style="color:#8A7A46">隱藏技能 ？？？ · 帶著非賣品脫身 '+
+        Math.min(s.forbiddenSurvived,CFG.stopNeed)+' / '+CFG.stopNeed+'</span>');
 }
 /* 清除犯案紀錄：兩段式確認。
    進度本來就不跨工作階段（關掉就從零開始），
@@ -3491,11 +3649,13 @@ function wipeSave(){
   clearTimeout(wipeSave._t);
   try{ localStorage.removeItem('nightshift_v1'); }catch(e){}
   G.cash=0; G.upgrades={}; G.shift=0;
-  G.offer=null; G.offerShift=-1; G.rerolls=0; G.lastLost=[];
+  G.stopRuns=0; G.lastStopExpired=false; G.lastLost=[];
   CFG.capacity=DEF.capacity;
+  // 五軸的最佳值也要一起清，漏掉會變成 undefined 印在收據上
   STATS={runs:0,extracted:0,caught:0,forbiddenSeen:0,forbiddenPicked:0,
     pickedAfterUnlock:0,nextShifts:0,times:[],cashTotal:0,
-    streak:0,bestStreak:0,bestShift:0,forbiddenSurvived:0,deepestShift:0,history:[]};
+    streak:0,bestStreak:0,bestShift:0,forbiddenSurvived:0,deepestShift:0,history:[],
+    bestQuiet:0,bestFast:0,bestBold:0};
   applyFlashlight(); syncItemButtons();
   wipeArmed=false; b.classList.remove('armed');
   b.querySelector('span').textContent='已清除，全新開始';
@@ -3538,32 +3698,9 @@ function syncItemButtons(){
   $('btnJump').hidden=!G.upgrades.jump;
   $('btnTaser').hidden=!G.upgrades.taser;
   $('btnShrink').hidden=!G.upgrades.shrink;
+  $('btnStop').hidden=stopRunsLeft()<=0;
 }
-/* 每次進藏身處抽一批貨。抽完就固定住 —— 買了東西不能重抽，
-   否則「這批要不要買」就沒有取捨了。想換要付錢。 */
-function rollOffer(force){
-  var pool=UPGRADES.filter(function(u){return !G.upgrades[u.id];});
-  if(!force&&G.offerShift===G.shift&&G.offer&&G.offer.length){
-    // 把已買掉的從這批裡剔除就好
-    G.offer=G.offer.filter(function(id){return !G.upgrades[id];});
-    if(G.offer.length)return;
-  }
-  var rand=rng(G.shift*137+(G.rerolls||0)*911+29);
-  var p=pool.slice();
-  for(var i=p.length-1;i>0;i--){
-    var j=Math.floor(rand()*(i+1)); var t=p[i]; p[i]=p[j]; p[j]=t;
-  }
-  G.offer=p.slice(0,CFG.shopSlots).map(function(u){return u.id;});
-  G.offerShift=G.shift;
-}
-function gotoShop(){ G.phase='shop'; rollOffer(false); renderShop(); show('s-shop'); }
-function rerollShop(){
-  if(G.cash<CFG.rerollCost){toast('錢不夠換貨');return;}
-  var pool=UPGRADES.filter(function(u){return !G.upgrades[u.id];});
-  if(pool.length<=CFG.shopSlots){toast('剩下的都在架上了');return;}
-  G.cash-=CFG.rerollCost; G.rerolls=(G.rerolls||0)+1;
-  rollOffer(true); SFX.scan(); ev('shop_reroll'); renderShop(); save();
-}
+function gotoShop(){ G.phase='shop'; renderShop(); show('s-shop'); }
 function nextShift(){
   STATS.nextShifts++; ev('next_shift_started'); save();
   hideAll(); manualPause=false; G.phase='play'; newRun(); syncItemButtons(); requestLock();
@@ -3575,7 +3712,6 @@ $('btn-wipe').addEventListener('click',wipeSave);
 $('btn-help-back').addEventListener('click',gotoTitle);
 $('btn-board-back').addEventListener('click',gotoTitle);
 $('btn-board-copy').addEventListener('click',copyBrag);
-$('btn-reroll').addEventListener('click',rerollShop);
 setupUiTouchProxy();
 $('vertag').textContent='灰盒驗證原型 '+BUILD;
 $('btn-next').addEventListener('click',gotoShop);
@@ -3672,7 +3808,7 @@ function renderLog(){
 /* ============================================================
    17. 主迴圈
    ============================================================ */
-var flickerT=0;
+var flickerT=0, animT=0;
 function frame(now){
   requestAnimationFrame(frame);
   var dt=Math.min(0.05,(now-G.lastTime)/1000); G.lastTime=now;
@@ -3683,7 +3819,7 @@ function frame(now){
   syncPause();
   // 被追的紅框：狀態直接驅動，不用等 stepClerk 有移動才更新
   document.body.classList.toggle('chased',
-    G.phase==='play'&&!isPaused()&&AI.state==='CHASE');
+    G.phase==='play'&&!isPaused()&&AI.state==='CHASE'&&stopT<=0);
   // 被發現進度條：只在「正在被看但還沒變成追逐」的窗口顯示
   var sp=$('spot');
   var showSpot=G.phase==='play'&&AI.aware>0.02&&AI.state!=='CHASE';
@@ -3697,14 +3833,25 @@ function frame(now){
     if(!isPaused()){
       G.run.t+=dt;
       stepPlayer(dt);
-      stepClerk(dt);
+      /* 午夜鐘：整個 stepClerk 直接跳掉。
+         這一行就是「停止時間」的全部實作 —— 移動、視線、聽覺、警戒累積、
+         抓到判定全都在 stepClerk 裡面，所以不跑它就等於整間店凍住。
+         注意計時器 G.run.t 照走：停下來的八秒還是算你的時間，
+         不然「最快脫身」那條紀錄就被它破壞掉了。 */
+      if(stopT>0){
+        stopT-=dt;
+        $('stopnum').textContent=Math.max(0,stopT).toFixed(1);
+        if(stopT<=0)endStop();
+      }else{
+        stepClerk(dt);
+      }
       runScript();
       updateAim();
       var mm=Math.floor(G.run.t/60),ss=Math.floor(G.run.t%60);
       $('clock').textContent=mm+':'+String(ss).padStart(2,'0');
       $('posehud').textContent=poseName();
       // 停電閃爍
-      if(G.run.danger){
+      if(G.run.danger&&stopT<=0){
         flickerT-=dt;
         if(flickerT<=0){ flickerT=0.1+Math.random()*0.55;
           var on=Math.random()<0.22;
@@ -3718,7 +3865,9 @@ function frame(now){
     }
   }
   // 稀有品浮動 + 價格標依距離淡入（越裡面的數字越大，這是貪婪迴圈的核心提示）
-  var t=now/1000;
+  // 動畫用自己的累積時鐘，午夜鐘期間不推進 —— 不然「全店靜止」時商品還在轉
+  if(stopT<=0)animT+=dt;
+  var t=animT;
   for(var i=0;i<itemMeshes.length;i++){
     var o=itemMeshes[i];
     if(o.taken||o.safe||o.hide)continue;    // 保險箱與立櫃是固定物件，不浮動
