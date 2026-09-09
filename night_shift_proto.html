@@ -741,7 +741,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v3.9';
+var BUILD='v4.0';
 
 /* 手機上沒有 console，一旦初始化丟錯就只剩黑畫面、完全無從查起。
    所以把錯誤直接印在畫面上。 */
@@ -765,8 +765,8 @@ if(!window.THREE){document.getElementById('narrow').style.display='flex';
 var DEF = {
   walkSpeed:4.2, sprintSpeed:6.8, mouseSens:0.0023,
   edgeTurn:2.4, steerYaw:3.4, steerPitch:2.0,
-  clerkPatrol:1.5, patrolGrowth:0.2,   // 巡邏速度，每五次下手 +0.2（絕對值，不是倍率）
-  clerkChase:4.9, visionRange:13, visionAngle:42,
+  clerkPatrol:2.0, patrolGrowth:0.2,   // 巡邏速度，每五次下手 +0.2（絕對值，不是倍率）
+  clerkChase:5.0, visionRange:13, visionAngle:42,   // ×clerkSpeedMul 0.9 = 實際追逐 4.5
   loseSight:3.5, chaseGiveUp:10, calmTime:6, catchDist:1.0, hearWalk:8, hearSprint:17,
   spotTime:0.6,          // 被看到多久才真的變成追逐 —— 這段就是你的反應窗口
   capacity:12, riskBonus:1.2, forbiddenValue:120, extractItems:3,
