@@ -625,7 +625,8 @@
         <b style="color:var(--price)">只有犯案紀錄永遠留著</b>，那是唯一的成績</div>
       <div><b>·</b>地上那條綠線一路通到後門，停電後會變紅並閃動</div>
       <div><b>·</b>提袋裝過八成會慢 10%，而且金額越高越容易被注意到</div>
-      <div><b>·</b>賣場裡藏著一把鑰匙，冷凍室有個上鎖的保險箱 —— 值不值得繞去找，你自己決定</div>
+      <div><b>·</b>冷凍室有個上鎖的保險箱。鑰匙<b style="color:var(--price)">每次只有一半機率會出現</b>，
+        位置隨機 —— 沒看到鑰匙就別浪費時間繞過去</div>
       <div><b>·</b>每次下手商品位置都重新洗牌，記路線沒有用</div>
     </div>
     <h4 class="sh">注意度</h4>
@@ -740,7 +741,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v3.7';
+var BUILD='v3.9';
 
 /* 手機上沒有 console，一旦初始化丟錯就只剩黑畫面、完全無從查起。
    所以把錯誤直接印在畫面上。 */
@@ -764,7 +765,8 @@ if(!window.THREE){document.getElementById('narrow').style.display='flex';
 var DEF = {
   walkSpeed:4.2, sprintSpeed:6.8, mouseSens:0.0023,
   edgeTurn:2.4, steerYaw:3.4, steerPitch:2.0,
-  clerkPatrol:2.5, clerkChase:4.9, visionRange:13, visionAngle:42,
+  clerkPatrol:1.5, patrolGrowth:0.2,   // 巡邏速度，每五次下手 +0.2（絕對值，不是倍率）
+  clerkChase:4.9, visionRange:13, visionAngle:42,
   loseSight:3.5, chaseGiveUp:10, calmTime:6, catchDist:1.0, hearWalk:8, hearSprint:17,
   spotTime:0.6,          // 被看到多久才真的變成追逐 —— 這段就是你的反應窗口
   capacity:12, riskBonus:1.2, forbiddenValue:120, extractItems:3,
@@ -778,7 +780,7 @@ var DEF = {
   gearLost:2,            // 被抓時隨機沒收幾件裝備
   // 小跳：峰值 0.68m，視點衝到 2.33m，剛好越過 1.9m 的貨架看一眼
   jumpSpeed:4.2, gravity:13,
-  shopSlots:4, rerollCost:120, safeChance:0.5,
+  shopSlots:4, rerollCost:120, safeChance:0.5, keyChance:0.5,
   reachDist:3.4, aimAssist:15      // 互動距離與瞄準寬容度（度）
 };
 var CFG = Object.assign({},DEF);
@@ -801,7 +803,8 @@ var KNOBS = [
   ['k-clerk','clerkSense','敏感度（視線與聽力）',0.2,1.6,.05,''],
   ['k-clerk','clerkSpeedMul','速度倍率',0.4,1.6,.05,''],
   ['k-clerk','growthPer3','每三次下手增幅',0,0.15,.005,''],
-  ['k-clerk','clerkPatrol','巡邏速度',1,5,.1,' m/s'],
+  ['k-clerk','clerkPatrol','巡邏速度（基礎）',0.6,5,.1,' m/s'],
+  ['k-clerk','patrolGrowth','每五次下手 +',0,1,.05,' m/s'],
   ['k-clerk','clerkChase','追逐速度',3,10,.1,' m/s'],
   ['k-clerk','visionRange','視線距離',6,34,1,' m'],
   ['k-clerk','visionAngle','視野半角',15,90,1,'°'],
@@ -813,6 +816,8 @@ var KNOBS = [
   ['k-clerk','hearSprint','衝刺聲響半徑',4,34,1,' m'],
   ['k-econ','capacity','提袋格數（基礎）',4,30,1,' 格'],
   ['k-econ','gearLost','被抓沒收幾件裝備',0,6,1,' 件'],
+  ['k-econ','keyChance','鑰匙出現機率',0,1,.05,''],
+  ['k-econ','safeChance','保險箱中獎機率',0,1,.05,''],
   ['k-clerk','taserRange','電擊槍射程',5,40,1,' m'],
   ['k-clerk','taserSpread','電擊槍散布',2,25,1,'°'],
   ['k-econ','loadThreshold','負重門檻',0.3,1,.05,''],
@@ -889,6 +894,10 @@ function heat(){
   return Math.min(1, G.run.value/Math.max(1,CFG.heatFullValue));
 }
 function clerkChaseNow(){ return CFG.clerkChase*CFG.clerkSpeedMul*growth(); }
+// 巡邏速度走自己的階梯：每五次下手 +0.2，跟追逐速度的百分比成長分開
+function clerkPatrolNow(){
+  return CFG.clerkPatrol + CFG.patrolGrowth*Math.floor(Math.max(0,G.shift-1)/5);
+}
 function visionNow(){
   return CFG.visionRange*CFG.clerkSense*growth()*(1+CFG.heatVision*heat());
 }
@@ -1775,11 +1784,15 @@ function newRun(){
   setDanger(false);
   clerk.position.set(CLERK_HOME.x,0,CLERK_HOME.z);
   clerk.rotation.y=Math.PI;
-  AI.state = (G.shift===1) ? 'DORMANT' : 'PATROL';
+  /* 店員一開始就在場巡邏。
+     原本第一次下手是休眠的（交接包的教學腳本），但進度不跨工作階段之後，
+     「第 1 次」變成每次開啟都會遇到，那個一次性橋段就不成立了。
+     更重要的是：他必須全程都在地圖上，路線才有可能被精通。 */
+  AI.state='PATROL';
   AI.path=[]; AI.target=null; AI.timer=0; AI.lastSeen=null; AI.stuck=0; AI.stepT=0;
   AI.chaseT=0; AI.calm=0; AI.aware=0; AI.stunT=0;
   setMark(null);
-  clerk.visible = AI.state!=='DORMANT';
+  clerk.visible=true;
   ev('game_start',{shift:G.shift});
   STATS.runs++;
   updateHUD();
@@ -1791,17 +1804,13 @@ function newRun(){
     '',4500);
 }
 
-// 第一次下手的教學腳本：先讓玩家知道「這裡有別人」，之後的選擇才算風險決策
+/* 開場廣播：一次工作階段只播一次，用來建立「這裡有人在看」。
+   店員現在從頭就在場，所以不需要客串橋段了。 */
+var introDone=false;
 function runScript(){
-  var r=G.run; if(!r||G.shift!==1)return;
-  if(!r._paWarn&&r.t>26){ r._paWarn=true;
+  var r=G.run; if(!r)return;
+  if(!introDone&&r.t>18){ introDone=true;
     pa('本店已於午夜結束營業，全區監視錄影中。非賣品區請勿進入。'); }
-  if(!r._cameo&&r.t>33&&!r.forbiddenTaken){ r._cameo=true; startCameo(); }
-}
-function startCameo(){
-  clerk.position.set(17.4,0,-7.6); clerk.rotation.y=Math.PI; clerk.visible=true;
-  AI.state='CAMEO'; AI.path=[{x:17.4,z:7.0}]; AI.timer=0;
-  ev('clerk_first_seen',{mode:'cameo'});
 }
 function ev(name,data){
   if(!G.run)return;
@@ -1848,11 +1857,16 @@ function buildItems(seed){
   // 入口櫃檯放兩件便宜的：讓玩家 10 秒內就完成第一次「按 E」
   spawnItem(BY_ID.bread,-6.0,1.0,11.4);
   spawnItem(BY_ID.milk,  6.0,1.0,11.4);
-  // 鑰匙：隨機掉在賣場某個沒被用到的貨架位上，要找才有
-  var keySpots=spots.slice(useCount).concat(used);
-  var ks=keySpots[Math.floor(rand()*Math.min(keySpots.length,18))]||spots[0];
-  spawnItem(BY_ID.safekey,ks.x,ks.y,ks.z);
-  buildSafe();
+  /* 鑰匙：每次下手只有 keyChance 的機率會出現，位置完全隨機。
+     所以「這次有沒有鑰匙」本身就是一個要偵查的資訊 ——
+     沒看到就別浪費時間繞去冷凍室開箱子。 */
+  var hasKeyThisRun=Math.random()<CFG.keyChance;
+  if(hasKeyThisRun){
+    var pool=spots.slice();      // 全部貨架位都可能，不限於沒放商品的
+    var ks=pool[Math.floor(Math.random()*pool.length)];
+    if(ks)spawnItem(BY_ID.safekey,ks.x,ks.y,ks.z);
+  }
+  buildSafe(hasKeyThisRun);
   // 禁忌品固定位置：冷凍室死路盡頭的地上
   spawnItem(BY_ID.unknown,-16.5,0,-13.3);
   forbidGlow.intensity=1.1;
@@ -1866,7 +1880,7 @@ function buildItems(seed){
    沒鑰匙打不開；開了 50% 是貴重品，另外 50% 給個安慰獎 ——
    走那麼遠結果完全空手，那不是取捨，那只是懲罰。 */
 var safeObj=null;
-function buildSafe(){
+function buildSafe(keyExists){
   var g=new THREE.Group();
   g.add(P(GEO.box,0x33403A,[0.78,0.86,0.16],[0,0.46,0]));
   g.add(P(GEO.box,0x1E2622,[0.62,0.66,0.04],[0,0.46,0.09]));
@@ -1874,7 +1888,7 @@ function buildSafe(){
   var led=P(GEO.box,0xFF3B30,[0.06,0.06,0.03],[-0.20,0.70,0.12],1.6);
   g.add(led);
   g.position.set(-17.28,0,-11.6); g.rotation.y=Math.PI/2; scene.add(g);
-  safeObj={mesh:g,led:led,opened:false,taken:false,
+  safeObj={mesh:g,led:led,opened:false,taken:false,keyExists:!!keyExists,
     def:{name:'保險箱',tier:'safe',slots:0,v:0},safe:true};
   g.userData.item=safeObj;
   g.traverse(function(c){c.userData.item=safeObj;});
@@ -1883,7 +1897,11 @@ function buildSafe(){
 function openSafe(){
   var r=G.run;
   if(safeObj.opened)return;
-  if(!r.hasKey){ SFX.deny(); toast('鎖著 · 需要保險箱鑰匙'); return; }
+  if(!r.hasKey){
+    SFX.deny();
+    toast(safeObj.keyExists?'鎖著 · 鑰匙還在賣場某處':'鎖著 · 今晚沒有鑰匙');
+    return;
+  }
   safeObj.opened=true; safeObj.taken=true;
   safeObj.led.material=itemMat(0x4ADE80,1.6);
   scene.remove(safeObj.mesh.children[1]);          // 門板打開
@@ -2247,7 +2265,8 @@ function updateAim(){
       var hasKey=!!G.run.hasKey;
       pr.className='on'+(hasKey?'':' forbid');
       pr.innerHTML=(hasKey?'<kbd>E</kbd>打開保險箱':'<kbd>鎖</kbd>保險箱')+
-        '<span class="s">'+(hasKey?'裡面可能有貴重品':'上鎖 · 賣場某處有一把鑰匙')+'</span>';
+        '<span class="s">'+(hasKey?'裡面可能有貴重品'
+          :(aim.keyExists?'上鎖 · 這次的鑰匙在賣場某處':'上鎖 · 今晚沒有鑰匙'))+'</span>';
       if(IS_TOUCH)pr.innerHTML=pr.innerHTML.replace('<kbd>E</kbd>','<kbd>拿</kbd>');
       cross.className=hasKey?'hot':''; return;
     }
@@ -2333,6 +2352,7 @@ function triggerForbidden(){
   flashScreen();
   setDanger(true);
   SFX.forbidden();
+  // 不移動店員 —— 他從自己當下的位置過來，位置才是可預測的
   setObjective('放下已經太晚了 —— 衝回後門',true,
     K('Shift 衝刺比店員快，但腳步聲會被聽到。','搖桿推到外圈比店員快，但腳步聲會被聽到。'));
   showBeat('他知道了',
@@ -2341,7 +2361,6 @@ function triggerForbidden(){
   AI.state='CHASE'; AI.lastSeen={x:camera.position.x,z:camera.position.z};
   AI.timer=0; AI.chaseT=0; AI.calm=0; AI.path=[]; clerk.visible=true;
   // 首次出現：在冷凍室裡但不堵死唯一的門，玩家要從他旁邊擠過去
-  if(G.shift===1) clerk.position.set(-10.5,0,-12.5);
   ev('chase_started');
 }
 function flashScreen(){
@@ -2400,7 +2419,7 @@ function stepClerk(dt){
     var ct=AI.path[0], cdx=ct.x-clerk.position.x, cdz=ct.z-clerk.position.z,
         cd=Math.hypot(cdx,cdz);
     if(cd>0.25){
-      var cstep=CFG.clerkPatrol*dt;
+      var cstep=clerkPatrolNow()*dt;
       clerk.position.x+=cdx/cd*cstep;
       clerk.position.z+=cdz/cd*cstep;
       clerk.rotation.y=Math.atan2(-cdx,-cdz);
@@ -2450,21 +2469,21 @@ function stepClerk(dt){
     }
   }else AI.aware=1;
 
-  var speed=CFG.clerkPatrol;
+  var speed=clerkPatrolNow();
   switch(AI.state){
     case 'PATROL':
-      speed=CFG.clerkPatrol;
+      speed=clerkPatrolNow();
       if(!AI.path.length){
         var t=NODES[Math.floor(Math.random()*NODES.length)];
         setPathTo(t.x,t.z);
       }
       break;
     case 'INVESTIGATE':
-      speed=CFG.clerkPatrol*1.5; AI.timer+=dt;
+      speed=clerkPatrolNow()*1.5; AI.timer+=dt;
       if(!AI.path.length||AI.timer>16){AI.state='SEARCH';AI.searchT=0;}
       break;
     case 'SEARCH':
-      speed=CFG.clerkPatrol*1.25; AI.searchT+=dt;
+      speed=clerkPatrolNow()*1.25; AI.searchT+=dt;
       if(!AI.path.length){
         var near=NODES.filter(function(n){
           return Math.hypot(n.x-clerk.position.x,n.z-clerk.position.z)<13;});
@@ -2489,7 +2508,7 @@ function stepClerk(dt){
       if(dP<CFG.catchDist){ caught(); return; }
       break;
     case 'RETURN':
-      speed=CFG.clerkPatrol;
+      speed=clerkPatrolNow();
       if(!AI.path.length)AI.state='PATROL';
       break;
   }
@@ -3004,6 +3023,9 @@ function renderNext(){
   var next=G.shift+1, d=Math.min(1,(next-1)/9);
   var g=1+CFG.growthPer3*Math.floor(Math.max(0,next-1)/3);
   $('next').innerHTML=
+    '<div><span>店員巡邏速度</span><b>'+
+      (CFG.clerkPatrol+CFG.patrolGrowth*Math.floor(Math.max(0,next-1)/5)).toFixed(1)+
+      ' m/s</b></div>'+
     '<div><span>店員追逐速度</span><b>'+
       (CFG.clerkChase*CFG.clerkSpeedMul*g).toFixed(1)+' m/s</b></div>'+
     '<div><span>店員視線距離</span><b>'+
