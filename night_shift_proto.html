@@ -689,6 +689,10 @@
         代價是不能動、視野只剩一條門縫。位置固定，記住它們在哪就是實力</div>
       <div><b>·</b>架上有時會出現<b style="color:#E87A2B">三件一組的合金機器人部件</b>。
         單件只值 $20，湊齊三件會當場組裝成 $400 —— 但三件散在賣場的三個角落</div>
+      <div><b>·</b><b style="color:var(--tube)">戴耳機</b>：店員的腳步聲有方向也有距離，
+        20m 內、沒被牆或高貨架擋住就聽得到。閉著眼睛也能知道他在你左邊還是右邊</div>
+      <div><b>·</b>冷凍室的壓縮機一直在響，那是店裡唯一固定的聲音地標。
+        後門解鎖後會發出低頻脈衝，停電時會變快 —— 燈滅了也走得回去</div>
       <div><b>·</b>被發現不一定會死 —— 他追一段時間抓不到就會放棄</div>
       <div><b>·</b><b style="color:var(--danger)">被抓到的代價</b>：現金歸零、隨機沒收兩件裝備、關卡回到第 1 次。
         有護身符的話會自動啟用把裝備保下來</div>
@@ -823,7 +827,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v4.5';
+var BUILD='v4.6';
 
 /* 手機上沒有 console，一旦初始化丟錯就只剩黑畫面、完全無從查起。
    所以把錯誤直接印在畫面上。 */
@@ -868,6 +872,8 @@ var DEF = {
   // 隱藏技能「午夜鐘」：停止時間。刻意做得很強，但只租給你三回合。
   stopTime:8, stopUses:2, stopRuns:3, stopNeed:3,
   volume:0.40, ambience:0.055, stepVol:0.045,   // 音量。刻意壓低，環境音只是襯底
+  // 有方位的聲源：音量給的是「原音量」，距離衰減由 PannerNode 處理
+  clerkStepVol:0.26, doorPingVol:0.10,
   setChance:0.65,        // 三件組出現的機率
   hideFov:38,            // 躲在櫃子裡的視野角，越小越像從門縫看出去
   hideLook:0.75,         // 櫃子裡能左右轉的弧度（約 43 度）
@@ -883,7 +889,9 @@ function K(desktop,touch){ return IS_TOUCH?touch:desktop; }
 var KNOBS = [
   ['k-audio','volume','總音量',0,1,.05,''],
   ['k-audio','ambience','環境音',0,0.3,.005,''],
-  ['k-audio','stepVol','腳步聲',0,0.2,.005,''],
+  ['k-audio','stepVol','自己的腳步聲',0,0.2,.005,''],
+  ['k-audio','clerkStepVol','店員腳步聲',0,0.8,.02,''],
+  ['k-audio','doorPingVol','後門脈衝',0,0.4,.01,''],
   ['k-player','walkSpeed','走路速度',2,8,.1,' m/s'],
   ['k-player','sprintSpeed','衝刺速度',3,12,.1,' m/s'],
   ['k-player','mouseSens','滑鼠靈敏度',.0008,.006,.0001,''],
@@ -1833,7 +1841,7 @@ function findPath(si,ti){
 /* ============================================================
    6. 音效（純合成，無外部檔案）
    ============================================================ */
-var AC=null,master=null,drone=null,droneGain=null;
+var AC=null,master=null,drone=null,droneGain=null,dronePan=null;
 function audioInit(){
   if(AC)return;
   try{
@@ -1842,6 +1850,55 @@ function audioInit(){
   }catch(e){AC=null;}
 }
 function setVolume(v){ if(master)try{master.gain.value=v;}catch(e){} }
+
+/* ---------- 方位音效 ----------
+   潛行遊戲最該精通的技能之一是「用耳朵知道他在哪條走道」。
+   在這之前所有聲音都走同一條 master，只有遠近沒有左右，那個技能根本不存在。
+   現在每個有位置的聲源都掛一個 PannerNode，聽者跟著相機走。
+
+   一個實務上的取捨：HRTF 的方位感清楚很多，但運算成本也高，
+   手機上同時幾個腳步聲會掉幀，所以觸控裝置退回 equalpower（只有左右，沒有前後）。 */
+var earFwd=new THREE.Vector3();
+function updateListener(){
+  if(!AC||!AC.listener)return;
+  var L=AC.listener, p=camera.position;
+  camera.getWorldDirection(earFwd);
+  try{
+    if(L.positionX){        // 新版 API：AudioParam
+      L.positionX.value=p.x; L.positionY.value=p.y; L.positionZ.value=p.z;
+      L.forwardX.value=earFwd.x; L.forwardY.value=earFwd.y; L.forwardZ.value=earFwd.z;
+      L.upX.value=0; L.upY.value=1; L.upZ.value=0;
+    }else{                  // 舊版 Safari
+      L.setPosition(p.x,p.y,p.z);
+      L.setOrientation(earFwd.x,earFwd.y,earFwd.z,0,1,0);
+    }
+  }catch(e){}
+}
+/* 建一個位在世界座標 (x,y,z) 的輸出節點。
+   一次性音效不需要回收：來源播完就沒有東西引用這個 panner，GC 會處理。 */
+function panAt(x,y,z,dest,ref,rolloff){
+  if(!AC)return null;
+  try{
+    var p=AC.createPanner();
+    p.panningModel = IS_TOUCH?'equalpower':'HRTF';
+    p.distanceModel='inverse';
+    p.refDistance=ref||2.5;          // 這個距離內是原音量
+    p.maxDistance=44;
+    p.rolloffFactor=rolloff||1.1;    // 衰減速度。1.1 大約是 20m 剩兩成
+    if(p.positionX){p.positionX.value=x;p.positionY.value=y;p.positionZ.value=z;}
+    else p.setPosition(x,y,z);
+    p.connect(dest||master);
+    return p;
+  }catch(e){ return null; }
+}
+// 已經存在的 panner 搬位置（給會移動的聲源用，例如追逐低頻）
+function panMove(p,x,y,z){
+  if(!p)return;
+  try{
+    if(p.positionX){p.positionX.value=x;p.positionY.value=y;p.positionZ.value=z;}
+    else p.setPosition(x,y,z);
+  }catch(e){}
+}
 
 /* 環境音：日光燈的嗡嗡加冷藏櫃的風聲，全部即時合成。
    停電時燈的嗡嗡會斷掉、只剩冰櫃 —— 那個「安靜下來」本身就是一個提示。 */
@@ -1860,8 +1917,15 @@ function ambienceOn(){
     for(var i=0;i<n;i++)d[i]=Math.random()*2-1;
     var src=AC.createBufferSource(); src.buffer=b; src.loop=true;
     var lp=AC.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=400;
-    var ng=AC.createGain(); ng.gain.value=0.11;
+    var ng=AC.createGain(); ng.gain.value=0.05;
     src.connect(lp); lp.connect(ng); ng.connect(ambGain);
+    /* 冷凍室的壓縮機：同一個噪音來源再分一路，掛在冷凍室門口的座標上。
+       這是店裡唯一一個固定的聽覺地標 —— 停電之後你看不到「冷凍室」那塊招牌，
+       但那個嗡嗡還在原地，轉頭就知道自己面朝哪邊。 */
+    var cp=panAt(-14,1.2,-11.6,ambGain);
+    var bp=AC.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=190; bp.Q.value=0.9;
+    var cg=AC.createGain(); cg.gain.value=cp?0.42:0;
+    src.connect(bp); bp.connect(cg); cg.connect(cp||ambGain);
     o1.start(); o2.start(); src.start();
     amb={o1:o1,o2:o2,src:src,hum:g1,hum2:g2};
     ambGain.gain.linearRampToValueAtTime(CFG.ambience,AC.currentTime+1.6);
@@ -1874,7 +1938,9 @@ function ambienceHum(on){          // 停電時把日光燈的嗡嗡拿掉
     amb.hum2.gain.linearRampToValueAtTime(on?0.16:0.0,AC.currentTime+0.35);
   }catch(e){}
 }
-function beep(f,dur,type,vol,slide){
+/* dest 是最後一段的輸出節點。給了就是有方位的聲音（panAt 回傳的 panner），
+   沒給就照舊直接進 master —— 玩家自己手上發出的聲音不需要方位。 */
+function beep(f,dur,type,vol,slide,dest){
   if(!AC)return;
   var o=AC.createOscillator(),g=AC.createGain();
   o.type=type||'square'; o.frequency.setValueAtTime(f,AC.currentTime);
@@ -1882,16 +1948,16 @@ function beep(f,dur,type,vol,slide){
   g.gain.setValueAtTime(0,AC.currentTime);
   g.gain.linearRampToValueAtTime(vol||0.14,AC.currentTime+0.008);
   g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+dur);
-  o.connect(g); g.connect(master); o.start(); o.stop(AC.currentTime+dur+0.02);
+  o.connect(g); g.connect(dest||master); o.start(); o.stop(AC.currentTime+dur+0.02);
 }
-function noiseBurst(dur,freq,vol,q){
+function noiseBurst(dur,freq,vol,q,dest){
   if(!AC)return;
   var n=Math.floor(AC.sampleRate*dur), buf=AC.createBuffer(1,n,AC.sampleRate),d=buf.getChannelData(0);
   for(var i=0;i<n;i++)d[i]=(Math.random()*2-1)*(1-i/n);
   var s=AC.createBufferSource(); s.buffer=buf;
   var f=AC.createBiquadFilter(); f.type='bandpass'; f.frequency.value=freq||900; f.Q.value=q||1.2;
   var g=AC.createGain(); g.gain.value=vol||0.12;
-  s.connect(f); f.connect(g); g.connect(master); s.start();
+  s.connect(f); f.connect(g); g.connect(dest||master); s.start();
 }
 var SFX={
   scan:function(){beep(2050,0.05,'square',0.1); setTimeout(function(){beep(2750,0.07,'square',0.1);},58);},
@@ -1902,8 +1968,21 @@ var SFX={
     setTimeout(function(){beep(1760,0.08,'square',0.11);},80);
     setTimeout(function(){noiseBurst(0.3,1500,0.09,2);},170);},
   caught:function(){beep(320,0.9,'sawtooth',0.2,60); noiseBurst(0.5,180,0.18,0.6);},
-  step:function(v){noiseBurst(0.09,150,v,0.9);},
+  /* 店員腳步：這是全遊戲最重要的一個方位音效。
+     距離衰減交給 panner，所以這裡傳的是「原音量」而不是算好的值。
+     兩下一組（腳跟落地 + 鞋底），比單一 burst 好認方向。 */
+  step:function(v,x,z){
+    var p=panAt(x,0.22,z);
+    noiseBurst(0.09,150,v,0.9,p);
+    setTimeout(function(){ noiseBurst(0.05,240,v*0.45,1.6,p); },42);
+  },
+  // 後門的低頻脈衝：解鎖後才有，停電時它就是導引燈帶的聽覺版
+  doorPing:function(x,z){
+    var p=panAt(x,1.1,z);
+    beep(96,0.5,'sine',CFG.doorPingVol,72,p);
+  },
   // 玩家腳步：走／衝／潛行三種音量與頻率，加一點隨機避免像節拍器
+  // （玩家的聲音刻意不掛 panner —— 它就在你耳朵旁邊，沒有方向）
   foot:function(kind){
     var v = kind==='run'?CFG.stepVol*1.7 : kind==='sneak'?CFG.stepVol*0.4 : CFG.stepVol;
     var f = (kind==='run'?185:145)*(0.88+Math.random()*0.3);
@@ -1920,9 +1999,16 @@ var SFX={
   bellBack:function(){beep(196,0.5,'sine',0.11,392); beep(392,0.3,'triangle',0.05,784);},
   unlock:function(){beep(660,0.1,'triangle',0.1);setTimeout(function(){beep(990,0.22,'triangle',0.1);},95);}
 };
+/* 追逐低頻。原本是固定音量的 2D 警報，現在掛在店員身上跟著他走。
+   差別很大：它從「你被追了」變成「他離你多近、在你哪一邊」——
+   紅框已經負責講前者了，聲音應該負責後者。
+   衰減刻意放得比腳步聲緩（refDistance 6、rolloff 0.55），
+   不然他一拉開距離警報就沒了，你會誤判自己已經脫離。 */
 function droneOn(){
   if(!AC||drone)return;
-  droneGain=AC.createGain(); droneGain.gain.value=0; droneGain.connect(master);
+  droneGain=AC.createGain(); droneGain.gain.value=0;
+  dronePan=panAt(clerk.position.x,1.2,clerk.position.z,master,6,0.55);
+  droneGain.connect(dronePan||master);
   drone=[];
   [58,87.5,116].forEach(function(f){
     var o=AC.createOscillator(); o.type='sawtooth'; o.frequency.value=f;
@@ -1933,7 +2019,7 @@ function droneOn(){
 }
 function droneOff(){
   if(!drone)return;
-  var ds=drone,dg=droneGain; drone=null;
+  var ds=drone,dg=droneGain; drone=null; dronePan=null;
   try{dg.gain.linearRampToValueAtTime(0,AC.currentTime+0.5);}catch(e){}
   setTimeout(function(){ds.forEach(function(o){try{o.stop();}catch(e){}});},700);
 }
@@ -1973,7 +2059,8 @@ function newRun(){
     hasKey:false,
     spotted:0, maxHeat:0, usedItem:false     // 評分用
   };
-  shrinkT=0; stopT=0; document.body.classList.remove('stopped');
+  shrinkT=0; stopT=0; doorPingT=0;
+  document.body.classList.remove('stopped');
   clerk.rotation.z=0;
   G.run=r; G.shift++;
   camera.position.set(SPAWN.x,1.65,SPAWN.z);
@@ -2832,14 +2919,18 @@ function stepClerk(dt){
     AI.stuck = moved<speed*dt*0.25 ? AI.stuck+dt : 0;
     if(AI.stuck>1.2){ AI.path=[]; AI.stuck=0;
       if(AI.state==='CHASE'&&AI.lastSeen)setPathTo(AI.lastSeen.x,AI.lastSeen.z); }
-    // 腳步聲：距離越近越清楚
+    /* 腳步聲：音量與方向都交給 panner，這裡只決定「聽不聽得到」。
+       牆或高貨架擋住就不發聲（7m 內例外 —— 太近了還是會透過來），
+       這個遮蔽判定跟視線用的是同一個 blocked()，所以聽覺和視覺的規則一致。 */
     AI.stepT+=dt*speed;
     if(AI.stepT>2.6){AI.stepT=0;
-      if(dP<18&&!blocked(clerk.position.x,clerk.position.z,px,pz,2.6)||dP<7)
-        SFX.step(Math.max(0.01,0.16*(1-dP/20)));
+      if(dP<20&&!blocked(clerk.position.x,clerk.position.z,px,pz,2.6)||dP<7)
+        SFX.step(CFG.clerkStepVol,clerk.position.x,clerk.position.z);
     }
   }
   var chasing=AI.state==='CHASE';
+  // 追逐低頻跟著他跑
+  if(dronePan)panMove(dronePan,clerk.position.x,1.2,clerk.position.z);
   alertHalo.material.opacity += ((chasing?0.55:0)-alertHalo.material.opacity)*Math.min(1,dt*4);
   // 頭上符號：追逐或已鎖定 → !；正在被看／調查／搜尋 → ?
   if(chasing||AI.aware>=1)setMark('x');
@@ -3808,7 +3899,7 @@ function renderLog(){
 /* ============================================================
    17. 主迴圈
    ============================================================ */
-var flickerT=0, animT=0;
+var flickerT=0, animT=0, doorPingT=0;
 function frame(now){
   requestAnimationFrame(frame);
   var dt=Math.min(0.05,(now-G.lastTime)/1000); G.lastTime=now;
@@ -3844,6 +3935,17 @@ function frame(now){
         if(stopT<=0)endStop();
       }else{
         stepClerk(dt);
+      }
+      // 聽者跟著相機 —— 位置與朝向都要更新，不然轉頭時左右不會跟著換
+      updateListener();
+      /* 後門的低頻脈衝：只有解鎖後才響，停電時變快。
+         它的用途很具體 —— 燈滅了之後，你不用看地上那條紅線也走得回去。 */
+      if(G.run.unlocked&&stopT<=0){
+        doorPingT-=dt;
+        if(doorPingT<=0){
+          doorPingT=G.run.danger?1.5:2.6;
+          SFX.doorPing((EXIT.x0+EXIT.x1)/2,(EXIT.z0+EXIT.z1)/2);
+        }
       }
       runScript();
       updateAim();
