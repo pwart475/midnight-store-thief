@@ -716,7 +716,9 @@
     </div>
     <h4 class="sh">注意度</h4>
     <p class="sub">提袋裡的金額越高，店員的視線和聽力就越敏銳 —— 左下角有一條「店員注意度」，
-      超過三分之二會變紅。<b style="color:var(--price)">貪婪本身就是風險，不是等他來抓你才算。</b></p>
+      超過三分之二會變紅。<b style="color:var(--price)">貪婪本身就是風險，不是等他來抓你才算。</b><br>
+      背景那層心跳也是同一個數字：<b style="color:var(--price)">越貪，它跳得越快</b>。
+      不用看螢幕也知道自己走到哪一步了。</p>
     <h4 class="sh">操作</h4>
     <div class="keys">
       <div><b>W A S D</b>走路</div>
@@ -833,7 +835,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v4.7';
+var BUILD='v4.9';
 
 /* 手機上沒有 console，一旦初始化丟錯就只剩黑畫面、完全無從查起。
    所以把錯誤直接印在畫面上。 */
@@ -877,9 +879,11 @@ var DEF = {
   safeChance:0.5, keyChance:0.5,
   // 隱藏技能「午夜鐘」：停止時間。刻意做得很強，但只租給你三回合。
   stopTime:8, stopUses:2, stopRuns:3, stopNeed:3,
-  volume:0.40, ambience:0.055, stepVol:0.045,   // 音量。刻意壓低，環境音只是襯底
+  volume:0.40, ambience:0.055, stepVol:0.07,    // 音量。刻意壓低，環境音只是襯底
   // 有方位的聲源：音量給的是「原音量」，距離衰減由 PannerNode 處理
-  clerkStepVol:0.26, doorPingVol:0.10,
+  clerkStepVol:0.46, doorPingVol:0.10,
+  musicVol:0.30,         // 背景配樂的總量。它是襯底，不該壓過腳步聲
+  noiseVol:0.55,         // 白噪音那一層（冰櫃風聲、壓縮機沙沙）的總量
   setChance:0.65,        // 三件組出現的機率
   hideFov:38,            // 躲在櫃子裡的視野角，越小越像從門縫看出去
   hideLook:0.75,         // 櫃子裡能左右轉的弧度（約 43 度）
@@ -898,8 +902,8 @@ var IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
    戴耳機很好聽，用 iPhone 喇叭放等於沒有聲音。
    所以除了整體調大，各個音效本身也加了中頻的成分（見 SFX）。 */
 if(IS_TOUCH){
-  var LOUD={volume:0.72, ambience:0.085, stepVol:0.07,
-            clerkStepVol:0.40, doorPingVol:0.16};
+  var LOUD={volume:0.78, ambience:0.085, stepVol:0.10,
+            clerkStepVol:0.66, doorPingVol:0.16, musicVol:0.34};
   Object.assign(DEF,LOUD); Object.assign(CFG,LOUD);
 }
 // 提示文字要講玩家手上真的有的東西：手機沒有 E 鍵，也沒有 Shift
@@ -909,8 +913,10 @@ var KNOBS = [
   ['k-audio','volume','總音量',0,1,.05,''],
   ['k-audio','ambience','環境音',0,0.3,.005,''],
   ['k-audio','stepVol','自己的腳步聲',0,0.2,.005,''],
-  ['k-audio','clerkStepVol','店員腳步聲',0,0.8,.02,''],
+  ['k-audio','clerkStepVol','店員腳步聲',0,1.2,.02,''],
   ['k-audio','doorPingVol','後門脈衝',0,0.4,.01,''],
+  ['k-audio','musicVol','背景配樂',0,0.8,.02,''],
+  ['k-audio','noiseVol','白噪音',0,1.2,.05,''],
   ['k-player','walkSpeed','走路速度',2,8,.1,' m/s'],
   ['k-player','sprintSpeed','衝刺速度',3,12,.1,' m/s'],
   ['k-player','mouseSens','滑鼠靈敏度',.0008,.006,.0001,''],
@@ -1982,22 +1988,29 @@ function ambienceOn(){
     for(var i=0;i<n;i++)d[i]=Math.random()*2-1;
     var src=AC.createBufferSource(); src.buffer=b; src.loop=true;
     var lp=AC.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=400;
-    var ng=AC.createGain(); ng.gain.value=0.05;
-    src.connect(lp); lp.connect(ng); ng.connect(ambGain);
+    var ng=AC.createGain(); ng.gain.value=0.030;
+    /* 所有的噪音（白噪音那一層）都先過 nAll 這一個節點再分岔。
+       這樣「把白噪音關小」和「被追時把白噪音整個抽掉」都只要動一個 gain，
+       不用去追每一條分支。 */
+    var nAll=AC.createGain(); nAll.gain.value=CFG.noiseVol; src.connect(nAll);
+    noiseCur=CFG.noiseVol;      // 平滑器的起點要跟實際值一致，不然開場會先大一下
+    nAll.connect(lp); lp.connect(ng); ng.connect(ambGain);
     /* 冷凍室的壓縮機：同一個噪音來源再分一路，掛在冷凍室門口的座標上。
        這是店裡唯一一個固定的聽覺地標 —— 停電之後你看不到「冷凍室」那塊招牌，
        但那個嗡嗡還在原地，轉頭就知道自己面朝哪邊。 */
     var cp=panAt(-14,1.2,-11.6,ambGain);
-    // 兩段：190Hz 是壓縮機的機殼震動（耳機聽得到），
-    // 1100Hz 是風扇的沙沙聲（手機喇叭只放得出這一段）
+    // 190Hz 是壓縮機的機殼震動，1100Hz 是風扇的沙沙聲。
+    // 沙沙那一段刻意壓得很低 —— 它是最容易變成「吵」的頻段，
+    // 留一點點只是為了讓手機喇叭也定得出冷凍室的方向。
     var bp=AC.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=190; bp.Q.value=0.9;
     var bp2=AC.createBiquadFilter(); bp2.type='bandpass'; bp2.frequency.value=1100; bp2.Q.value=0.7;
-    var cg=AC.createGain(); cg.gain.value=cp?0.50:0;
-    src.connect(bp); bp.connect(cg);
-    src.connect(bp2); bp2.connect(cg);
-    cg.connect(cp||ambGain);
+    var cg=AC.createGain();  cg.gain.value =cp?0.34:0;
+    var cg2=AC.createGain(); cg2.gain.value=cp?0.09:0;
+    nAll.connect(bp);  bp.connect(cg);
+    nAll.connect(bp2); bp2.connect(cg2);
+    cg.connect(cp||ambGain); cg2.connect(cp||ambGain);
     o1.start(); o2.start(); src.start();
-    amb={o1:o1,o2:o2,src:src,hum:g1,hum2:g2};
+    amb={o1:o1,o2:o2,src:src,hum:g1,hum2:g2,noise:nAll};
     ambGain.gain.linearRampToValueAtTime(CFG.ambience,AC.currentTime+1.6);
   }catch(e){amb=null;}
 }
@@ -2007,6 +2020,17 @@ function ambienceHum(on){          // 停電時把日光燈的嗡嗡拿掉
     amb.hum.gain.linearRampToValueAtTime(on?0.5:0.02,AC.currentTime+0.35);
     amb.hum2.gain.linearRampToValueAtTime(on?0.16:0.0,AC.currentTime+0.35);
   }catch(e){}
+}
+/* 被追的時候把白噪音整條抽掉，只留心跳與他的腳步聲。
+   理由不只是「太吵」—— 追逐是全遊戲最需要聽清楚方向的一刻，
+   而寬頻噪音正好會遮蔽定位用的中高頻。安靜下來本身也是一種壓力。 */
+var noiseCur=1;
+function noiseStep(dt){
+  if(!amb||!amb.noise)return;
+  var chasing = G.phase==='play' && AI.state==='CHASE';
+  var want = CFG.noiseVol*(chasing?0.04:1);
+  noiseCur += (want-noiseCur)*Math.min(1,dt*3);
+  try{ amb.noise.gain.value=noiseCur; }catch(e){}
 }
 /* dest 是最後一段的輸出節點。給了就是有方位的聲音（panAt 回傳的 panner），
    沒給就照舊直接進 master —— 玩家自己手上發出的聲音不需要方位。 */
@@ -2084,6 +2108,9 @@ var SFX={
    紅框已經負責講前者了，聲音應該負責後者。
    衰減刻意放得比腳步聲緩（refDistance 6、rolloff 0.55），
    不然他一拉開距離警報就沒了，你會誤判自己已經脫離。 */
+// 追逐低頻的音量。壓到 0.24 是因為被追的那幾秒要留給心跳與腳步聲 ——
+// 它現在的工作只是「他在哪個方向、多近」，不是製造音量。
+var DRONE_LVL=0.24;
 function droneOn(){
   if(!AC||drone)return;
   droneGain=AC.createGain(); droneGain.gain.value=0;
@@ -2095,13 +2122,98 @@ function droneOn(){
     var g=AC.createGain(); g.gain.value=0.05; o.connect(g); g.connect(droneGain); o.start();
     drone.push(o);
   });
-  droneGain.gain.linearRampToValueAtTime(0.5,AC.currentTime+1.2);
+  droneGain.gain.linearRampToValueAtTime(DRONE_LVL,AC.currentTime+1.2);
 }
 function droneOff(){
   if(!drone)return;
   var ds=drone,dg=droneGain; drone=null; dronePan=null;
   try{dg.gain.linearRampToValueAtTime(0,AC.currentTime+0.5);}catch(e){}
   setTimeout(function(){ds.forEach(function(o){try{o.stop();}catch(e){}});},700);
+}
+
+/* ============================================================
+   6b. 背景配樂 —— 即時生成，不是循環音檔
+   ============================================================
+   三層疊起來：
+     · 底層 drone：D2 加 Eb2，小二度。這是最基本的不安音程，
+       兩個音會互相打拍，加上極慢的音高飄移之後就不會像機器在響。
+     · 脈衝：一個很悶的低音心跳。
+     · 疏散的音符：D Phrygian 音階裡隨機挑一個，長衰減。
+       隨機而不是固定序列，所以 60 秒的一局不會聽到重複。
+
+   關鍵是它跟「注意度」綁在一起：脈衝從 2.6 秒一下加快到 0.6 秒一下，
+   音符變密、音域往上跳、整體音量抬起來。
+   玩家已經在看左下那條注意度條了 —— 讓耳朵讀到同一個數字，
+   「貪婪的代價」就變成兩個感官同時在講同一件事。 */
+var MUS=null;
+function musicOn(){
+  if(!AC||MUS)return;
+  try{
+    var bus=AC.createGain(); bus.gain.value=0; bus.connect(master);
+    /* drone 床（含疏散的音符）走 bed，心跳直接走 bus。
+       分開是為了「被追時只留心跳」—— 那時候 bed 會被關掉，
+       但心跳照樣打，而且是全場最快的時候。 */
+    var bed=AC.createGain(); bed.gain.value=1; bed.connect(bus);
+    var lp=AC.createBiquadFilter(); lp.type='lowpass';
+    lp.frequency.value=540; lp.Q.value=0.6; lp.connect(bed);
+    var oscs=[];
+    [73.42,77.78].forEach(function(f,i){        // D2 / Eb2
+      var o=AC.createOscillator(); o.type='triangle'; o.frequency.value=f;
+      var og=AC.createGain(); og.gain.value=i?0.30:0.42;
+      o.connect(og); og.connect(lp); o.start(); oscs.push(o);
+    });
+    // 0.045Hz ≈ 22 秒一個週期的音高飄移，慢到你不會發現它在動
+    var lfo=AC.createOscillator(); lfo.type='sine'; lfo.frequency.value=0.045;
+    var lg=AC.createGain(); lg.gain.value=1.2;
+    lfo.connect(lg); lg.connect(oscs[1].frequency); lfo.start(); oscs.push(lfo);
+    MUS={bus:bus, bed:bed, oscs:oscs, pulseT:1.2, noteT:5, cur:0, bedCur:1};
+  }catch(e){MUS=null;}
+}
+var PHRY_LO=[293.66,311.13,349.23,392.00,440.00];   // D Eb F G A
+var PHRY_HI=[587.33,622.25,698.46,830.61,932.33];   // 高八度，更不協和的挑法
+function musicStep(dt){
+  if(!MUS||!AC)return;
+  var h=heat();
+  var alert = AI.state==='CHASE' ? 1 : (AI.aware||0);
+  var tension=Math.min(1, h*0.75 + alert*0.6);
+  var chasing = AI.state==='CHASE';
+  // 音量在 JS 端平滑，不用 setTargetAtTime —— 每幀排事件會把事件表塞爆
+  var want=CFG.musicVol*(0.42+0.58*tension);
+  MUS.cur += (want-MUS.cur)*Math.min(1,dt*2.5);
+  try{ MUS.bus.gain.value=MUS.cur; }catch(e){}
+  /* 被追的時候只留心跳。
+     drone 床跟追逐低頻佔的是同一個頻段，疊起來會變成一團泥，
+     而那正是你最需要聽清楚他腳步方向的一刻。
+     所以那幾秒的聲音只有三樣：心跳、他的腳步、你自己的呼吸空間。 */
+  MUS.bedCur += ((chasing?0:1)-MUS.bedCur)*Math.min(1,dt*3.5);
+  try{ MUS.bed.gain.value=MUS.bedCur; }catch(e){}
+  // 心跳
+  MUS.pulseT-=dt;
+  if(MUS.pulseT<=0){
+    MUS.pulseT=2.6-1.98*tension;
+    var v=(0.35+0.65*tension)*(chasing?1.35:1);   // 被追時它要撐起整個場面
+    /* 三個成分，刻意都是有音高的波形而不是噪音：
+       58Hz 正弦是本體（耳機聽得到的胸口感），
+       190Hz 三角波帶泛音，是手機喇叭唯一放得出來的部分，
+       88Hz 是心跳的第二下。之前這裡用的是一小段白噪音，太沙了。 */
+    beep(58,0.42,'sine',v*0.95,44,MUS.bus);
+    beep(190,0.15,'triangle',v*0.30,92,MUS.bus);
+    beep(88,0.20,'sine',v*0.42,58,MUS.bus);
+  }
+  // 音符 —— 跟 drone 床一起走 bed，所以被追時也會消失
+  MUS.noteT-=dt;
+  if(MUS.noteT<=0){
+    MUS.noteT=5.5-3.4*tension+Math.random()*2.4;
+    var sc=tension>0.55?PHRY_HI:PHRY_LO;
+    var f=sc[Math.floor(Math.random()*sc.length)];
+    beep(f,1.4+Math.random(),'triangle',0.40,f*0.994,MUS.bed);
+  }
+}
+// 不在遊玩中、暫停、或午夜鐘期間：整條配樂匯流排淡到 0
+function musicDuck(dt){
+  if(!MUS)return;
+  MUS.cur += (0-MUS.cur)*Math.min(1,dt*4);
+  try{ MUS.bus.gain.value=MUS.cur; }catch(e){}
 }
 
 /* ============================================================
@@ -3129,7 +3241,7 @@ function endStop(){
 function droneQuiet(on){
   // 只在追逐低頻真的還在播的時候動它，不然會把已經停掉的震盪器又叫醒
   if(!AC||!drone||!droneGain)return;
-  try{droneGain.gain.linearRampToValueAtTime(on?0.02:0.5,AC.currentTime+0.3);}catch(e){}
+  try{droneGain.gain.linearRampToValueAtTime(on?0.02:DRONE_LVL,AC.currentTime+0.3);}catch(e){}
 }
 
 function stepPlayer(dt){
@@ -3859,7 +3971,7 @@ function renderBoard(){
 
 function startGame(){
   audioInit(); if(AC&&AC.state==='suspended')AC.resume();
-  setVolume(CFG.volume); ambienceOn();
+  setVolume(CFG.volume); ambienceOn(); musicOn();
   // 手機上瀏覽器介面會吃掉三分之一畫面，開場就直接進全螢幕
   if(IS_TOUCH&&!fsActive())goFullscreen();
   hideAll(); manualPause=false; G.phase='play'; newRun(); syncItemButtons(); requestLock();
@@ -4037,6 +4149,11 @@ function frame(now){
     sp.classList.toggle('hot',AI.aware>0.6);
   }
   if(G.phase==='catchcam'&&catchCam)stepCatchCam(dt);
+  /* 配樂只在真正在玩的時候響。
+     午夜鐘期間也要靜掉 —— 那八秒的重點就是「所有聲音被抽走」。 */
+  if(G.phase==='play'&&G.run&&!isPaused()&&stopT<=0)musicStep(dt);
+  else musicDuck(dt);
+  noiseStep(dt);
   if(G.phase==='play'&&G.run){
     if(!isPaused()){
       G.run.t+=dt;
