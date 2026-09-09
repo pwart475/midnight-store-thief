@@ -177,6 +177,20 @@
   @keyframes chasepulse2{0%,100%{opacity:.55}50%{opacity:1}}
   body.touch #chasetag{font-size:18px;top:auto;bottom:34%}
 
+  /* 躲在櫃子裡：門縫的視野遮罩 */
+  #hidefx{position:absolute;inset:0;opacity:0;transition:opacity .18s;
+    background:
+      linear-gradient(to bottom,rgba(4,6,4,.97) 0%,rgba(4,6,4,.97) 22%,
+        rgba(4,6,4,0) 28%,rgba(4,6,4,0) 72%,rgba(4,6,4,.97) 78%,rgba(4,6,4,.97) 100%),
+      linear-gradient(to right,rgba(4,6,4,.97) 0%,rgba(4,6,4,0) 16%,
+        rgba(4,6,4,0) 84%,rgba(4,6,4,.97) 100%)}
+  body.hidden-in #hidefx{opacity:1}
+  body.hidden-in #basket,body.hidden-in #objective{opacity:.35}
+  #hidetag{position:absolute;left:50%;bottom:22%;transform:translateX(-50%);
+    font-size:12px;letter-spacing:.18em;color:var(--dim);opacity:0;transition:opacity .18s;
+    white-space:nowrap}
+  body.hidden-in #hidetag{opacity:1}
+
   #caught{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
     opacity:0;transition:opacity .16s;
     background:radial-gradient(80% 60% at 50% 50%,rgba(40,0,0,.18),rgba(10,0,0,.72))}
@@ -386,6 +400,18 @@
     letter-spacing:.1em}
   .devdata summary:hover{color:var(--tube)}
 
+  /* 收據上的評分區 */
+  .receipt .grades{display:grid;gap:3px;margin:2px 0 4px}
+  .receipt .gr{display:grid;grid-template-columns:auto 1fr auto;gap:8px;
+    align-items:baseline;font-size:11.5px;font-variant-numeric:tabular-nums}
+  .receipt .gr>span{color:#5A5A50}
+  .receipt .gr>b{text-align:right;color:#1A1A17}
+  .receipt .gr>em{font-style:normal;font-size:10px;color:#8A8A7C;white-space:nowrap}
+  .receipt .gr.dim>b,.receipt .gr.dim>span{color:#9A9A8C}
+  .receipt .gr.rec>b{color:#B8860B;font-weight:700}
+  .receipt .gr.rec>em{color:#B8860B;font-weight:700;
+    border:1px solid #B8860B;padding:0 4px}
+
   .receipt .streakbox{margin-top:12px;padding:9px 11px;background:#E4E1D4;
     border-left:3px solid #7B7B6C;font-size:11.5px;color:#4A4A42;display:flex;
     justify-content:space-between;gap:10px;align-items:baseline}
@@ -573,6 +599,8 @@
   <div id="prompt"></div>
   <div id="toast"></div>
   <div id="pa"><span>店內廣播</span><em id="patext"></em></div>
+  <div id="hidefx"></div>
+  <div id="hidetag">躲在櫃子裡 · 他看不到你，你也動不了</div>
   <div id="vignette"></div>
   <div id="chasefx"></div>
   <div id="chasetag">他在追你</div>
@@ -605,7 +633,7 @@
       —— 你看得到哪邊值錢。但提袋只有 12 格，而且店裡還有一個值班的人。</p>
     <div class="loop">
       <div><b>一</b>順走東西，提袋裡的金額往上跳</div>
-      <div><b>二</b>拿到 3 件，後門解鎖 —— 現在就能乾淨脫身</div>
+      <div><b>二</b>拿到 6 件，後門解鎖 —— 現在就能乾淨脫身</div>
       <div><b>三</b>但冷凍室有一件非賣品，拿了會出事</div>
       <div><b>四</b>脫身、變賣、添裝備，再幹一次</div>
     </div>
@@ -618,6 +646,10 @@
       <div><b>·</b>被看到不是瞬間就完蛋 —— 畫面中央會出現「被發現中」進度條，
         <b style="color:var(--tube)">在它滿之前切斷視線就能溜掉</b></div>
       <div><b>·</b>衝刺很快但很吵；潛行很慢但幾乎沒聲音，還能蹲低躲在櫃檯後面</div>
+      <div><b>·</b>牆邊有<b style="color:var(--fresh)">立櫃</b>可以躲進去，他就找不到你 ——
+        代價是不能動、視野只剩一條門縫。位置固定，記住它們在哪就是實力</div>
+      <div><b>·</b>架上有時會出現<b style="color:#E87A2B">三件一組的合金機器人部件</b>。
+        單件只值 $20，湊齊三件會當場組裝成 $400 —— 但三件散在賣場的三個角落</div>
       <div><b>·</b>被發現不一定會死 —— 他追一段時間抓不到就會放棄</div>
       <div><b>·</b><b style="color:var(--danger)">被抓到的代價</b>：現金歸零、隨機沒收兩件裝備、關卡回到第 1 次。
         有護身符的話會自動啟用把裝備保下來</div>
@@ -713,6 +745,7 @@
 <button id="fsbtn">⛶ 全螢幕</button>
 <button id="devtoggle">T · 調參</button>
 <div id="dev">
+  <h4>音量</h4><div id="k-audio"></div>
   <h4>玩家</h4><div id="k-player"></div>
   <h4>店員</h4><div id="k-clerk"></div>
   <h4>經濟與節奏</h4><div id="k-econ"></div>
@@ -741,7 +774,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v4.0';
+var BUILD='v4.4';
 
 /* 手機上沒有 console，一旦初始化丟錯就只剩黑畫面、完全無從查起。
    所以把錯誤直接印在畫面上。 */
@@ -765,15 +798,17 @@ if(!window.THREE){document.getElementById('narrow').style.display='flex';
 var DEF = {
   walkSpeed:4.2, sprintSpeed:6.8, mouseSens:0.0023,
   edgeTurn:2.4, steerYaw:3.4, steerPitch:2.0,
-  clerkPatrol:2.0, patrolGrowth:0.2,   // 巡邏速度，每五次下手 +0.2（絕對值，不是倍率）
+  // 成長曲線壓縮到「單次工作階段」的尺度：進度每次開啟歸零，
+  // 一輪大概只玩 8–10 局，所以每三次就要有感，不能為 25 局設計。
+  clerkPatrol:2.0, patrolGrowth:0.2, patrolEvery:3,
   clerkChase:5.0, visionRange:13, visionAngle:42,   // ×clerkSpeedMul 0.9 = 實際追逐 4.5
   loseSight:3.5, chaseGiveUp:10, calmTime:6, catchDist:1.0, hearWalk:8, hearSprint:17,
   spotTime:0.6,          // 被看到多久才真的變成追逐 —— 這段就是你的反應窗口
-  capacity:12, riskBonus:1.2, forbiddenValue:120, extractItems:3,
+  capacity:12, riskBonus:1.2, forbiddenValue:120, extractItems:6,
   // 負重：只有超過門檻才罰，且是固定一級，不是連續遞減
   loadThreshold:0.80, loadPenalty:0.10,
   // 店員：以基礎值的百分比表示，每三次下手各加 growthPer3
-  clerkSense:0.60, clerkSpeedMul:0.90, growthPer3:0.02,
+  clerkSense:0.60, clerkSpeedMul:0.90, growthPer3:0.06,
   heatFullValue:520,     // 提袋金額到這個數字，店員的注意度就滿了
   heatVision:0.45, heatHearing:0.35,
   taserRange:24, taserSpread:8, taserStun:5, shrinkTime:10,
@@ -781,6 +816,10 @@ var DEF = {
   // 小跳：峰值 0.68m，視點衝到 2.33m，剛好越過 1.9m 的貨架看一眼
   jumpSpeed:4.2, gravity:13,
   shopSlots:4, rerollCost:120, safeChance:0.5, keyChance:0.5,
+  volume:0.40, ambience:0.055, stepVol:0.045,   // 音量。刻意壓低，環境音只是襯底
+  setChance:0.65,        // 三件組出現的機率
+  hideFov:38,            // 躲在櫃子裡的視野角，越小越像從門縫看出去
+  hideLook:0.75,         // 櫃子裡能左右轉的弧度（約 43 度）
   reachDist:3.4, aimAssist:15      // 互動距離與瞄準寬容度（度）
 };
 var CFG = Object.assign({},DEF);
@@ -791,6 +830,9 @@ var IS_TOUCH = (navigator.maxTouchPoints||0)>0 || ('ontouchstart' in window);
 function K(desktop,touch){ return IS_TOUCH?touch:desktop; }
 
 var KNOBS = [
+  ['k-audio','volume','總音量',0,1,.05,''],
+  ['k-audio','ambience','環境音',0,0.3,.005,''],
+  ['k-audio','stepVol','腳步聲',0,0.2,.005,''],
   ['k-player','walkSpeed','走路速度',2,8,.1,' m/s'],
   ['k-player','sprintSpeed','衝刺速度',3,12,.1,' m/s'],
   ['k-player','mouseSens','滑鼠靈敏度',.0008,.006,.0001,''],
@@ -804,7 +846,8 @@ var KNOBS = [
   ['k-clerk','clerkSpeedMul','速度倍率',0.4,1.6,.05,''],
   ['k-clerk','growthPer3','每三次下手增幅',0,0.15,.005,''],
   ['k-clerk','clerkPatrol','巡邏速度（基礎）',0.6,5,.1,' m/s'],
-  ['k-clerk','patrolGrowth','每五次下手 +',0,1,.05,' m/s'],
+  ['k-clerk','patrolGrowth','巡邏每階 +',0,1,.05,' m/s'],
+  ['k-clerk','patrolEvery','巡邏幾次一階',1,10,1,' 次'],
   ['k-clerk','clerkChase','追逐速度',3,10,.1,' m/s'],
   ['k-clerk','visionRange','視線距離',6,34,1,' m'],
   ['k-clerk','visionAngle','視野半角',15,90,1,'°'],
@@ -817,6 +860,7 @@ var KNOBS = [
   ['k-econ','capacity','提袋格數（基礎）',4,30,1,' 格'],
   ['k-econ','gearLost','被抓沒收幾件裝備',0,6,1,' 件'],
   ['k-econ','keyChance','鑰匙出現機率',0,1,.05,''],
+  ['k-econ','setChance','三件組出現機率',0,1,.05,''],
   ['k-econ','safeChance','保險箱中獎機率',0,1,.05,''],
   ['k-clerk','taserRange','電擊槍射程',5,40,1,' m'],
   ['k-clerk','taserSpread','電擊槍散布',2,25,1,'°'],
@@ -857,8 +901,21 @@ var ITEMS = [
   {id:'safekey', name:'保險箱鑰匙',   v:0,  slots:0, tier:'special',  noise:3, shape:'key',  color:0x7FE3F5},
   {id:'watch',   name:'瑞士錶',       v:210, slots:1, tier:'vault',   noise:2, shape:'can',  color:0xE8D9A0},
   {id:'goldbar', name:'金條',         v:260, slots:2, tier:'vault',   noise:6, shape:'bar',  color:0xFFC93C},
-  {id:'coins',   name:'零錢包',       v:45,  slots:1, tier:'rare',    noise:5, shape:'bag',  color:0xB9A66B}
+  {id:'coins',   name:'零錢包',       v:45,  slots:1, tier:'rare',    noise:5, shape:'bag',  color:0xB9A66B},
+  /* 三件一組的合金機器人。單件幾乎不值錢，湊齊會自動組裝成一件高價品。
+     這是「這局的故事」：找到第一件之後，你就有了一個自己的目標。 */
+  {id:'bot_head', name:'合金機器人・頭部', v:20, slots:1, tier:'part', noise:4,
+    shape:'bothead', color:0x8FA8C4, set:'bot'},
+  {id:'bot_body', name:'合金機器人・軀幹', v:20, slots:1, tier:'part', noise:6,
+    shape:'botbody', color:0x8FA8C4, set:'bot'},
+  {id:'bot_arm',  name:'合金機器人・手臂', v:20, slots:1, tier:'part', noise:5,
+    shape:'botarm',  color:0x8FA8C4, set:'bot'},
+  {id:'bot_full', name:'合金機器人（完整）', v:400, slots:2, tier:'vault', noise:8,
+    shape:'botfull', color:0x9FBBD8}
 ];
+var SET_PARTS={bot:['bot_head','bot_body','bot_arm']};
+var SET_RESULT={bot:'bot_full'};
+var SET_NAME={bot:'合金機器人'};
 var BY_ID={}; ITEMS.forEach(function(d){BY_ID[d.id]=d;});
 
 var UPGRADES = [
@@ -894,9 +951,10 @@ function heat(){
   return Math.min(1, G.run.value/Math.max(1,CFG.heatFullValue));
 }
 function clerkChaseNow(){ return CFG.clerkChase*CFG.clerkSpeedMul*growth(); }
-// 巡邏速度走自己的階梯：每五次下手 +0.2，跟追逐速度的百分比成長分開
+// 巡邏速度走自己的階梯（絕對值），跟追逐速度的百分比成長分開
 function clerkPatrolNow(){
-  return CFG.clerkPatrol + CFG.patrolGrowth*Math.floor(Math.max(0,G.shift-1)/5);
+  var every=Math.max(1,CFG.patrolEvery);
+  return CFG.clerkPatrol + CFG.patrolGrowth*Math.floor(Math.max(0,G.shift-1)/every);
 }
 function visionNow(){
   return CFG.visionRange*CFG.clerkSense*growth()*(1+CFG.heatVision*heat());
@@ -1298,6 +1356,24 @@ var SHAPES={
     P(GEO.box,c,[.05,.05,.10],[.05,.16,.04],1.5)];},
   bar:function(c){return [P(GEO.box,c,[.34,.11,.18],[0,.055,0],0.9),
     P(GEO.box,c,[.28,.03,.13],[0,.12,0],1.2)];},
+  // 三個部件用同一套配色與橘色接點，一眼看得出是同一組
+  bothead:function(c){return [P(GEO.box,c,[.26,.24,.24],[0,.14,0],0.35),
+    P(GEO.box,0x1E2A34,[.18,.07,.02],[0,.17,-.13]),
+    P(GEO.box,0xE87A2B,[.05,.05,.05],[0,.28,0],1.1)];},
+  botbody:function(c){return [P(GEO.box,c,[.30,.34,.20],[0,.19,0],0.35),
+    P(GEO.box,0xE87A2B,[.10,.10,.03],[0,.24,-.11],1.1),
+    P(GEO.box,c,[.36,.06,.22],[0,.36,0],0.35)];},
+  botarm:function(c){return [P(GEO.box,c,[.11,.30,.11],[0,.16,0],0.35),
+    P(GEO.box,c,[.15,.10,.15],[0,.34,0],0.35),
+    P(GEO.box,0xE87A2B,[.12,.04,.12],[0,.05,0],1.1)];},
+  botfull:function(c){return [P(GEO.box,c,[.30,.34,.20],[0,.30,0],0.55),
+    P(GEO.box,c,[.26,.24,.24],[0,.59,0],0.55),
+    P(GEO.box,0x1E2A34,[.18,.07,.02],[0,.62,-.13]),
+    P(GEO.box,c,[.10,.28,.10],[-.20,.30,0],0.55),
+    P(GEO.box,c,[.10,.28,.10],[.20,.30,0],0.55),
+    P(GEO.box,0xE87A2B,[.10,.10,.03],[0,.35,-.11],1.4),
+    P(GEO.box,c,[.11,.13,.11],[-.08,.06,0],0.55),
+    P(GEO.box,c,[.11,.13,.11],[.08,.06,0],0.55)];},
   blob:function(c){return [P(GEO.box,0xE8E4D8,[.42,.02,.34],[0,.008,0]),
     P(GEO.sph,c,[.34,.24,.30],[0,.13,0],.95),
     P(GEO.sph,c,[.20,.17,.18],[.11,.20,-.05],.95),
@@ -1309,6 +1385,7 @@ function buildModel(def){
   if(def.tier==='rare') g.add(P(GEO.box,0xFFC93C,[.32,.012,.32],[0,.004,0],1.4));
   if(def.tier==='vault')g.add(P(GEO.box,0xFFC93C,[.40,.014,.40],[0,.004,0],1.8));
   if(def.tier==='special')g.add(P(GEO.box,0x7FE3F5,[.34,.012,.34],[0,.004,0],1.6));
+  if(def.tier==='part')g.add(P(GEO.box,0xE87A2B,[.34,.012,.34],[0,.004,0],1.5));
   return g;
 }
 
@@ -1693,8 +1770,41 @@ function audioInit(){
   if(AC)return;
   try{
     AC=new (window.AudioContext||window.webkitAudioContext)();
-    master=AC.createGain(); master.gain.value=0.5; master.connect(AC.destination);
+    master=AC.createGain(); master.gain.value=CFG.volume; master.connect(AC.destination);
   }catch(e){AC=null;}
+}
+function setVolume(v){ if(master)try{master.gain.value=v;}catch(e){} }
+
+/* 環境音：日光燈的嗡嗡加冷藏櫃的風聲，全部即時合成。
+   停電時燈的嗡嗡會斷掉、只剩冰櫃 —— 那個「安靜下來」本身就是一個提示。 */
+var amb=null, ambGain=null;
+function ambienceOn(){
+  if(!AC||amb)return;
+  try{
+    ambGain=AC.createGain(); ambGain.gain.value=0; ambGain.connect(master);
+    var o1=AC.createOscillator(); o1.type='sine'; o1.frequency.value=60;
+    var g1=AC.createGain(); g1.gain.value=0.5; o1.connect(g1); g1.connect(ambGain);
+    var o2=AC.createOscillator(); o2.type='sine'; o2.frequency.value=120;
+    var g2=AC.createGain(); g2.gain.value=0.16; o2.connect(g2); g2.connect(ambGain);
+    // 冰櫃風聲：兩秒的噪音 buffer 循環播放，低通濾掉高頻
+    var n=Math.floor(AC.sampleRate*2), b=AC.createBuffer(1,n,AC.sampleRate),
+        d=b.getChannelData(0);
+    for(var i=0;i<n;i++)d[i]=Math.random()*2-1;
+    var src=AC.createBufferSource(); src.buffer=b; src.loop=true;
+    var lp=AC.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=400;
+    var ng=AC.createGain(); ng.gain.value=0.11;
+    src.connect(lp); lp.connect(ng); ng.connect(ambGain);
+    o1.start(); o2.start(); src.start();
+    amb={o1:o1,o2:o2,src:src,hum:g1,hum2:g2};
+    ambGain.gain.linearRampToValueAtTime(CFG.ambience,AC.currentTime+1.6);
+  }catch(e){amb=null;}
+}
+function ambienceHum(on){          // 停電時把日光燈的嗡嗡拿掉
+  if(!amb)return;
+  try{
+    amb.hum.gain.linearRampToValueAtTime(on?0.5:0.02,AC.currentTime+0.35);
+    amb.hum2.gain.linearRampToValueAtTime(on?0.16:0.0,AC.currentTime+0.35);
+  }catch(e){}
 }
 function beep(f,dur,type,vol,slide){
   if(!AC)return;
@@ -1725,6 +1835,12 @@ var SFX={
     setTimeout(function(){noiseBurst(0.3,1500,0.09,2);},170);},
   caught:function(){beep(320,0.9,'sawtooth',0.2,60); noiseBurst(0.5,180,0.18,0.6);},
   step:function(v){noiseBurst(0.09,150,v,0.9);},
+  // 玩家腳步：走／衝／潛行三種音量與頻率，加一點隨機避免像節拍器
+  foot:function(kind){
+    var v = kind==='run'?CFG.stepVol*1.7 : kind==='sneak'?CFG.stepVol*0.4 : CFG.stepVol;
+    var f = (kind==='run'?185:145)*(0.88+Math.random()*0.3);
+    noiseBurst(0.07,f,v,1.2);
+  },
   jump:function(){noiseBurst(0.06,700,0.05,1.4);},
   land:function(){noiseBurst(0.13,110,0.13,0.8);},
   taser:function(){beep(1800,0.09,'square',0.13,300); noiseBurst(0.22,2400,0.1,3);},
@@ -1759,7 +1875,15 @@ var G={
 };
 var STATS={runs:0,extracted:0,caught:0,forbiddenSeen:0,forbiddenPicked:0,
   pickedAfterUnlock:0,nextShifts:0,times:[],cashTotal:0,
-  streak:0,bestStreak:0,bestShift:0,forbiddenSurvived:0,deepestShift:0,history:[]};
+  streak:0,bestStreak:0,bestShift:0,forbiddenSurvived:0,deepestShift:0,history:[],
+  /* 五個獨立計分軸。刻意讓它們互相拉扯 ——
+     保守打法只拿得到「速度」，貪婪打法拿「獲利」和「膽量」，
+     潛行打法拿「無聲」。沒有一種玩法能同時拿滿。 */
+  bestQuiet:0,      // 全程沒被發現的最高獲利（見 gradesHTML）
+  bestFast:0,       // 達到門檻獲利的最快脫身（秒，越小越好）
+  bestBold:0        // 帶著非賣品脫身的最高獲利
+};
+var FAST_MIN=150;   // 「速度」軸的獲利門檻，否則抓六件便宜貨衝出去就破紀錄
 
 function newRun(){
   clearItems();
@@ -1772,13 +1896,16 @@ function newRun(){
     taser: G.upgrades.taser?3:0,
     shrink:G.upgrades.shrink?1:0,
     revive:G.upgrades.revive?1:0,
-    hasKey:false
+    hasKey:false,
+    spotted:0, maxHeat:0, usedItem:false     // 評分用
   };
   shrinkT=0; clerk.rotation.z=0;
   G.run=r; G.shift++;
   camera.position.set(SPAWN.x,1.65,SPAWN.z);
   yaw=SPAWN.yaw; pitch=0; vel.set(0,0,0); crouchNow=false;
   jumpY=0; jumpV=0; onGround=true; tJumpQueued=false;
+  if(hiding){hiding=null;document.body.classList.remove('hidden-in');}
+  camera.fov=74; camera.updateProjectionMatrix();
   buildAisles(G.shift);          // 先重組貨架與 waypoint，再依新佈局擺商品
   buildItems(G.shift);
   setDanger(false);
@@ -1857,6 +1984,24 @@ function buildItems(seed){
   // 入口櫃檯放兩件便宜的：讓玩家 10 秒內就完成第一次「按 E」
   spawnItem(BY_ID.bread,-6.0,1.0,11.4);
   spawnItem(BY_ID.milk,  6.0,1.0,11.4);
+  /* 三件組：出現的話一定三件都在，但刻意散到地圖的三個角落。
+     所以它的代價是「距離與風險」，不是運氣 —— 你找不到不是因為它不存在。 */
+  G.setThisRun=null;
+  if(Math.random()<CFG.setChance){
+    var farA=used.filter(function(s){return s.z>2;});          // 靠南邊
+    var farB=used.filter(function(s){return s.z<-2;});         // 靠北邊
+    var pick=[];
+    if(farA.length)pick.push(farA[Math.floor(Math.random()*farA.length)]);
+    if(farB.length)pick.push(farB[Math.floor(Math.random()*farB.length)]);
+    pick.push(back[Math.floor(Math.random()*back.length)]);     // 後場
+    if(pick.length===3){
+      G.setThisRun='bot';
+      SET_PARTS.bot.forEach(function(id,i){
+        spawnItem(BY_ID[id],pick[i].x,pick[i].y,pick[i].z);
+      });
+    }
+  }
+
   /* 鑰匙：每次下手只有 keyChance 的機率會出現，位置完全隨機。
      所以「這次有沒有鑰匙」本身就是一個要偵查的資訊 ——
      沒看到就別浪費時間繞去冷凍室開箱子。 */
@@ -1867,6 +2012,7 @@ function buildItems(seed){
     if(ks)spawnItem(BY_ID.safekey,ks.x,ks.y,ks.z);
   }
   buildSafe(hasKeyThisRun);
+  buildHides();
   // 禁忌品固定位置：冷凍室死路盡頭的地上
   spawnItem(BY_ID.unknown,-16.5,0,-13.3);
   forbidGlow.intensity=1.1;
@@ -1876,6 +2022,36 @@ function buildItems(seed){
   beacon=new THREE.Mesh(new THREE.CylinderGeometry(0.7,1.1,16,10,1,true),bm);
   beacon.position.set(-16.5,8,-13.3); scene.add(beacon);
 }
+/* ---------- 躲藏處 ----------
+   立櫃靠牆擺，不佔走道也不影響貨架重組。
+   躲進去店員就看不到你，代價是不能動、視野被壓成一條門縫。
+   位置固定，所以它是可以被精通的資源 —— 記住櫃子在哪就是實力。 */
+var HIDES=[
+  {x:-19.0, z:6.2,  ry:Math.PI/2},    // 西側逃生走道
+  {x:19.0,  z:6.2,  ry:-Math.PI/2},   // 東側走道
+  {x:-19.0, z:-4.0, ry:Math.PI/2},    // 西側靠北
+  {x:18.6,  z:-13.6,ry:Math.PI},      // 倉庫
+  {x:-8.6,  z:-14.6,ry:0}             // 冷凍室門邊
+];
+var hideObjs=[];
+function buildHides(){
+  hideObjs=[];
+  HIDES.forEach(function(h){
+    var g=new THREE.Group();
+    g.add(P(GEO.box,0x3E4A42,[0.98,2.05,0.66],[0,1.02,0]));        // 櫃體
+    g.add(P(GEO.box,0x2A332D,[0.86,1.86,0.04],[0,1.02,0.34]));     // 門板
+    g.add(P(GEO.box,0x1B2320,[0.80,0.06,0.05],[0,1.62,0.36]));     // 通風縫
+    g.add(P(GEO.box,0x1B2320,[0.80,0.06,0.05],[0,1.50,0.36]));
+    g.add(P(GEO.box,0xC9CCC4,[0.06,0.16,0.05],[0.34,1.00,0.36]));  // 把手
+    g.position.set(h.x,0,h.z); g.rotation.y=h.ry; scene.add(g);
+    COL.push({x0:h.x-0.55,z0:h.z-0.42,x1:h.x+0.55,z1:h.z+0.42,h:2.05,kind:'shelf'});
+    var o={mesh:g,hide:true,spot:h,taken:false,
+      def:{name:'立櫃',tier:'hide',slots:0,v:0}};
+    g.userData.item=o; g.traverse(function(c){c.userData.item=o;});
+    hideObjs.push(o); itemMeshes.push(o);
+  });
+}
+
 /* 保險箱：貼平在冷凍室走道的西側貨架上，不佔通道，所以店員不會卡住。
    沒鑰匙打不開；開了 50% 是貴重品，另外 50% 給個安慰獎 ——
    走那麼遠結果完全空手，那不是取捨，那只是懲罰。 */
@@ -1955,6 +2131,7 @@ function setDanger(on){
     if(!on)m.material.opacity=.30;
   });
   scene.fog.density = on?0.045:0.019;
+  ambienceHum(!on);              // 停電，日光燈的嗡嗡跟著消失
   if(on){droneOn();}else{droneOff();}
   updateExitChip();
 }
@@ -2257,9 +2434,21 @@ function updateAim(){
   var cross=document.getElementById('crosshair'), pr=document.getElementById('prompt');
   aim=null;
   if(G.phase!=='play'){ pr.className=''; cross.className=''; return; }
+  if(hiding){
+    pr.className='on';
+    pr.innerHTML='<kbd>'+(IS_TOUCH?'拿':'E')+'</kbd>從櫃子裡出來'+
+      '<span class="s">躲著他看不到你，但你也動不了</span>';
+    cross.className=''; return;
+  }
   aim=pickTarget();
   if(aim){
     var d=aim.def, forb=d.tier==='forbidden';
+    if(aim.hide){
+      pr.className='on';
+      pr.innerHTML='<kbd>'+(IS_TOUCH?'拿':'E')+'</kbd>躲進立櫃'+
+        '<span class="s">看得到外面一小塊，但不能移動</span>';
+      cross.className='hot'; return;
+    }
     // 保險箱：提示要講「開不開得了」，不是價格
     if(aim.safe){
       var hasKey=!!G.run.hasKey;
@@ -2291,7 +2480,9 @@ function updateAim(){
   }else{ pr.className=''; cross.className=''; }
 }
 function tryInteract(){
+  if(hiding){ exitHide(); return; }        // 躲著的時候 E 一律是「出來」
   if(!aim)return;
+  if(aim.hide){ enterHide(aim); return; }
   if(aim.safe){ openSafe(); return; }
   if(aim.taken)return;
   // 鑰匙：不佔格子、不算錢，拿了就標記在身上
@@ -2320,6 +2511,7 @@ function tryInteract(){
       '往裡面走，價格標的數字會變大。提袋只有 '+capacityNow()+' 格。');
   }
   ev('pickup',{id:d.id,v:val});
+  if(d.set)handleSetPickup(r,d);
 
   if(d.tier==='forbidden'){
     r.forbiddenTaken=true; r.forbiddenAt=r.t;
@@ -2333,6 +2525,31 @@ function tryInteract(){
   if(!r.unlocked&&r.count>=CFG.extractItems)unlockExit();
   updateHUD();
   updateAim();
+}
+/* 撿到部件：提示還缺幾件，湊齊就當場組裝。
+   組裝發生在手上而不是結算時，因為「湊齊」那一刻的回饋要立刻給。 */
+function handleSetPickup(r,d){
+  var key=d.set, parts=SET_PARTS[key];
+  var have=parts.filter(function(id){return r.loot[id];}).length;
+  if(have<parts.length){
+    toast(SET_NAME[key]+' '+have+'/'+parts.length+' · 單件不值錢，湊齊才有價值');
+    updateHUD(); return;
+  }
+  // 湊齊：把三件從提袋裡換成完整品
+  var res=BY_ID[SET_RESULT[key]];
+  parts.forEach(function(id){
+    var it=r.loot[id];
+    r.value-=it.val*it.n; r.used-=it.def.slots*it.n; r.count-=it.n;
+    delete r.loot[id];
+  });
+  r.loot[res.id]={def:res,n:1,val:res.v};
+  r.value+=res.v; r.used+=res.slots; r.count+=1;
+  r.setDone=true;
+  SFX.register();
+  showBeat('組裝完成',SET_NAME[key]+' —— $'+res.v,
+    '三件分開只值 $'+(20*parts.length)+'。',4000);
+  ev('set_completed',{set:key,v:res.v});
+  updateHUD();
 }
 function unlockExit(){
   var r=G.run; r.unlocked=true; r.unlockedAt=r.t;
@@ -2396,6 +2613,7 @@ function giveUpChase(){
   toast('他停下來了，往別的方向走了');
 }
 function canSee(){
+  if(hiding)return false;      // 躲在櫃子裡就是看不到，這是它唯一的價值
   var cx=clerk.position.x,cz=clerk.position.z,px=camera.position.x,pz=camera.position.z;
   var d=Math.hypot(px-cx,pz-cz);
   if(d>visionNow())return false;
@@ -2461,7 +2679,9 @@ function stepClerk(dt){
     if(sees){
       AI.aware=Math.min(1,AI.aware+dt/Math.max(0.05,CFG.spotTime));
       if(AI.aware>=1){
-        AI.state='CHASE'; AI.timer=0; AI.chaseT=0; ev('chase_started'); droneOn();
+        AI.state='CHASE'; AI.timer=0; AI.chaseT=0;
+        r.spotted++;                        // 評分：這局被發現幾次
+        ev('chase_started'); droneOn();
         if(!r._seenClerk){r._seenClerk=true;ev('clerk_first_seen');}
       }
     }else{
@@ -2555,6 +2775,27 @@ function stepClerk(dt){
 /* 姿勢：站立 / 潛行。
    潛行用 C 而不是 Ctrl —— 瀏覽器裡 Ctrl+W 會直接關掉分頁，preventDefault 攔不住。 */
 var crouchNow=false, sprintFlag=false, shrinkT=0;
+var hiding=null, hideYaw=0;      // 躲在櫃子裡的狀態
+function enterHide(o){
+  hiding=o; hideYaw=o.spot.ry+Math.PI;      // 面向櫃門外
+  yaw=hideYaw; pitch=0;
+  camera.position.set(o.spot.x,1.30,o.spot.z);
+  camera.fov=CFG.hideFov; camera.updateProjectionMatrix();
+  document.body.classList.add('hidden-in');
+  vel.set(0,0,0);
+  SFX.deny(); ev('hide_enter');
+  toast('躲進櫃子 · 再按一次出來');
+}
+function exitHide(){
+  if(!hiding)return;
+  var o=hiding; hiding=null;
+  // 推到櫃門前方，不要卡在櫃體裡
+  var fx=-Math.sin(hideYaw), fz=-Math.cos(hideYaw);
+  camera.position.set(o.spot.x+fx*0.95,1.65,o.spot.z+fz*0.95);
+  camera.fov=74; camera.updateProjectionMatrix();
+  document.body.classList.remove('hidden-in');
+  ev('hide_exit');
+}
 var jumpY=0, jumpV=0, onGround=true, tJumpQueued=false;
 function poseHeight(){          // 店員視線判定用的玩家高度
   if(shrinkT>0)return 0.40;     // 縮小後幾乎任何東西都能擋住視線
@@ -2610,6 +2851,16 @@ function useShrink(){
 }
 
 function stepPlayer(dt){
+  // 躲在櫃子裡：只能左右張望，不能移動
+  if(hiding){
+    var lim=CFG.hideLook;
+    var d0=((yaw-hideYaw+Math.PI*3)%(Math.PI*2))-Math.PI;
+    if(d0>lim)yaw=hideYaw+lim; else if(d0<-lim)yaw=hideYaw-lim;
+    pitch=Math.max(-0.35,Math.min(0.35,pitch));
+    camera.position.set(hiding.spot.x,1.30,hiding.spot.z);
+    camera.rotation.set(pitch,yaw,0,'YXZ');
+    return;
+  }
   var base=CFG.walkSpeed*speedMul();
   var sprintS=CFG.sprintSpeed*speedMul();
   // 負重：只有裝到門檻以上才罰，而且是固定一級。
@@ -2697,6 +2948,8 @@ function stepPlayer(dt){
   if(moving&&G.run.noiseTimer<=0){
     G.run.noiseTimer = sprintingNow?0.34:(crouchNow?0.85:0.56);
     makeNoise(sprintingNow?CFG.hearSprint:(crouchNow?CFG.hearWalk*0.35:CFG.hearWalk));
+    // 聽得到自己的腳步，才會意識到衝刺很吵這件事
+    SFX.foot(sprintingNow?'run':(crouchNow?'sneak':'walk'));
   }
   // 小跳：越過貨架看一眼店員在哪。落地會發出聲音，所以偷看是有代價的。
   var wantJump=(!!keys[' ']||tJumpQueued)&&!!G.upgrades.jump;
@@ -2733,7 +2986,14 @@ function extract(){
   r.streakAfter=STATS.streak;
   r.newRecord = STATS.streak>STATS.bestStreak;
   if(r.newRecord)STATS.bestStreak=STATS.streak;
-  if(r.net>STATS.bestShift)STATS.bestShift=r.net;
+  // 五軸評分：各自獨立比對個人最佳，破了就記在收據上
+  r.rec={};
+  if(r.net>STATS.bestShift){STATS.bestShift=r.net; r.rec.cash=1;}
+  if(r.spotted===0&&r.net>STATS.bestQuiet){STATS.bestQuiet=r.net; r.rec.quiet=1;}
+  if(r.net>=FAST_MIN&&(STATS.bestFast===0||r.t<STATS.bestFast)){
+    STATS.bestFast=r.t; r.rec.fast=1;
+  }
+  if(r.forbiddenTaken&&r.net>STATS.bestBold){STATS.bestBold=r.net; r.rec.bold=1;}
   if(r.forbiddenTaken){STATS.forbiddenSurvived++; STATS.deepestShift=Math.max(STATS.deepestShift,G.shift);}
   pushHistory(r,'extract');
   droneOff(); setDanger(false); SFX.register();
@@ -2885,6 +3145,7 @@ function updateHUD(){
   $('streakhud').textContent=STATS.streak;
   // 注意度：把「拿越多越危險」變成看得見的數字
   var h=heat();
+  if(h>r.maxHeat)r.maxHeat=h;              // 評分：這局的注意度峰值
   $('heatfill').style.width=Math.round(h*100)+'%';
   $('heatnum').textContent=Math.round(h*100)+'%';
   $('basket').classList.toggle('hot',h>0.66);
@@ -2894,6 +3155,15 @@ function updateHUD(){
   if(G.upgrades.shrink)it+='<div class="'+(r.shrink>0?'ready':'empty')+'">R 縮小 '+r.shrink+'</div>';
   if(G.upgrades.revive)it+='<div class="'+(r.revive>0?'ready':'empty')+'">掙脫 '+r.revive+'</div>';
   if(r.hasKey)it+='<div class="ready" style="border-color:#7FE3F5;color:#7FE3F5">鑰匙</div>';
+  // 三件組進度：撿到第一件才顯示，之後它就是你這局的目標
+  if(G.setThisRun){
+    var ps=SET_PARTS[G.setThisRun];
+    var hv=ps.filter(function(id){return r.loot[id];}).length;
+    if(r.loot[SET_RESULT[G.setThisRun]])
+      it+='<div class="ready" style="border-color:#E87A2B;color:#E87A2B">機器人 完成</div>';
+    else if(hv>0)
+      it+='<div class="ready" style="border-color:#E87A2B;color:#E87A2B">機器人 '+hv+'/'+ps.length+'</div>';
+  }
   $('items').innerHTML=it;
   $('layouthud').textContent=layoutName;
   updateExitChip();
@@ -2902,6 +3172,30 @@ function updateHUD(){
 /* ============================================================
    13. 收據 / 商店 / 數據
    ============================================================ */
+function tsec(s){ return (Math.round(s*10)/10)+'s'; }
+/* 局後評分：四個軸各自跟個人最佳比。
+   重點不是給分數，是讓玩家看到「我這局在哪個方向上進步了」，
+   以及「還有哪個方向我沒碰過」。 */
+function gradesHTML(r){
+  var rec=r.rec||{};
+  function row(label,val,best,isRec,dim){
+    return '<div class="gr'+(isRec?' rec':'')+(dim?' dim':'')+'">'+
+      '<span>'+label+'</span><b>'+val+'</b>'+
+      '<em>'+(isRec?'新紀錄':best)+'</em></div>';
+  }
+  var out='<div class="rule"></div><div class="grades">';
+  out+=row('獲利','$'+r.net,'最佳 $'+STATS.bestShift,rec.cash);
+  out+=row('被發現',r.spotted+' 次',
+        (r.spotted===0?('無聲最佳 $'+STATS.bestQuiet):'—'),rec.quiet,r.spotted>0);
+  out+=row('注意度峰值',Math.round(r.maxHeat*100)+'%','—',false,true);
+  out+=row('耗時',tsec(r.t),
+        (STATS.bestFast?('最快 '+tsec(STATS.bestFast)):'—'),rec.fast,
+        r.net<FAST_MIN);
+  out+=row('膽量',r.forbiddenTaken?('帶著非賣品 $'+r.net):'沒碰非賣品',
+        (STATS.bestBold?('最佳 $'+STATS.bestBold):'—'),rec.bold,!r.forbiddenTaken);
+  out+='</div>';
+  return out;
+}
 function renderReceipt(){
   var r=G.run, rows='';
   var keysL=Object.keys(r.loot);
@@ -2930,6 +3224,7 @@ function renderReceipt(){
             r.lostList.join('、')+'</span></div>' : ''))+
     '<div class="rule"></div>'+
     '<div class="tot"><span>'+(r.caught?'實得':'本次獲利')+'</span><span>$'+r.net+'</span></div>'+
+    gradesHTML(r)+
     '<div class="streakbox">'+
       (r.caught
         ? '<b>連續紀錄中斷</b>停在第 '+r.streakBroken+' 次'
@@ -3024,7 +3319,8 @@ function renderNext(){
   var g=1+CFG.growthPer3*Math.floor(Math.max(0,next-1)/3);
   $('next').innerHTML=
     '<div><span>店員巡邏速度</span><b>'+
-      (CFG.clerkPatrol+CFG.patrolGrowth*Math.floor(Math.max(0,next-1)/5)).toFixed(1)+
+      (CFG.clerkPatrol+CFG.patrolGrowth*
+        Math.floor(Math.max(0,next-1)/Math.max(1,CFG.patrolEvery))).toFixed(1)+
       ' m/s</b></div>'+
     '<div><span>店員追逐速度</span><b>'+
       (CFG.clerkChase*CFG.clerkSpeedMul*g).toFixed(1)+' m/s</b></div>'+
@@ -3056,9 +3352,11 @@ function copyBrag(){
   var s=STATS;
   var txt='【午夜超商小偷 · 犯案紀錄】\n'+
     '連續 '+s.streak+' 次沒被抓（個人最佳 '+s.bestStreak+' 次）\n'+
-    '單次最高獲利 $'+s.bestShift+'\n'+
+    '獲利 $'+s.bestShift+
+    '　無聲 '+(s.bestQuiet?('$'+s.bestQuiet):'—')+
+    '　速度 '+(s.bestFast?tsec(s.bestFast):'—')+
+    '　膽量 '+(s.bestBold?('$'+s.bestBold):'—')+'\n'+
     '帶著非賣品脫身 '+s.forbiddenSurvived+' 次\n'+
-    '最深撐到第 '+(s.deepestShift||0)+' 次\n'+
     '總共下手 '+s.runs+' 次，被抓 '+s.caught+' 次';
   if(navigator.clipboard&&navigator.clipboard.writeText){
     navigator.clipboard.writeText(txt).then(function(){toast('戰績已複製，可以去炫耀了');},
@@ -3210,14 +3508,18 @@ function renderBoard(){
   var s=STATS;
   $('board').innerHTML=
     '<div class="cl">'+
-      '<div class="ct">最長連續沒被抓 · 歷史最佳</div>'+
+      '<div class="ct">連續沒被抓 · 歷史最佳</div>'+
       '<div class="cn">'+s.bestStreak+'<em>次</em></div>'+
       '<div class="cs">目前連續 '+s.streak+' 次</div>'+
     '</div>'+
     '<div class="cr">'+
-      '<div><span>單次最高獲利</span><b>$'+s.bestShift+'</b></div>'+
-      '<div><span>帶著非賣品脫身</span><b>'+s.forbiddenSurvived+' 次</b></div>'+
-      '<div><span>最深記錄</span><b>第 '+(s.deepestShift||0)+' 次</b></div>'+
+      '<div><span>獲利 · 單次最高</span><b>$'+s.bestShift+'</b></div>'+
+      '<div><span>無聲 · 沒被發現的最高獲利</span><b>'+
+        (s.bestQuiet?('$'+s.bestQuiet):'還沒做到')+'</b></div>'+
+      '<div><span>速度 · 最快脫身（$'+FAST_MIN+' 以上）</span><b>'+
+        (s.bestFast?tsec(s.bestFast):'還沒做到')+'</b></div>'+
+      '<div><span>膽量 · 帶著非賣品的最高獲利</span><b>'+
+        (s.bestBold?('$'+s.bestBold):'還沒做到')+'</b></div>'+
       '<div><span>總下手 / 被抓</span><b>'+s.runs+' / '+s.caught+'</b></div>'+
       '<div><span>累計變賣所得</span><b>$'+s.cashTotal+'</b></div>'+
     '</div>';
@@ -3226,6 +3528,7 @@ function renderBoard(){
 
 function startGame(){
   audioInit(); if(AC&&AC.state==='suspended')AC.resume();
+  setVolume(CFG.volume); ambienceOn();
   // 手機上瀏覽器介面會吃掉三分之一畫面，開場就直接進全螢幕
   if(IS_TOUCH&&!fsActive())goFullscreen();
   hideAll(); manualPause=false; G.phase='play'; newRun(); syncItemButtons(); requestLock();
@@ -3296,6 +3599,9 @@ function buildKnobs(){
                      input.value=CFG[k[1]]; }
     input.addEventListener('input',function(){
       CFG[k[1]]=parseFloat(input.value); sync(); updateHUD();
+      if(k[1]==='volume')setVolume(CFG.volume);
+      if(k[1]==='ambience'&&ambGain)
+        try{ambGain.gain.value=CFG.ambience;}catch(e){}
     });
     k.sync=sync; sync();
   });
@@ -3303,7 +3609,10 @@ function buildKnobs(){
 buildKnobs();
 $('dev-reset').addEventListener('click',function(){
   Object.keys(DEF).forEach(function(k){CFG[k]=DEF[k];});
-  KNOBS.forEach(function(k){if(k.sync)k.sync();}); updateHUD(); toast('參數已重置');
+  KNOBS.forEach(function(k){if(k.sync)k.sync();}); updateHUD();
+  setVolume(CFG.volume);
+  if(ambGain)try{ambGain.gain.value=CFG.ambience;}catch(e){}
+  toast('參數已重置');
 });
 /* ---------- 全螢幕 ----------
    iframe 上有 allow="fullscreen"，所以從裡面請求是被允許的。
@@ -3411,7 +3720,8 @@ function frame(now){
   // 稀有品浮動 + 價格標依距離淡入（越裡面的數字越大，這是貪婪迴圈的核心提示）
   var t=now/1000;
   for(var i=0;i<itemMeshes.length;i++){
-    var o=itemMeshes[i]; if(o.taken||o.safe)continue;   // 保險箱是固定物件，不浮動
+    var o=itemMeshes[i];
+    if(o.taken||o.safe||o.hide)continue;    // 保險箱與立櫃是固定物件，不浮動
     if(o.def.tier!=='common'){
       o.mesh.position.y=o.baseY+Math.sin(t*1.7+i)*0.045;
       o.mesh.rotation.y+=0.005;
