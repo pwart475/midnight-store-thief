@@ -521,7 +521,7 @@
 
 <div class="layer screen" id="s-title">
   <div class="menu">
-    <div class="eyebrow">灰盒驗證原型 v1.7</div>
+    <div class="eyebrow" id="vertag">灰盒驗證原型</div>
     <h1>午夜超商<em>小偷</em></h1>
     <p class="tagline">半夜三點，你從後門進來了。<br>
       明明已經可以乾淨脫身，你還會不會回頭去拿最貴的那件？</p>
@@ -664,6 +664,23 @@
 <script>
 (function(){
 "use strict";
+// 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
+// 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
+var BUILD='v2.9';
+
+/* 手機上沒有 console，一旦初始化丟錯就只剩黑畫面、完全無從查起。
+   所以把錯誤直接印在畫面上。 */
+window.addEventListener('error',function(e){
+  var n=document.getElementById('narrow');
+  if(!n)return;
+  n.style.display='flex';
+  n.innerHTML='<div style="max-width:44ch;text-align:left">'+
+    '<b style="color:#FF3B30;display:block;margin-bottom:8px;font-size:16px">程式發生錯誤</b>'+
+    '<span style="color:#DCEBD8">'+String(e.message||e.type||'unknown')+'</span><br>'+
+    '<span style="opacity:.55;font-size:12px;font-family:ui-monospace,monospace">'+
+    String(e.filename||'').split('/').pop()+' : '+(e.lineno||'?')+'</span><br><br>'+
+    '<span style="font-size:12px">把這幾行拍給開發者就能定位。</span></div>';
+});
 if(!window.THREE){document.getElementById('narrow').style.display='flex';
   document.getElementById('narrow').textContent='3D 引擎載入失敗，請重新整理。';return;}
 
@@ -1951,27 +1968,6 @@ function setupTouch(){
   tap('btnTaser',useTaser);
   tap('btnShrink',useShrink);
 
-  /* UI 按鈕的觸控保險：手機上動態生成的按鈕有時 tap 不會轉成 click。
-     用位移門檻區分「點」和「捲」，是點才代打一次 click。 */
-  SCREENS.forEach(function(id){
-    var el=$(id), sx=0, sy=0, moved=false;
-    el.addEventListener('touchstart',function(e){
-      var t=e.touches[0]; if(!t)return;
-      sx=t.clientX; sy=t.clientY; moved=false;
-    },{passive:true});
-    el.addEventListener('touchmove',function(e){
-      var t=e.touches[0]; if(!t)return;
-      if(Math.hypot(t.clientX-sx,t.clientY-sy)>12)moved=true;
-    },{passive:true});
-    el.addEventListener('touchend',function(e){
-      if(moved)return;
-      var b=e.target&&e.target.closest?e.target.closest('button'):null;
-      if(!b||b.disabled)return;
-      e.preventDefault();
-      b.click();
-    },{passive:false});
-  });
-
   // 說明頁改成觸控版操作
   var keysEl=document.querySelector('#s-help .keys');
   if(keysEl)keysEl.innerHTML=
@@ -2899,13 +2895,40 @@ function load(){
 }
 load();
 buildAisles(1);        // 標題頁背後也要看得到貨架
-setupTouch();
+// 觸控設定壞掉不該讓整個遊戲陪葬，至少桌機路徑要活著
+try{ setupTouch(); }catch(err){ console.error('setupTouch failed',err); }
 if(G.shift>0)$('cashhud').textContent='$'+G.cash;
 
 /* ============================================================
    15. 畫面切換
    ============================================================ */
 var SCREENS=['s-title','s-help','s-board','s-result','s-shop'];
+
+/* UI 按鈕的觸控保險：手機上動態生成的按鈕有時 tap 不會轉成 click。
+   用位移門檻區分「點」和「捲」，是點才代打一次 click。
+   這段一定要等 SCREENS 有值之後才跑 —— 之前擺在 setupTouch 裡面，
+   而 setupTouch 比 SCREENS 早執行，手機上會丟 TypeError 把整個腳本打斷。 */
+function setupUiTouchProxy(){
+  if(!IS_TOUCH)return;
+  SCREENS.forEach(function(id){
+    var el=$(id), sx=0, sy=0, moved=false;
+    el.addEventListener('touchstart',function(e){
+      var t=e.touches[0]; if(!t)return;
+      sx=t.clientX; sy=t.clientY; moved=false;
+    },{passive:true});
+    el.addEventListener('touchmove',function(e){
+      var t=e.touches[0]; if(!t)return;
+      if(Math.hypot(t.clientX-sx,t.clientY-sy)>12)moved=true;
+    },{passive:true});
+    el.addEventListener('touchend',function(e){
+      if(moved)return;
+      var b=e.target&&e.target.closest?e.target.closest('button'):null;
+      if(!b||b.disabled)return;
+      e.preventDefault();
+      b.click();
+    },{passive:false});
+  });
+}
 function show(id){
   releaseTouch();
   SCREENS.forEach(function(s){ $(s).classList.toggle('hidden',s!==id); });
@@ -2992,6 +3015,8 @@ $('btn-help-back').addEventListener('click',gotoTitle);
 $('btn-board-back').addEventListener('click',gotoTitle);
 $('btn-board-copy').addEventListener('click',copyBrag);
 $('btn-reroll').addEventListener('click',rerollShop);
+setupUiTouchProxy();
+$('vertag').textContent='灰盒驗證原型 '+BUILD;
 $('btn-next').addEventListener('click',gotoShop);
 $('btn-shift').addEventListener('click',nextShift);
 $('btn-copy').addEventListener('click',copyData);
