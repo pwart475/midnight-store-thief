@@ -178,18 +178,68 @@
   body.touch #chasetag{font-size:18px;top:auto;bottom:34%}
 
   /* 躲在櫃子裡：門縫的視野遮罩 */
+  /* 櫃子裡的視野遮罩。
+     幾何上洞口已經是真的開孔了（門板拆成上下兩片），這一層只負責兩件事：
+     把上下壓成一條橫縫、把左右完全遮死。
+     左右要遮死是因為櫃體是一個實心 box，相機在裡面時側面被背面剔除掉，
+     轉到邊緣就會直接看穿櫃壁 —— 這層黑邊就是那個破口的補丁。 */
   #hidefx{position:absolute;inset:0;opacity:0;transition:opacity .18s;
     background:
-      linear-gradient(to bottom,rgba(4,6,4,.97) 0%,rgba(4,6,4,.97) 22%,
-        rgba(4,6,4,0) 28%,rgba(4,6,4,0) 72%,rgba(4,6,4,.97) 78%,rgba(4,6,4,.97) 100%),
-      linear-gradient(to right,rgba(4,6,4,.97) 0%,rgba(4,6,4,0) 16%,
-        rgba(4,6,4,0) 84%,rgba(4,6,4,.97) 100%)}
+      linear-gradient(to bottom,#040604 0%,#040604 19%,
+        rgba(4,6,4,.55) 24%,rgba(4,6,4,0) 30%,rgba(4,6,4,0) 70%,
+        rgba(4,6,4,.55) 76%,#040604 81%,#040604 100%),
+      linear-gradient(to right,#040604 0%,#040604 9%,rgba(4,6,4,0) 17%,
+        rgba(4,6,4,0) 83%,#040604 91%,#040604 100%)}
   body.hidden-in #hidefx{opacity:1}
   body.hidden-in #basket,body.hidden-in #objective{opacity:.35}
-  #hidetag{position:absolute;left:50%;bottom:22%;transform:translateX(-50%);
+  #hidetag{position:absolute;left:50%;bottom:14%;transform:translateX(-50%);
     font-size:12px;letter-spacing:.18em;color:var(--dim);opacity:0;transition:opacity .18s;
     white-space:nowrap}
   body.hidden-in #hidetag{opacity:1}
+
+  /* ---------- 密碼鍵盤 ----------
+     刻意只佔畫面右下角一小塊、背景不打黑 ——
+     你按鍵盤的時候還是要看得到店員從哪邊來，那才是這幾秒的重點。 */
+  /* z-index 24：要壓在觸控按鍵（22）上面，但在暫停畫面（28）下面。
+     所以它是 HUD layer 的兄弟節點，不能放在 layer 裡面 ——
+     layer 自己是一個 stacking context，子元素的 z-index escape 不出來。 */
+  #keypad{position:fixed;inset:0;z-index:24;display:none;pointer-events:none}
+  body.keypad-in #keypad{display:block}
+  /* 按密碼時把動作鍵收起來，不然在手機上會疊在鍵盤上面 */
+  body.keypad-in #touch .tbtn{display:none!important}
+  #keypad .kpbox{position:absolute;right:6%;bottom:8%;width:232px;pointer-events:auto;
+    background:rgba(8,11,8,.93);border:1px solid var(--line-hi);padding:14px 14px 11px;
+    box-shadow:0 18px 50px rgba(0,0,0,.6)}
+  #keypad .kptitle{font-family:var(--f-mono);font-size:10px;letter-spacing:.22em;
+    color:var(--dimmer);margin-bottom:7px;display:flex;justify-content:space-between;
+    align-items:center}
+  /* 關閉鍵一定要有：按密碼時動作鍵是收起來的，
+     沒有這顆手機上就出不了鍵盤，會直接卡死在櫃子前面。 */
+  #kpclose{background:transparent;border:1px solid var(--line);color:var(--dim);
+    width:26px;height:26px;font-size:13px;line-height:1;cursor:pointer;padding:0}
+  #kpclose:hover{border-color:var(--danger);color:var(--danger)}
+  #kpval{font-family:var(--f-num);font-size:38px;line-height:1;color:#7FE3F5;
+    letter-spacing:.10em;text-align:center;margin-bottom:6px;
+    text-shadow:0 0 20px rgba(127,227,245,.4)}
+  #kpval.full{color:var(--price);text-shadow:0 0 20px rgba(255,201,60,.45)}
+  #kphint{font-size:11px;line-height:1.5;color:var(--dim);text-align:center;
+    margin-bottom:10px;min-height:2.6em}
+  #keypad .kpgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+  #keypad .kpgrid button{padding:11px 0;background:#151A14;border:1px solid var(--line);
+    color:var(--tube);font-family:var(--f-num);font-size:19px;cursor:pointer;
+    -webkit-user-select:none;user-select:none}
+  #keypad .kpgrid button:hover{border-color:var(--price);color:var(--price)}
+  #keypad .kpgrid button:active{background:var(--price);color:#141006}
+  #keypad .kpgrid button[data-k="clr"],#keypad .kpgrid button[data-k="ok"]{
+    font-family:var(--f-ui);font-size:12px;font-weight:700}
+  #keypad .kpfoot{margin-top:9px;font-size:10px;color:var(--dimmer);text-align:center}
+  #keypad .kpfoot b{color:var(--dim)}
+  @media (max-width:820px),(max-height:520px){
+    #keypad .kpbox{width:186px;right:4%;bottom:5%;padding:10px 10px 8px}
+    #kpval{font-size:30px}
+    #kphint{font-size:10px;margin-bottom:7px}
+    #keypad .kpgrid button{padding:9px 0;font-size:17px}
+  }
 
   #caught{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
     opacity:0;transition:opacity .16s;
@@ -643,7 +693,7 @@
   <div id="toast"></div>
   <div id="pa"><span>店內廣播</span><em id="patext"></em></div>
   <div id="hidefx"></div>
-  <div id="hidetag">躲在櫃子裡 · 他看不到你，你也動不了</div>
+  <div id="hidetag">躲在櫃子裡 · 從洞口看得到外面，但你動不了</div>
   <div id="vignette"></div>
   <div id="chasefx"></div>
   <div id="chasetag">他在追你</div>
@@ -691,8 +741,10 @@
       <div><b>·</b>被看到不是瞬間就完蛋 —— 畫面中央會出現「被發現中」進度條，
         <b style="color:var(--tube)">在它滿之前切斷視線就能溜掉</b></div>
       <div><b>·</b>衝刺很快但很吵；潛行很慢但幾乎沒聲音，還能蹲低躲在櫃檯後面</div>
-      <div><b>·</b>牆邊有<b style="color:var(--fresh)">立櫃</b>可以躲進去，他就找不到你 ——
-        代價是不能動、視野只剩一條門縫。位置固定，記住它們在哪就是實力</div>
+      <div><b>·</b>牆邊有<b style="color:var(--fresh)">立櫃</b>可以躲進去，他就找不到你。
+        門上有洞口，看得到外面但只有一條橫縫，而且完全不能動。位置固定，記住它們在哪就是實力</div>
+      <div><b>·</b>他追到櫃子外面時<b style="color:var(--fresh)">站 6 秒就會放棄</b>走開 ——
+        畫面下方會倒數。撐過那六秒，這一局就還沒結束</div>
       <div><b>·</b>架上有時會出現<b style="color:#E87A2B">三件一組的合金機器人部件</b>。
         單件只值 $20，湊齊三件會當場組裝成 $400 —— 但三件散在賣場的三個角落</div>
       <div><b>·</b><b style="color:var(--tube)">戴耳機</b>：店員的腳步聲有方向也有距離，
@@ -706,8 +758,13 @@
         <b style="color:var(--price)">只有犯案紀錄永遠留著</b>，那是唯一的成績</div>
       <div><b>·</b>地上那條綠線一路通到後門，停電後會變紅並閃動</div>
       <div><b>·</b>提袋裝過八成會慢 10%，而且金額越高越容易被注意到</div>
-      <div><b>·</b>冷凍室有個上鎖的保險箱。鑰匙<b style="color:var(--price)">每次只有一半機率會出現</b>，
-        位置隨機 —— 沒看到鑰匙就別浪費時間繞過去</div>
+      <div><b>·</b><b style="color:#7FE3F5">保險櫃是兩段式的</b>：鑰匙開<b>倉庫</b>東牆那個櫃子，
+        裡面是一組<b style="color:var(--price)">三位數密碼</b>；密碼開的是<b>冷凍室</b>那個櫃子。
+        兩個櫃子在店的兩端，所以你得橫跨整個後場</div>
+      <div><b>·</b>密碼<b style="color:var(--danger)">每局都不一樣</b>，而且<b style="color:var(--danger)">輸錯會響警報</b> ——
+        警報一響他就直接知道你在櫃子這裡。按密碼的時候你不能移動，但轉頭可以</div>
+      <div><b>·</b>鑰匙<b style="color:var(--price)">每次只有一半機率會出現</b>，位置隨機 ——
+        沒看到鑰匙，這條線今晚就是斷的，別浪費時間繞過去</div>
       <div><b>·</b>每次下手商品位置都重新洗牌，記路線沒有用</div>
       <div><b>·</b>藏身處的<b style="color:var(--price)">貨全部公開</b>，最便宜到最貴一次看完 ——
         你會知道還差多少錢，也會知道自己在為什麼多拿那一件</div>
@@ -797,6 +854,21 @@
   <div class="ring"><b id="stopnum">0.0</b><span>時 間 停 止</span></div>
 </div>
 
+<div id="keypad">
+  <div class="kpbox">
+    <div class="kptitle">密碼保險櫃<button id="kpclose" data-k="esc">✕</button></div>
+    <div id="kpval">· · ·</div>
+    <div id="kphint"></div>
+    <div class="kpgrid">
+      <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+      <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+      <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+      <button data-k="clr">清除</button><button data-k="0">0</button><button data-k="ok">確認</button>
+    </div>
+    <div class="kpfoot" id="kpfoot"></div>
+  </div>
+</div>
+
 <div id="pause" style="display:none">
   <div class="big">點擊畫面鎖定滑鼠</div>
   <div class="s">鎖定後滑鼠不會跑出視窗，轉頭沒有邊界 · Esc 解除</div>
@@ -835,7 +907,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v5.0';
+var BUILD='v5.2';
 
 /* 手機上沒有 console，一旦初始化丟錯就只剩黑畫面、完全無從查起。
    所以把錯誤直接印在畫面上。 */
@@ -877,6 +949,12 @@ var DEF = {
   // 小跳：峰值 0.68m，視點衝到 2.33m，剛好越過 1.9m 的貨架看一眼
   jumpSpeed:4.2, gravity:13,
   safeChance:0.5, keyChance:0.5,
+  /* 密碼要不要留在畫面上。
+     開著（1）＝ 這條鏈的代價是「橫跨整個後場的距離與風險」。
+     關掉（0）＝ 再加一層記憶負擔。
+     我預設開著，因為有趣的決定是「我還有沒有時間跑那一趟」，
+     不是「我剛剛有沒有看清楚」。想要更硬就把它調成 0。 */
+  codeHint:1,
   // 隱藏技能「午夜鐘」：停止時間。刻意做得很強，但只租給你三回合。
   stopTime:8, stopUses:2, stopRuns:3, stopNeed:3,
   volume:0.40, ambience:0.055, stepVol:0.07,    // 音量。刻意壓低，環境音只是襯底
@@ -886,7 +964,10 @@ var DEF = {
   noiseVol:0.55,         // 白噪音那一層（冰櫃風聲、壓縮機沙沙）的總量
   setChance:0.65,        // 三件組出現的機率
   hideFov:38,            // 躲在櫃子裡的視野角，越小越像從門縫看出去
-  hideLook:0.75,         // 櫃子裡能左右轉的弧度（約 43 度）
+  // 能左右轉的弧度。0.5 rad（約 29 度）加上 38 度視野，剛好等於洞口的寬度 ——
+  // 轉再多就會看到門板側緣外面去，那會破功。
+  hideLook:0.50,
+  hideGiveUp:6,          // 躲著時店員在附近找多久就放棄
   reachDist:3.4, aimAssist:15      // 互動距離與瞄準寬容度（度）
 };
 var CFG = Object.assign({},DEF);
@@ -939,11 +1020,13 @@ var KNOBS = [
   ['k-clerk','loseSight','失去目標時間',1,10,.5,' s'],
   ['k-clerk','chaseGiveUp','追多久就放棄',3,30,1,' s'],
   ['k-clerk','calmTime','放棄後不理你',0,20,1,' s'],
+  ['k-clerk','hideGiveUp','躲櫃子時多久放棄',2,20,.5,' s'],
   ['k-clerk','catchDist','抓到距離',.8,3,.05,' m'],
   ['k-clerk','hearSprint','衝刺聲響半徑',4,34,1,' m'],
   ['k-econ','capacity','提袋格數（基礎）',4,30,1,' 格'],
   ['k-econ','gearLost','被抓沒收幾件裝備',0,6,1,' 件'],
   ['k-econ','keyChance','鑰匙出現機率',0,1,.05,''],
+  ['k-econ','codeHint','密碼留在畫面上',0,1,1,''],
   ['k-econ','setChance','三件組出現機率',0,1,.05,''],
   ['k-econ','safeChance','保險箱中獎機率',0,1,.05,''],
   ['k-clerk','taserRange','電擊槍射程',5,40,1,' m'],
@@ -2101,7 +2184,17 @@ var SFX={
     noiseBurst(0.5,320,0.07,0.6);},
   // 時間恢復：鐘聲倒著回來
   bellBack:function(){beep(196,0.5,'sine',0.11,392); beep(392,0.3,'triangle',0.05,784);},
-  unlock:function(){beep(660,0.1,'triangle',0.1);setTimeout(function(){beep(990,0.22,'triangle',0.1);},95);}
+  unlock:function(){beep(660,0.1,'triangle',0.1);setTimeout(function(){beep(990,0.22,'triangle',0.1);},95);},
+  /* 密碼錯誤的警報：兩短一長的高頻方波，刻意選跟其他音效完全不重疊的頻段，
+     一聽就知道「這不是撿東西的聲音，這是壞事」。 */
+  alarm:function(){
+    [0,190,380].forEach(function(d,i){
+      setTimeout(function(){
+        beep(i===2?1180:1480,i===2?0.55:0.14,'square',0.17,i===2?740:null);
+      },d);
+    });
+    noiseBurst(0.3,2100,0.10,2.4);
+  }
 };
 /* 追逐低頻。原本是固定音量的 2D 警報，現在掛在店員身上跟著他走。
    差別很大：它從「你被追了」變成「他離你多近、在你哪一邊」——
@@ -2320,9 +2413,13 @@ function newRun(){
     revive:G.upgrades.revive?1:0,
     stop:  stopRunsLeft()>0?CFG.stopUses:0,
     hasKey:false,
+    // 密碼每局重抽（100～999），所以背不起來，只能當場記
+    code:String(100+Math.floor(Math.random()*900)),
+    codeFound:false, codeFails:0,
     spotted:0, maxHeat:0, usedItem:false     // 評分用
   };
   shrinkT=0; stopT=0; doorPingT=0;
+  closeKeypad();
   document.body.classList.remove('stopped');
   clerk.rotation.z=0;
   G.run=r; G.shift++;
@@ -2331,8 +2428,20 @@ function newRun(){
   jumpY=0; jumpV=0; onGround=true; tJumpQueued=false;
   if(hiding){hiding=null;document.body.classList.remove('hidden-in');}
   camera.fov=74; camera.updateProjectionMatrix();
-  buildAisles(G.shift);          // 先重組貨架與 waypoint，再依新佈局擺商品
-  buildItems(G.shift);
+  /* 每局的亂數種子 —— 這行是這一版最重要的一個修正。
+
+     原本兩個 build 都是用 G.shift 當種子，也就是「第 1 關」永遠是
+     同一個貨架佈局、同一批商品、放在同一個位置。你被抓之後回到第 1 關，
+     拿到的是剛剛那張一模一樣的地圖。
+     說明頁寫著「每次下手商品位置都重新洗牌，記路線沒有用」—— 那句話是假的。
+
+     這大概比成長曲線更能解釋為什麼你能穩定連過 10 關：
+     你不是在應變，你是在重玩十張背過的圖。
+     現在種子改成每局重抽，佈局與商品仍然互相一致（同一個種子餵兩個函式），
+     但關卡編號不再決定內容。 */
+  G.runSalt=(Math.random()*1000000)|0;
+  buildAisles(G.runSalt);        // 先重組貨架與 waypoint，再依新佈局擺商品
+  buildItems(G.runSalt);
   setDanger(false);
   clerk.position.set(CLERK_HOME.x,0,CLERK_HOME.z);
   clerk.rotation.y=Math.PI;
@@ -2375,7 +2484,7 @@ var itemMeshes=[];
 function clearItems(){
   itemMeshes.forEach(function(o){ scene.remove(o.mesh);
     if(o.halo)scene.remove(o.halo); if(o.tag)scene.remove(o.tag); });
-  itemMeshes=[]; safeObj=null;
+  itemMeshes=[]; safeA=null; safeB=null;
   if(beacon){scene.remove(beacon);beacon=null;}
   forbidGlow.intensity=0;
 }
@@ -2393,50 +2502,71 @@ function buildItems(seed){
   var rares=ITEMS.filter(function(d){return d.tier==='rare';});
 
   // 每次下手洗牌：位置、稀有度都重抽，記路線的優勢就沒了
-  for(var i=spots.length-1;i>0;i--){
-    var j=Math.floor(rand()*(i+1)); var t=spots[i]; spots[i]=spots[j]; spots[j]=t;
+  function shuffle(a){
+    for(var i=a.length-1;i>0;i--){
+      var j=Math.floor(rand()*(i+1)); var t=a[i]; a[i]=a[j]; a[j]=t;
+    }
   }
-  var useCount=Math.round(spots.length*(0.62+rand()*0.22));
-  var used=spots.slice(0,useCount);
-  used.forEach(function(s){
-    var rareChance=(s.deep?0.38:0.14);
-    var def = rand()<rareChance ? rares[Math.floor(rand()*rares.length)]
-                                : commons[Math.floor(rand()*commons.length)];
-    spawnItem(def,s.x,s.y,s.z);
-  });
-  // 後場全放稀有品
-  back.forEach(function(s){ spawnItem(rares[Math.floor(rand()*rares.length)],s.x,s.y,s.z); });
-  // 入口櫃檯放兩件便宜的：讓玩家 10 秒內就完成第一次「按 E」
-  spawnItem(BY_ID.bread,-6.0,1.0,11.4);
-  spawnItem(BY_ID.milk,  6.0,1.0,11.4);
+  shuffle(spots); shuffle(back);
+
+  /* 先把特殊物件的位置從池子裡挖走，剩下的才拿去填一般商品。
+
+     順序是這個函式最容易寫錯的地方：原本是「先填滿一般商品，
+     再從已經填過的清單裡挑三件組的位置」，所以機器人部件必然疊在商品上面 ——
+     同一個座標放兩個物件，畫面上互相穿模，準心也只點得到一個。
+     鑰匙更直接，原本的註解還寫著「不限於沒放商品的」。
+     現在改成先預約、後填空，重疊在結構上就不可能發生。 */
+  var claimed={};
+  function grab(list,pred){
+    for(var i=0;i<list.length;i++){
+      var k=(list===spots?'s':'b')+i;
+      if(claimed[k])continue;
+      if(pred&&!pred(list[i]))continue;
+      claimed[k]=1; return list[i];
+    }
+    return null;
+  }
+
   /* 三件組：出現的話一定三件都在，但刻意散到地圖的三個角落。
      所以它的代價是「距離與風險」，不是運氣 —— 你找不到不是因為它不存在。 */
   G.setThisRun=null;
-  if(Math.random()<CFG.setChance){
-    var farA=used.filter(function(s){return s.z>2;});          // 靠南邊
-    var farB=used.filter(function(s){return s.z<-2;});         // 靠北邊
-    var pick=[];
-    if(farA.length)pick.push(farA[Math.floor(Math.random()*farA.length)]);
-    if(farB.length)pick.push(farB[Math.floor(Math.random()*farB.length)]);
-    pick.push(back[Math.floor(Math.random()*back.length)]);     // 後場
-    if(pick.length===3){
+  if(rand()<CFG.setChance){
+    var pick=[grab(spots,function(s){return s.z>2;}),      // 靠南邊
+              grab(spots,function(s){return s.z<-2;}),     // 靠北邊
+              grab(back,null)];                            // 後場
+    if(pick[0]&&pick[1]&&pick[2]){
       G.setThisRun='bot';
       SET_PARTS.bot.forEach(function(id,i){
         spawnItem(BY_ID[id],pick[i].x,pick[i].y,pick[i].z);
       });
     }
   }
-
-  /* 鑰匙：每次下手只有 keyChance 的機率會出現，位置完全隨機。
-     所以「這次有沒有鑰匙」本身就是一個要偵查的資訊 ——
-     沒看到就別浪費時間繞去冷凍室開箱子。 */
-  var hasKeyThisRun=Math.random()<CFG.keyChance;
+  /* 鑰匙：每次下手只有 keyChance 的機率會出現，位置隨機。
+     所以「這次有沒有鑰匙」本身就是一個要偵查的資訊。 */
+  var hasKeyThisRun=rand()<CFG.keyChance;
   if(hasKeyThisRun){
-    var pool=spots.slice();      // 全部貨架位都可能，不限於沒放商品的
-    var ks=pool[Math.floor(Math.random()*pool.length)];
+    var ks=grab(spots,null);
     if(ks)spawnItem(BY_ID.safekey,ks.x,ks.y,ks.z);
   }
-  buildSafe(hasKeyThisRun);
+
+  // 剩下的位置才填一般商品
+  var freeS=spots.filter(function(s,i){return !claimed['s'+i];});
+  var useCount=Math.round(freeS.length*(0.62+rand()*0.22));
+  freeS.slice(0,useCount).forEach(function(s){
+    var rareChance=(s.deep?0.38:0.14);
+    var def = rand()<rareChance ? rares[Math.floor(rand()*rares.length)]
+                                : commons[Math.floor(rand()*commons.length)];
+    spawnItem(def,s.x,s.y,s.z);
+  });
+  // 後場沒被預約的位置全放稀有品
+  back.forEach(function(s,i){
+    if(claimed['b'+i])return;
+    spawnItem(rares[Math.floor(rand()*rares.length)],s.x,s.y,s.z);
+  });
+  // 入口櫃檯放兩件便宜的：讓玩家 10 秒內就完成第一次「按 E」
+  spawnItem(BY_ID.bread,-6.0,1.0,11.4);
+  spawnItem(BY_ID.milk,  6.0,1.0,11.4);
+  buildSafes(hasKeyThisRun);
   buildHides();
   // 禁忌品固定位置：冷凍室死路盡頭的地上
   spawnItem(BY_ID.unknown,-16.5,0,-13.3);
@@ -2464,10 +2594,20 @@ function buildHides(){
   HIDES.forEach(function(h){
     var g=new THREE.Group();
     g.add(P(GEO.box,0x3E4A42,[0.98,2.05,0.66],[0,1.02,0]));        // 櫃體
-    g.add(P(GEO.box,0x2A332D,[0.86,1.86,0.04],[0,1.02,0.34]));     // 門板
-    g.add(P(GEO.box,0x1B2320,[0.80,0.06,0.05],[0,1.62,0.36]));     // 通風縫
-    g.add(P(GEO.box,0x1B2320,[0.80,0.06,0.05],[0,1.50,0.36]));
-    g.add(P(GEO.box,0xC9CCC4,[0.06,0.16,0.05],[0.34,1.00,0.36]));  // 把手
+    /* 門板拆成上下兩片，中間留一條 0.16m 的實體空隙 ——
+       躲進去之後相機的眼高就落在那條空隙上，所以是真的「透過洞口」看出去，
+       不是靠一層假的遮罩去演。之前門板是一整片，
+       相機在櫃子裡面對著它，等於什麼都看不到。 */
+    var door=new THREE.Group();
+    // 洞口開在 y 1.20～1.42，中心 1.31 —— 剛好是躲進去之後的眼高（1.30）
+    door.add(P(GEO.box,0x2A332D,[0.86,0.56,0.04],[0,1.70,0.34]));   // 門板上半 1.42~1.98
+    door.add(P(GEO.box,0x2A332D,[0.86,1.14,0.04],[0,0.63,0.34]));   // 門板下半 0.06~1.20
+    door.add(P(GEO.box,0x1B2320,[0.86,0.03,0.05],[0,1.435,0.355])); // 洞口上緣
+    door.add(P(GEO.box,0x1B2320,[0.86,0.03,0.05],[0,1.185,0.355])); // 洞口下緣
+    door.add(P(GEO.box,0x1B2320,[0.05,0.22,0.05],[0.32,1.31,0.355]));  // 洞口兩側的柱
+    door.add(P(GEO.box,0x1B2320,[0.05,0.22,0.05],[-0.32,1.31,0.355]));
+    door.add(P(GEO.box,0xC9CCC4,[0.06,0.16,0.05],[0.34,0.72,0.36]));// 把手
+    g.add(door);
     g.position.set(h.x,0,h.z); g.rotation.y=h.ry; scene.add(g);
     COL.push({x0:h.x-0.55,z0:h.z-0.42,x1:h.x+0.55,z1:h.z+0.42,h:2.05,kind:'shelf'});
     var o={mesh:g,hide:true,spot:h,taken:false,
@@ -2477,43 +2617,150 @@ function buildHides(){
   });
 }
 
-/* 保險箱：貼平在冷凍室走道的西側貨架上，不佔通道，所以店員不會卡住。
-   沒鑰匙打不開；開了 50% 是貴重品，另外 50% 給個安慰獎 ——
-   走那麼遠結果完全空手，那不是取捨，那只是懲罰。 */
-var safeObj=null;
-function buildSafe(keyExists){
+/* ---------- 兩段式保險櫃 ----------
+   鑰匙 → 倉庫的 A 櫃 → 裡面是一組三位數密碼 → 冷凍室的 B 櫃 → 貴重品。
+
+   為什麼要兩段：一段的版本（鑰匙直接開冷凍室）走完只需要「撿到鑰匙、走過去」，
+   那是一條直線。兩段之後路線變成 賣場找鑰匙 → 倉庫（店的最東）→ 冷凍室（最西），
+   你得橫跨整個後場兩次，而且中間那一趟你手上已經有貨、注意度已經拉高了。
+   探索時間不是靠把房間畫大來湊，是靠讓目標互相拉開。
+
+   密碼每局重抽，所以背不起來。輸錯會響警報 —— 三位數有一千種組合，
+   本來就不可能猜；會響警報是為了讓「我到底記對了沒有」變成一個真的風險。 */
+var safeA=null, safeB=null;
+function makeSafeMesh(x,z,ry,keypad){
   var g=new THREE.Group();
   g.add(P(GEO.box,0x33403A,[0.78,0.86,0.16],[0,0.46,0]));
   g.add(P(GEO.box,0x1E2622,[0.62,0.66,0.04],[0,0.46,0.09]));
-  g.add(P(GEO.box,0xC9A227,[0.10,0.10,0.06],[0.20,0.46,0.12],0.5));  // 轉盤
+  if(keypad){
+    // B 櫃是密碼鎖：門上多一塊鍵盤面板，遠遠就看得出跟 A 櫃不一樣
+    g.add(P(GEO.box,0x0E1512,[0.22,0.30,0.05],[0.18,0.50,0.12]));
+    g.add(P(GEO.box,0x7FE3F5,[0.16,0.06,0.03],[0.18,0.60,0.14],1.2));
+  }else{
+    g.add(P(GEO.box,0xC9A227,[0.10,0.10,0.06],[0.20,0.46,0.12],0.5));  // 轉盤
+  }
   var led=P(GEO.box,0xFF3B30,[0.06,0.06,0.03],[-0.20,0.70,0.12],1.6);
   g.add(led);
-  g.position.set(-17.28,0,-11.6); g.rotation.y=Math.PI/2; scene.add(g);
-  safeObj={mesh:g,led:led,opened:false,taken:false,keyExists:!!keyExists,
-    def:{name:'保險箱',tier:'safe',slots:0,v:0},safe:true};
-  g.userData.item=safeObj;
-  g.traverse(function(c){c.userData.item=safeObj;});
-  itemMeshes.push(safeObj);
+  g.position.set(x,0,z); g.rotation.y=ry; scene.add(g);
+  return {mesh:g,led:led};
 }
-function openSafe(){
+function buildSafes(keyExists){
+  var a=makeSafeMesh(19.42,-12.8,-Math.PI/2,false);   // 倉庫東牆
+  safeA={mesh:a.mesh,led:a.led,opened:false,taken:false,keyExists:!!keyExists,
+    safe:true,kind:'A',def:{name:'倉庫保險櫃',tier:'safe',slots:0,v:0}};
+  a.mesh.userData.item=safeA;
+  a.mesh.traverse(function(c){c.userData.item=safeA;});
+  itemMeshes.push(safeA);
+
+  var b=makeSafeMesh(-17.28,-11.6,Math.PI/2,true);    // 冷凍室西側
+  safeB={mesh:b.mesh,led:b.led,opened:false,taken:false,
+    safe:true,kind:'B',def:{name:'密碼保險櫃',tier:'safe',slots:0,v:0}};
+  b.mesh.userData.item=safeB;
+  b.mesh.traverse(function(c){c.userData.item=safeB;});
+  itemMeshes.push(safeB);
+}
+function popSafeDoor(o){
+  o.opened=true; o.taken=true;
+  o.led.material=itemMat(0x4ADE80,1.6);
+  /* 門板要從它真正的父節點移除。
+     舊版寫的是 scene.remove(mesh.children[1]) —— 門板的 parent 是那個 Group，
+     不是 scene，所以那一行從來沒有生效過，保險箱開了門還在。 */
+  var door=o.mesh.children[1];
+  if(door)o.mesh.remove(door);
+}
+function openSafeA(){
   var r=G.run;
-  if(safeObj.opened)return;
+  if(safeA.opened)return;
   if(!r.hasKey){
     SFX.deny();
-    toast(safeObj.keyExists?'鎖著 · 鑰匙還在賣場某處':'鎖著 · 今晚沒有鑰匙');
+    toast(safeA.keyExists?'鎖著 · 鑰匙還在賣場某處':'鎖著 · 今晚沒有鑰匙');
     return;
   }
-  safeObj.opened=true; safeObj.taken=true;
-  safeObj.led.material=itemMat(0x4ADE80,1.6);
-  scene.remove(safeObj.mesh.children[1]);          // 門板打開
+  popSafeDoor(safeA);
+  makeNoise(CFG.hearWalk*1.2);
+  r.codeFound=true;
+  SFX.unlock(); ev('safe_a_opened',{code:r.code});
+  showBeat('密碼 '+r.code,
+    '冷凍室那個密碼櫃打得開了。',
+    CFG.codeHint?'數字會留在左下角。':'記住它 —— 這組數字不會再顯示。',5200);
+  setObjective('去冷凍室，用 '+(CFG.codeHint?'這組密碼':'剛剛那組密碼')+'開櫃子',false,
+    '在店的另一頭。你身上已經有貨了，這一趟是純風險。');
+  updateHUD(); updateAim();
+}
+function wrongCode(){
+  var r=G.run;
+  r.codeFails=(r.codeFails||0)+1;
+  SFX.alarm();
+  flashScreen();
+  makeNoise(CFG.hearSprint*1.6);            // 警報聲全店都聽得到
+  ev('code_wrong',{tries:r.codeFails});
+  // 無條件轉追逐，而且他直接知道你在櫃子這裡
+  AI.state='CHASE'; AI.lastSeen={x:camera.position.x,z:camera.position.z};
+  AI.timer=0; AI.chaseT=0; AI.calm=0; AI.path=[]; AI.aware=1; clerk.visible=true;
+  droneOn();
+  // 一定要把鍵盤關掉。警報響了卻還被鎖在不能移動的介面裡，那不是難，那是不公平。
+  closeKeypad();
+  toast('密碼錯誤 · 警報響了');
+  setObjective('密碼錯了，警報響了',true,'他正往這裡來。');
+}
+function openSafeB(code){
+  var r=G.run;
+  if(safeB.opened)return;
+  if(code!==r.code){ wrongCode(); return; }
+  popSafeDoor(safeB);
   makeNoise(CFG.hearWalk*1.4);
   var win=Math.random()<CFG.safeChance;
   var def = win ? (Math.random()<0.5?BY_ID.goldbar:BY_ID.watch) : BY_ID.coins;
   spawnItem(def,-16.6,0,-11.6);
-  SFX.unlock(); ev('safe_opened',{win:win,id:def.id});
-  toast(win?('保險箱裡是 '+def.name+' · $'+def.v)
+  SFX.unlock(); ev('safe_b_opened',{win:win,id:def.id});
+  closeKeypad();
+  toast(win?('保險櫃裡是 '+def.name+' · $'+def.v)
            :('只有一個零錢包 · $'+def.v));
   updateHUD(); updateAim();
+}
+
+/* ---------- 密碼鍵盤 ----------
+   開著的時候玩家不能移動，但時間照走、店員照走、他也照樣看得到你 ——
+   你是站在櫃子前面按鍵盤，那本來就該是全局最沒有防備的幾秒。 */
+var keypadOpen=false, keypadBuf='';
+function openKeypad(){
+  if(keypadOpen||!safeB||safeB.opened)return;
+  keypadOpen=true; keypadBuf='';
+  document.body.classList.add('keypad-in');
+  renderKeypad(); SFX.scan(); ev('keypad_open');
+}
+function closeKeypad(){
+  if(!keypadOpen)return;
+  keypadOpen=false; keypadBuf='';
+  document.body.classList.remove('keypad-in');
+  updateAim();
+}
+function renderKeypad(){
+  var d=$('kpval');
+  var s=keypadBuf.padEnd(3,'·');
+  d.textContent=s.split('').join(' ');
+  d.className=keypadBuf.length>=3?'full':'';
+  var hint=$('kphint'), r=G.run;
+  hint.textContent = r&&r.codeFound
+    ? (CFG.codeHint?('倉庫櫃裡的密碼是 '+r.code):'輸入你在倉庫櫃裡看到的三位數')
+    : '你還沒拿到密碼 —— 亂試會響警報';
+  // 桌機指標是鎖定的，看不到游標也點不到按鍵，所以要講清楚用打字
+  $('kpfoot').innerHTML = K('直接用鍵盤打數字 · 輸滿三位數自動送出 · <b>Esc</b> 離開',
+                            '輸滿三位數會自動送出 · 右上 <b>✕</b> 離開');
+}
+function keypadPress(ch){
+  if(!keypadOpen)return;
+  if(ch==='esc'){ closeKeypad(); return; }
+  if(ch==='clr'){ keypadBuf=''; SFX.deny(); renderKeypad(); return; }
+  if(ch==='ok'){
+    if(keypadBuf.length<3){ SFX.deny(); return; }
+    var v=keypadBuf; keypadBuf='';
+    openSafeB(v); renderKeypad(); return;
+  }
+  if(keypadBuf.length>=3)return;
+  keypadBuf+=ch; SFX.scan(); renderKeypad();
+  // 三位數輸滿就自動送出，不用再按確認 —— 少一個動作，緊張感才對
+  if(keypadBuf.length===3)setTimeout(function(){ keypadPress('ok'); },260);
 }
 
 function spawnItem(def,x,y,z){
@@ -2583,6 +2830,15 @@ function isPaused(){
 
 window.addEventListener('keydown',function(e){
   var k=e.key.toLowerCase();
+  /* 密碼鍵盤開著的時候鍵盤輸入要先被它吃掉，
+     否則按 4 會同時輸入數字又觸發別的東西。放在最前面。 */
+  if(keypadOpen){
+    if(k>='0'&&k<='9'){ e.preventDefault(); keypadPress(k); return; }
+    if(k==='backspace'||k==='delete'){ e.preventDefault(); keypadPress('clr'); return; }
+    if(k==='enter'){ e.preventDefault(); keypadPress('ok'); return; }
+    if(k==='escape'||k==='e'){ e.preventDefault(); closeKeypad(); return; }
+    return;
+  }
   if(['w','a','s','d','c',' ','arrowup','arrowdown','arrowleft','arrowright'].indexOf(k)>=0)e.preventDefault();
   keys[k]=true;
   if(k==='t'){toggleDev();}
@@ -2748,6 +3004,16 @@ function setupTouch(){
   tap('btnShrink',useShrink);
   tap('btnStop',useStop);
 
+  /* 密碼鍵盤的按鍵用委派：整塊 kpbox 收 touchend（含右上的關閉鍵），
+     這樣不必為十三個按鈕各裝一次，也不會被 document 的 touchmove 攔掉。 */
+  var kg=document.querySelector('#keypad .kpbox');
+  if(kg)kg.addEventListener('touchend',function(e){
+    var b=e.target&&e.target.closest?e.target.closest('button'):null;
+    if(!b)return;
+    e.preventDefault(); e.stopPropagation();
+    keypadPress(b.getAttribute('data-k'));
+  },{passive:false});
+
   // 說明頁改成觸控版操作
   var keysEl=document.querySelector('#s-help .keys');
   if(keysEl)keysEl.innerHTML=
@@ -2861,6 +3127,8 @@ function updateAim(){
   var cross=document.getElementById('crosshair'), pr=document.getElementById('prompt');
   aim=null;
   if(G.phase!=='play'){ pr.className=''; cross.className=''; return; }
+  // 鍵盤開著的時候提示列讓給鍵盤，不然兩個東西會互相搶畫面
+  if(keypadOpen){ pr.className=''; cross.className=''; return; }
   if(hiding){
     pr.className='on';
     pr.innerHTML='<kbd>'+(IS_TOUCH?'拿':'E')+'</kbd>從櫃子裡出來'+
@@ -2876,20 +3144,32 @@ function updateAim(){
         '<span class="s">看得到外面一小塊，但不能移動</span>';
       cross.className='hot'; return;
     }
-    // 保險箱：提示要講「開不開得了」，不是價格
+    // 保險櫃：提示要講「開不開得了」，不是價格
     if(aim.safe){
-      var hasKey=!!G.run.hasKey;
-      pr.className='on'+(hasKey?'':' forbid');
-      pr.innerHTML=(hasKey?'<kbd>E</kbd>打開保險箱':'<kbd>鎖</kbd>保險箱')+
-        '<span class="s">'+(hasKey?'裡面可能有貴重品'
-          :(aim.keyExists?'上鎖 · 這次的鑰匙在賣場某處':'上鎖 · 今晚沒有鑰匙'))+'</span>';
+      var r0=G.run, ok, top, sub;
+      if(aim.opened){
+        pr.className=''; cross.className=''; return;
+      }
+      if(aim.kind==='A'){
+        ok=!!r0.hasKey;
+        top=ok?'<kbd>E</kbd>用鑰匙開倉庫櫃':'<kbd>鎖</kbd>倉庫保險櫃';
+        sub=ok?'裡面是冷凍室櫃子的密碼'
+              :(aim.keyExists?'上鎖 · 這次的鑰匙在賣場某處':'上鎖 · 今晚沒有鑰匙');
+      }else{
+        ok=true;                                  // 密碼櫃永遠按得下去，猜不猜是你的事
+        top='<kbd>E</kbd>輸入密碼';
+        sub=r0.codeFound?'三位數 · 倉庫櫃裡看到的那組'
+                        :'三位數 · 你還沒拿到密碼，輸錯會響警報';
+      }
+      pr.className='on'+(ok?'':' forbid');
+      pr.innerHTML=top+'<span class="s">'+sub+'</span>';
       if(IS_TOUCH)pr.innerHTML=pr.innerHTML.replace('<kbd>E</kbd>','<kbd>拿</kbd>');
-      cross.className=hasKey?'hot':''; return;
+      cross.className=ok?'hot':''; return;
     }
     if(d.tier==='special'){
       pr.className='on';
       pr.innerHTML='<kbd>E</kbd>'+d.name+
-        '<span class="s">不佔格子 · 拿去開冷凍室的保險箱</span>';
+        '<span class="s">不佔格子 · 開倉庫的保險櫃，裡面是密碼</span>';
       if(IS_TOUCH)pr.innerHTML=pr.innerHTML.replace('<kbd>E</kbd>','<kbd>拿</kbd>');
       cross.className='hot'; return;
     }
@@ -2907,10 +3187,15 @@ function updateAim(){
   }else{ pr.className=''; cross.className=''; }
 }
 function tryInteract(){
-  if(hiding){ exitHide(); return; }        // 躲著的時候 E 一律是「出來」
+  if(keypadOpen){ closeKeypad(); return; }  // 鍵盤開著時 E 是「離開鍵盤」
+  if(hiding){ exitHide(); return; }         // 躲著的時候 E 一律是「出來」
   if(!aim)return;
   if(aim.hide){ enterHide(aim); return; }
-  if(aim.safe){ openSafe(); return; }
+  if(aim.safe){
+    if(aim.opened)return;
+    if(aim.kind==='A')openSafeA(); else openKeypad();
+    return;
+  }
   if(aim.taken)return;
   // 鑰匙：不佔格子、不算錢，拿了就標記在身上
   if(aim.def.tier==='special'){
@@ -2918,9 +3203,9 @@ function tryInteract(){
     if(aim.halo)scene.remove(aim.halo); if(aim.tag)scene.remove(aim.tag);
     G.run.hasKey=true; SFX.unlock(); makeNoise(aim.def.noise);
     ev('key_found');
-    toast('拿到鑰匙 · 冷凍室有個上鎖的保險箱');
-    setObjective(G.run.unlocked?'可以脫身了 —— 或者去開那個保險箱':'繼續拿，順路可以去開保險箱',
-      false,'保險箱在冷凍室走道邊，裡面不一定有東西。');
+    toast('拿到鑰匙 · 倉庫東牆的保險櫃打得開了');
+    setObjective(G.run.unlocked?'可以脫身了 —— 或者去倉庫開那個櫃子':'繼續拿，順路去倉庫開櫃子',
+      false,'倉庫櫃裡是一組三位數密碼，密碼開的是冷凍室那個櫃子。');
     updateHUD(); updateAim(); return;
   }
   var d=aim.def, r=G.run;
@@ -3024,13 +3309,14 @@ function makeNoise(radius){
    10. 店員 AI —— 顯式 FSM
    ============================================================ */
 var AI={state:'DORMANT',path:[],target:null,timer:0,lastSeen:null,stuck:0,
-        prev:new THREE.Vector2(),stepT:0,searchT:0,chaseT:0,calm:0,stunT:0,aware:0};
+        prev:new THREE.Vector2(),stepT:0,searchT:0,chaseT:0,calm:0,stunT:0,aware:0,
+        hideT:0};
 function now2(){ return performance.now()/1000; }
 
 /* 追不到就放棄：追滿 chaseGiveUp 秒還沒抓到，就往離玩家最遠的地方走開，
    並且有 calmTime 秒完全不理你 —— 否則他一轉身又看到你，等於沒放棄。 */
-function giveUpChase(){
-  AI.state='RETURN'; AI.chaseT=0; AI.calm=CFG.calmTime; AI.path=[];
+function giveUpChase(msg){
+  AI.state='RETURN'; AI.chaseT=0; AI.calm=CFG.calmTime; AI.path=[]; AI.hideT=0;
   var best=-1,bd=-1;
   for(var i=0;i<NODES.length;i++){
     var d=Math.hypot(NODES[i].x-camera.position.x,NODES[i].z-camera.position.z);
@@ -3038,7 +3324,7 @@ function giveUpChase(){
   }
   if(best>=0)setPathTo(NODES[best].x,NODES[best].z);
   droneOff(); ev('chase_giveup');
-  toast('他停下來了，往別的方向走了');
+  toast(msg||'他停下來了，往別的方向走了');
 }
 function canSee(){
   if(hiding)return false;      // 躲在櫃子裡就是看不到，這是它唯一的價值
@@ -3090,6 +3376,20 @@ function stepClerk(dt){
   var sees=calmNow?false:canSee();
   var px=camera.position.x,pz=camera.position.z;
   var dP=Math.hypot(px-clerk.position.x,pz-clerk.position.z);
+
+  /* 躲在櫃子裡：他走到櫃子附近之後，hideGiveUp 秒就放棄。
+     沒有這條規則的話，走的是一般流程 —— loseSight 3.5 秒轉 SEARCH，
+     SEARCH 再繞 10 秒，總共十三秒多。
+     而你在一個不能動、只看得到一條橫縫的箱子裡等十三秒，
+     那不是緊張，那是無事可做。六秒剛好是「他真的來了」還在心跳的長度。 */
+  if(hiding && dP<CFG.hearWalk &&
+     AI.state!=='PATROL' && AI.state!=='RETURN' && AI.state!=='DORMANT'){
+    AI.hideT+=dt;
+    if(AI.hideT>=CFG.hideGiveUp){
+      giveUpChase('他在櫃子外面站了一下，然後走開了');
+      return;
+    }
+  }else AI.hideT=0;
 
   // 聽覺
   if(!calmNow&&r.lastNoise&&AI.state!=='CHASE'){
@@ -3316,6 +3616,9 @@ function droneQuiet(on){
 }
 
 function stepPlayer(dt){
+  /* 按密碼的時候人是站著不動的，但視角還能轉 ——
+     你必須能一邊按一邊看他從哪條走道過來。 */
+  if(keypadOpen){ vel.set(0,0,0); camera.rotation.set(pitch,yaw,0,'YXZ'); return; }
   // 躲在櫃子裡：只能左右張望，不能移動
   if(hiding){
     var lim=CFG.hideLook;
@@ -3541,13 +3844,19 @@ function stepCatchCam(dt){
     endRun();
   }
 }
+/* 每一筆都存當時的版本號。
+   沒有這個欄位的話，130 局的數據混著 v2.x 到 v5.0 的六七個不同平衡，
+   「被抓率 56%」這種數字就完全不能讀 —— 那是舊版本的帳。
+   有了 build 之後，下一輪就能只看某一版的表現。 */
 function pushHistory(r,result){
-  STATS.history.push({shift:G.shift,net:r.net,gross:r.gross,result:result,
-    t:Math.round(r.t),forbidden:!!r.forbiddenTaken});
+  STATS.history.push({build:BUILD,shift:G.shift,net:r.net,gross:r.gross,result:result,
+    t:Math.round(r.t),forbidden:!!r.forbiddenTaken,
+    spotted:r.spotted||0,maxHeat:Math.round((r.maxHeat||0)*100)});
   if(STATS.history.length>40)STATS.history.shift();
 }
 function endRun(){
   G.phase='result';
+  closeKeypad();
   if(stopT>0){ stopT=0; document.body.classList.remove('stopped'); droneQuiet(false); }
   /* 午夜鐘按「回合」而不是「次數」過期：
      不管你這局有沒有按下去，它都少一回合。
@@ -3634,6 +3943,9 @@ function updateHUD(){
         K('X','鐘')+' 午夜鐘 '+r.stop+'　<small style="opacity:.6">剩 '+
         stopRunsLeft()+' 回合</small></div>';
   if(r.hasKey)it+='<div class="ready" style="border-color:#7FE3F5;color:#7FE3F5">鑰匙</div>';
+  // 密碼：拿到之後就是這一局的第二個目標，要一直看得見
+  if(r.codeFound)it+='<div class="ready" style="border-color:#7FE3F5;color:#7FE3F5">'+
+    (CFG.codeHint?('密碼 '+r.code):'密碼已取得')+'</div>';
   // 三件組進度：撿到第一件才顯示，之後它就是你這局的目標
   if(G.setThisRun){
     var ps=SET_PARTS[G.setThisRun];
@@ -3804,6 +4116,21 @@ function renderGear(){
   }
   el.innerHTML=html;
 }
+/* 只算目前這一版的成績。
+   全期平均會被舊版本的帳拖著走 —— 130 局裡混著六七個不同的平衡，
+   看那個數字只會做出錯的判斷。 */
+function buildStats(){
+  var h=STATS.history.filter(function(x){return x.build===BUILD;});
+  var c=0,net=0,t=0;
+  h.forEach(function(x){ if(x.result==='caught')c++; net+=x.net; t+=x.t; });
+  return {n:h.length, caught:c, net:net, t:t};
+}
+function buildRate(){
+  var b=buildStats();
+  if(!b.n)return '還沒有紀錄';
+  return Math.round(b.caught/b.n*100)+'%　<em style="font-style:normal;opacity:.55">'+
+         b.n+' 局</em>';
+}
 function renderCard(){
   var s=STATS;
   $('card').innerHTML=
@@ -3816,7 +4143,11 @@ function renderCard(){
     '<div class="cr">'+
       '<div><span>單次最高獲利</span><b>$'+s.bestShift+'</b></div>'+
       '<div><span>帶著非賣品脫身</span><b>'+s.forbiddenSurvived+' 次</b></div>'+
-      '<div><span>最深記錄</span><b>第 '+(s.deepestShift||0)+' 次</b></div>'+
+      /* 原本這裡有一格「最深記錄」。拿掉的原因有兩個：
+         一是它跟「最長連續」是同一個資訊（關卡數 ≈ 連續數 + 1），
+         二是舊版被抓不會歸零，所以存檔裡留著像 69 這種不可能的數字，
+         而它就這樣一直顯示在玩家眼前。 */
+      '<div><span>這一版被抓率</span><b>'+buildRate()+'</b></div>'+
       '<div><span>總下手 / 被抓</span><b>'+s.runs+' / '+s.caught+'</b></div>'+
     '</div>';
 }
@@ -3843,13 +4174,16 @@ function renderHistoryInto(id){
   var h=STATS.history.slice(-10).reverse();
   if(!h.length){$(id).innerHTML='<tbody><tr><td class="mut">還沒有紀錄</td></tr></tbody>';return;}
   var html='<thead><tr><th>次數</th><th>結果</th><th>非賣品</th><th>時間</th>'+
-    '<th style="text-align:right">獲利</th></tr></thead><tbody>';
+    '<th>版本</th><th style="text-align:right">獲利</th></tr></thead><tbody>';
   h.forEach(function(x){
+    // 舊版的紀錄沒有 build 欄位，標成「舊」提醒那幾筆不能跟現在比
+    var b=x.build||'舊';
     html+='<tr><td>第 '+x.shift+' 次</td>'+
       '<td class="'+(x.result==='caught'?'bad':'good')+'">'+
         (x.result==='caught'?'被抓':'脫身')+'</td>'+
       '<td>'+(x.forbidden?'✓':'—')+'</td>'+
       '<td>'+Math.floor(x.t/60)+':'+String(x.t%60).padStart(2,'0')+'</td>'+
+      '<td class="'+(b===BUILD?'':'mut')+'">'+b+'</td>'+
       '<td>$'+x.net+'</td></tr>';
   });
   $(id).innerHTML=html+'</tbody>';
@@ -3872,7 +4206,17 @@ function copyBrag(){
 function renderMetrics(){
   var s=STATS;
   var avg=s.times.length?(s.times.reduce(function(a,b){return a+b;},0)/s.times.length):0;
+  var b=buildStats();
+  var bavg=b.n?b.t/b.n:0;
   var rows=[
+    // 這一版的數字放最上面，而且獨立一組 —— 判斷平衡只能看這幾行
+    ['── 只算 '+BUILD+' ──', b.n?(b.n+' 局'):'還沒有紀錄', true],
+    [BUILD+' 被抓率',
+      b.n?(b.caught+' / '+b.n+'　'+Math.round(b.caught/b.n*100)+'%'):'—', true],
+    [BUILD+' 平均單局',
+      b.n?((Math.floor(bavg/60))+':'+String(Math.floor(bavg%60)).padStart(2,'0')):'—', true],
+    [BUILD+' 平均獲利', b.n?('$'+Math.round(b.net/b.n)):'—', true],
+    ['── 全部版本累計 ──',''],
     ['下手次數', s.runs],
     ['成功脫身 / 被抓', s.extracted+' / '+s.caught],
     ['最長連續沒被抓', s.bestStreak+' 次'],
@@ -4103,6 +4447,16 @@ if(IS_IOS){
 $('btn-help-back').addEventListener('click',gotoTitle);
 $('btn-board-back').addEventListener('click',gotoTitle);
 $('btn-board-copy').addEventListener('click',copyBrag);
+// 桌機用滑鼠點鍵盤（指標鎖定時點不到，所以主要靠鍵盤打字，這是備援）
+(function(){
+  var kg=document.querySelector('#keypad .kpbox');
+  if(kg)kg.addEventListener('click',function(e){
+    var b=e.target&&e.target.closest?e.target.closest('button'):null;
+    if(!b)return;
+    e.stopPropagation();
+    keypadPress(b.getAttribute('data-k'));
+  });
+})();
 setupUiTouchProxy();
 $('vertag').textContent='灰盒驗證原型 '+BUILD;
 $('btn-next').addEventListener('click',gotoShop);
@@ -4243,6 +4597,18 @@ function frame(now){
       }
       // 聽者跟著相機 —— 位置與朝向都要更新，不然轉頭時左右不會跟著換
       updateListener();
+      /* 櫃子裡的倒數要看得見。
+         六秒的規則如果不顯示出來，玩家只會覺得「不知道要等多久」而提早跳出來 ——
+         規則被看見才會變成決策。 */
+      if(hiding){
+        var ht=$('hidetag');
+        if(AI.hideT>0){
+          ht.innerHTML='他就在外面 · <b style="color:var(--danger)">'+
+            Math.max(0,CFG.hideGiveUp-AI.hideT).toFixed(1)+'</b> 秒後他會走開';
+        }else{
+          ht.textContent='躲在櫃子裡 · 從洞口看得到外面，但你動不了';
+        }
+      }
       /* 後門的低頻脈衝：只有解鎖後才響，停電時變快。
          它的用途很具體 —— 燈滅了之後，你不用看地上那條紅線也走得回去。 */
       if(G.run.unlocked&&stopT<=0){
