@@ -222,6 +222,10 @@
     letter-spacing:.10em;text-align:center;margin-bottom:6px;
     text-shadow:0 0 20px rgba(127,227,245,.4)}
   #kpval.full{color:var(--price);text-shadow:0 0 20px rgba(255,201,60,.45)}
+  /* 送錯的那組留在畫面上並閃紅 —— 玩家要看得到自己到底送了什麼 */
+  #kpval.bad{color:var(--danger);text-shadow:0 0 22px rgba(255,59,48,.55);
+    animation:kpbad .5s steps(2,end) 3}
+  @keyframes kpbad{0%{opacity:1}50%{opacity:.25}100%{opacity:1}}
   #kphint{font-size:11px;line-height:1.5;color:var(--dim);text-align:center;
     margin-bottom:10px;min-height:2.6em}
   #keypad .kpgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
@@ -907,7 +911,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v5.2';
+var BUILD='v5.3';
 
 /* 手機上沒有 console，一旦初始化丟錯就只剩黑畫面、完全無從查起。
    所以把錯誤直接印在畫面上。 */
@@ -937,7 +941,14 @@ var DEF = {
   clerkChase:5.0, visionRange:13, visionAngle:42,   // ×clerkSpeedMul 0.9 = 實際追逐 4.5
   loseSight:3.5, chaseGiveUp:10, calmTime:6, catchDist:1.0, hearWalk:8, hearSprint:17,
   spotTime:0.6,          // 被看到多久才真的變成追逐 —— 這段就是你的反應窗口
-  capacity:12, riskBonus:1.2, forbiddenValue:120, extractItems:6,
+  /* extractItems 從 6 調回 4。
+     6 件是為了拉長單局才調上去的，而它確實有效 —— 但代價太大：
+     v5.2 的 log 顯示後門在 t=148.6 解鎖、t=149.7 就脫身了，
+     中間只有一秒。也就是說「你現在就可以乾淨脫身了，還要不要回頭」
+     這個整個原型要測的那一刻，根本沒有發生的空間。
+     拉長單局的工作現在交給鑰匙／密碼／三件組那幾條目標鏈，
+     解鎖要早一點回到局中，那個抉擇才會是抉擇。 */
+  capacity:12, riskBonus:1.2, forbiddenValue:120, extractItems:4,
   // 負重：只有超過門檻才罰，且是固定一級，不是連續遞減
   loadThreshold:0.80, loadPenalty:0.10,
   // 店員：以基礎值的百分比表示，每三次下手各加 growthPer3
@@ -2451,7 +2462,7 @@ function newRun(){
      更重要的是：他必須全程都在地圖上，路線才有可能被精通。 */
   AI.state='PATROL';
   AI.path=[]; AI.target=null; AI.timer=0; AI.lastSeen=null; AI.stuck=0; AI.stepT=0;
-  AI.chaseT=0; AI.calm=0; AI.aware=0; AI.stunT=0;
+  AI.chaseT=0; AI.calm=0; AI.aware=0; AI.stunT=0; AI.hideT=0; AI.noiseAt=null;
   setMark(null);
   clerk.visible=true;
   ev('game_start',{shift:G.shift});
@@ -2687,26 +2698,31 @@ function openSafeA(){
     '在店的另一頭。你身上已經有貨了，這一趟是純風險。');
   updateHUD(); updateAim();
 }
-function wrongCode(){
+function wrongCode(got){
   var r=G.run;
   r.codeFails=(r.codeFails||0)+1;
+  keypadBad=true;
   SFX.alarm();
   flashScreen();
   makeNoise(CFG.hearSprint*1.6);            // 警報聲全店都聽得到
-  ev('code_wrong',{tries:r.codeFails});
+  /* got / want 一定要記進 log。
+     上一版只記了次數，所以「我明明輸對了卻說錯」這件事完全無從查證 ——
+     現在下次再發生，log 會直接告訴我們送進去的到底是什麼。 */
+  ev('code_wrong',{tries:r.codeFails,got:got,want:r.code});
   // 無條件轉追逐，而且他直接知道你在櫃子這裡
   AI.state='CHASE'; AI.lastSeen={x:camera.position.x,z:camera.position.z};
   AI.timer=0; AI.chaseT=0; AI.calm=0; AI.path=[]; AI.aware=1; clerk.visible=true;
   droneOn();
-  // 一定要把鍵盤關掉。警報響了卻還被鎖在不能移動的介面裡，那不是難，那是不公平。
-  closeKeypad();
-  toast('密碼錯誤 · 警報響了');
-  setObjective('密碼錯了，警報響了',true,'他正往這裡來。');
+  /* 鍵盤留著不關 —— 錯的那組數字要留在畫面上讓你看到自己送了什麼。
+     但玩家一定要能立刻跑，所以移動的鎖在 keypadBad 期間解開（見 stepPlayer）。 */
+  renderKeypad();
+  toast('密碼錯誤 · 警報響了 · 你可以直接跑');
+  setObjective('密碼錯了，警報響了',true,'他正往這裡來。可以邊跑邊看剛剛送出的數字。');
 }
 function openSafeB(code){
   var r=G.run;
   if(safeB.opened)return;
-  if(code!==r.code){ wrongCode(); return; }
+  if(code!==r.code){ wrongCode(code); return; }
   popSafeDoor(safeB);
   makeNoise(CFG.hearWalk*1.4);
   var win=Math.random()<CFG.safeChance;
@@ -2722,16 +2738,16 @@ function openSafeB(code){
 /* ---------- 密碼鍵盤 ----------
    開著的時候玩家不能移動，但時間照走、店員照走、他也照樣看得到你 ——
    你是站在櫃子前面按鍵盤，那本來就該是全局最沒有防備的幾秒。 */
-var keypadOpen=false, keypadBuf='';
+var keypadOpen=false, keypadBuf='', keypadBad=false;
 function openKeypad(){
   if(keypadOpen||!safeB||safeB.opened)return;
-  keypadOpen=true; keypadBuf='';
+  keypadOpen=true; keypadBuf=''; keypadBad=false;
   document.body.classList.add('keypad-in');
   renderKeypad(); SFX.scan(); ev('keypad_open');
 }
 function closeKeypad(){
   if(!keypadOpen)return;
-  keypadOpen=false; keypadBuf='';
+  keypadOpen=false; keypadBuf=''; keypadBad=false;
   document.body.classList.remove('keypad-in');
   updateAim();
 }
@@ -2739,28 +2755,40 @@ function renderKeypad(){
   var d=$('kpval');
   var s=keypadBuf.padEnd(3,'·');
   d.textContent=s.split('').join(' ');
-  d.className=keypadBuf.length>=3?'full':'';
+  d.className=keypadBad?'bad':(keypadBuf.length>=3?'full':'');
   var hint=$('kphint'), r=G.run;
-  hint.textContent = r&&r.codeFound
-    ? (CFG.codeHint?('倉庫櫃裡的密碼是 '+r.code):'輸入你在倉庫櫃裡看到的三位數')
-    : '你還沒拿到密碼 —— 亂試會響警報';
+  if(keypadBad){
+    hint.innerHTML='<b style="color:var(--danger)">上面這組是錯的</b> · 按清除重新輸入';
+  }else{
+    hint.textContent = r&&r.codeFound
+      ? (CFG.codeHint?('倉庫櫃裡的密碼是 '+r.code):'輸入你在倉庫櫃裡看到的三位數')
+      : '你還沒拿到密碼 —— 亂試會響警報';
+  }
   // 桌機指標是鎖定的，看不到游標也點不到按鍵，所以要講清楚用打字
-  $('kpfoot').innerHTML = K('直接用鍵盤打數字 · 輸滿三位數自動送出 · <b>Esc</b> 離開',
-                            '輸滿三位數會自動送出 · 右上 <b>✕</b> 離開');
+  $('kpfoot').innerHTML = K('鍵盤打數字 · <b>Enter</b> 送出 · <b>倒退鍵</b> 清除 · <b>Esc</b> 離開',
+                            '輸完三位數要按<b>確認</b>才送出 · 右上 <b>✕</b> 離開');
 }
 function keypadPress(ch){
   if(!keypadOpen)return;
   if(ch==='esc'){ closeKeypad(); return; }
-  if(ch==='clr'){ keypadBuf=''; SFX.deny(); renderKeypad(); return; }
+  if(ch==='clr'){ keypadBuf=''; keypadBad=false; SFX.deny(); renderKeypad(); return; }
   if(ch==='ok'){
     if(keypadBuf.length<3){ SFX.deny(); return; }
-    var v=keypadBuf; keypadBuf='';
-    openSafeB(v); renderKeypad(); return;
+    /* 送出的數字刻意「留在畫面上」，不清空。
+       上一版是送出後立刻清成空白，所以密碼被判錯的時候，
+       玩家看不到自己到底送了什麼 —— 那看起來就像遊戲壞了，而不是自己打錯。
+       現在錯的那組會留著並閃紅，要按清除才會消失。 */
+    openSafeB(keypadBuf); renderKeypad(); return;
   }
+  // 順序很重要：錯過一次之後緩衝區還留著那三個數字，
+  // 要先清掉才輪到長度檢查，不然玩家會發現「怎麼按都沒反應」
+  if(keypadBad){ keypadBuf=''; keypadBad=false; }
   if(keypadBuf.length>=3)return;
   keypadBuf+=ch; SFX.scan(); renderKeypad();
-  // 三位數輸滿就自動送出，不用再按確認 —— 少一個動作，緊張感才對
-  if(keypadBuf.length===3)setTimeout(function(){ keypadPress('ok'); },260);
+  /* 這裡原本會在輸滿三位數的瞬間自動送出。那是個錯誤的設計 ——
+     它把「打錯一個數字」直接等同於「觸發警報」，中間沒有任何機會確認。
+     而畫面上你正忙著看店員從哪邊來，根本不會盯著鍵盤。
+     現在一定要自己按確認（或 Enter）才送出：錯的是你的決定，不是你的手指。 */
 }
 
 function spawnItem(def,x,y,z){
@@ -2833,11 +2861,20 @@ window.addEventListener('keydown',function(e){
   /* 密碼鍵盤開著的時候鍵盤輸入要先被它吃掉，
      否則按 4 會同時輸入數字又觸發別的東西。放在最前面。 */
   if(keypadOpen){
+    /* 一定要擋掉按鍵重複。按住一個數字不放的話，keydown 會連續觸發，
+       '4' 一瞬間就變成 '444' 送出去 —— 玩家的手感是「我只按了一下」。
+       這是「明明輸對卻說錯」最可能的來源之一。 */
+    if(e.repeat){ e.preventDefault(); return; }
     if(k>='0'&&k<='9'){ e.preventDefault(); keypadPress(k); return; }
     if(k==='backspace'||k==='delete'){ e.preventDefault(); keypadPress('clr'); return; }
     if(k==='enter'){ e.preventDefault(); keypadPress('ok'); return; }
-    if(k==='escape'||k==='e'){ e.preventDefault(); closeKeypad(); return; }
-    return;
+    if(k==='escape'){ e.preventDefault(); closeKeypad(); return; }
+    /* 警報已經響了的狀態下，其他按鍵一律放行 ——
+       錯的數字留在畫面上，但人要能立刻跑。 */
+    if(!keypadBad){
+      if(k==='e'){ e.preventDefault(); closeKeypad(); return; }
+      return;
+    }
   }
   if(['w','a','s','d','c',' ','arrowup','arrowdown','arrowleft','arrowright'].indexOf(k)>=0)e.preventDefault();
   keys[k]=true;
@@ -3310,7 +3347,7 @@ function makeNoise(radius){
    ============================================================ */
 var AI={state:'DORMANT',path:[],target:null,timer:0,lastSeen:null,stuck:0,
         prev:new THREE.Vector2(),stepT:0,searchT:0,chaseT:0,calm:0,stunT:0,aware:0,
-        hideT:0};
+        hideT:0,noiseAt:null};
 function now2(){ return performance.now()/1000; }
 
 /* 追不到就放棄：追滿 chaseGiveUp 秒還沒抓到，就往離玩家最遠的地方走開，
@@ -3395,8 +3432,18 @@ function stepClerk(dt){
   if(!calmNow&&r.lastNoise&&AI.state!=='CHASE'){
     var n=r.lastNoise;
     if(r.t-n.t<0.6&&Math.hypot(n.x-clerk.position.x,n.z-clerk.position.z)<n.r){
-      AI.state='INVESTIGATE'; AI.timer=0; setPathTo(n.x,n.z);
-      ev('clerk_investigate');
+      /* 已經在調查、而且新的聲音就在原目標附近（2.5m 內）就不要重來。
+         沒有這個門檻的話，你在他附近走路每 0.56 秒一個腳步聲，
+         他就每 0.56 秒重新規劃一次路徑、AI.timer 每次歸零 ——
+         INVESTIGATE 永遠不會逾時轉 SEARCH，而且 log 會被灌滿
+         一秒五筆的 clerk_investigate，之後根本沒辦法讀。 */
+      var same = AI.state==='INVESTIGATE' && AI.noiseAt &&
+                 Math.hypot(n.x-AI.noiseAt.x,n.z-AI.noiseAt.z)<2.5;
+      if(!same){
+        AI.state='INVESTIGATE'; AI.timer=0; setPathTo(n.x,n.z);
+        AI.noiseAt={x:n.x,z:n.z};
+        ev('clerk_investigate');
+      }
       r.lastNoise=null;
     }
   }
@@ -3617,8 +3664,9 @@ function droneQuiet(on){
 
 function stepPlayer(dt){
   /* 按密碼的時候人是站著不動的，但視角還能轉 ——
-     你必須能一邊按一邊看他從哪條走道過來。 */
-  if(keypadOpen){ vel.set(0,0,0); camera.rotation.set(pitch,yaw,0,'YXZ'); return; }
+     你必須能一邊按一邊看他從哪條走道過來。
+     例外：密碼已經送錯、警報已經響了，就立刻放開移動 —— 那時候還鎖著人是不公平的。 */
+  if(keypadOpen&&!keypadBad){ vel.set(0,0,0); camera.rotation.set(pitch,yaw,0,'YXZ'); return; }
   // 躲在櫃子裡：只能左右張望，不能移動
   if(hiding){
     var lim=CFG.hideLook;
@@ -3755,13 +3803,18 @@ function extract(){
   r.newRecord = STATS.streak>STATS.bestStreak;
   if(r.newRecord)STATS.bestStreak=STATS.streak;
   // 五軸評分：各自獨立比對個人最佳，破了就記在收據上
+  /* 每一個都用 (…||0) 包起來。
+     舊存檔裡沒有 bestQuiet / bestFast / bestBold 這幾個欄位，
+     load() 的 Object.assign 不會補，結果是拿 net 去跟 undefined 比 ——
+     `256 > undefined` 是 false，所以那條紀錄永遠破不了。
+     實測數據裡 forbiddenSurvived=2 但 bestBold=0，就是這個。 */
   r.rec={};
-  if(r.net>STATS.bestShift){STATS.bestShift=r.net; r.rec.cash=1;}
-  if(r.spotted===0&&r.net>STATS.bestQuiet){STATS.bestQuiet=r.net; r.rec.quiet=1;}
-  if(r.net>=FAST_MIN&&(STATS.bestFast===0||r.t<STATS.bestFast)){
+  if(r.net>(STATS.bestShift||0)){STATS.bestShift=r.net; r.rec.cash=1;}
+  if(r.spotted===0&&r.net>(STATS.bestQuiet||0)){STATS.bestQuiet=r.net; r.rec.quiet=1;}
+  if(r.net>=FAST_MIN&&(!STATS.bestFast||r.t<STATS.bestFast)){
     STATS.bestFast=r.t; r.rec.fast=1;
   }
-  if(r.forbiddenTaken&&r.net>STATS.bestBold){STATS.bestBold=r.net; r.rec.bold=1;}
+  if(r.forbiddenTaken&&r.net>(STATS.bestBold||0)){STATS.bestBold=r.net; r.rec.bold=1;}
   if(r.forbiddenTaken){STATS.forbiddenSurvived++; STATS.deepestShift=Math.max(STATS.deepestShift,G.shift);}
   pushHistory(r,'extract');
   droneOff(); setDanger(false); SFX.register();
