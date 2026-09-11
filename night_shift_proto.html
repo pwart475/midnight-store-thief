@@ -195,6 +195,23 @@
         rgba(4,6,4,0) 83%,#040604 91%,#040604 100%)}
   body.hidden-in #hidefx{opacity:1}
   body.hidden-in #basket,body.hidden-in #objective{opacity:.35}
+  /* 按住進度條。放在準心正下方 —— 這幾秒你唯一該看的就是準心與周圍，
+     把條子放在螢幕邊緣的話玩家會低頭看它，剛好錯過店員走過來。 */
+  #hold{position:absolute;left:50%;top:calc(50% + 42px);transform:translateX(-50%);
+    width:190px;text-align:center;opacity:0;transition:opacity .14s;pointer-events:none}
+  body.holding #hold{opacity:1}
+  #holdlab{font-size:11.5px;letter-spacing:.14em;color:var(--price);margin-bottom:6px;
+    text-shadow:0 2px 10px rgba(0,0,0,.9)}
+  #hold .bar{height:5px;background:rgba(8,11,8,.8);border:1px solid var(--line-hi)}
+  #holdfill{display:block;height:100%;width:0%;background:var(--price)}
+  /* 拖著人的時候畫面下緣壓一條暗邊，提醒你手上有東西 */
+  #dragfx{position:absolute;inset:0;opacity:0;transition:opacity .2s;pointer-events:none;
+    box-shadow:inset 0 -90px 70px -60px rgba(255,201,60,.30)}
+  body.dragging #dragfx{opacity:1}
+  #dragtag{position:absolute;left:50%;bottom:11%;transform:translateX(-50%);
+    font-size:12px;letter-spacing:.16em;color:var(--price);opacity:0;transition:opacity .2s;
+    white-space:nowrap;text-shadow:0 2px 10px rgba(0,0,0,.9)}
+  body.dragging #dragtag{opacity:1}
   #hidetag{position:absolute;left:50%;bottom:14%;transform:translateX(-50%);
     font-size:12px;letter-spacing:.18em;color:var(--dim);opacity:0;transition:opacity .18s;
     white-space:nowrap}
@@ -704,6 +721,9 @@
   <div id="prompt"></div>
   <div id="toast"></div>
   <div id="pa"><span>店內廣播</span><em id="patext"></em></div>
+  <div id="hold"><div id="holdlab"></div><div class="bar"><i id="holdfill"></i></div></div>
+  <div id="dragfx"></div>
+  <div id="dragtag">拖著店員 · 走得慢、不能衝、一路有聲音</div>
   <div id="hidefx"></div>
   <div id="hidetag">躲在櫃子裡 · 從洞口看得到外面，但你動不了</div>
   <div id="vignette"></div>
@@ -979,6 +999,10 @@ var DEF = {
   // 小跳：峰值 0.68m，視點衝到 2.33m，剛好越過 1.9m 的貨架看一眼
   jumpSpeed:4.2, gravity:13,
   safeChance:0.5, keyChance:0.5,
+  /* 辦公室：開門要按住 5 秒、開收銀機要按住 4 秒。
+     這兩段「站著不動」是它全部的難度 —— 沒有謎題，只有你敢不敢在那裡待著。
+     stuffStun 是把昏迷的店員塞進立櫃之後他睡多久。 */
+  officeUnlock:5, regOpen:4, stuffStun:30, dragSpeed:0.55,
   /* 警報相位（停電）的亮度，是平常的幾成。
      原本是硬寫的 0.14 / 0.05，大約只有平常的兩成，而且閃爍有 78% 的時間
      停在暗的那一格 —— 結果不是「緊張」，是根本看不到路。
@@ -1118,6 +1142,9 @@ var ITEMS = [
   {id:'unknown', name:'午夜限定・不明肉品', v:120, slots:2, tier:'forbidden', noise:34, shape:'blob', color:0x8E4BC4},
   // 特殊物件：鑰匙不佔格子也沒價值，它的價值在保險箱裡
   {id:'safekey', name:'保險箱鑰匙',   v:0,  slots:0, tier:'special',  noise:3, shape:'key',  color:0x7FE3F5},
+  // 辦公室鑰匙。只有在電擊槍已經組好的時候才會出現 —— 見 buildItems
+  {id:'offkey',  name:'辦公室鑰匙',   v:0,  slots:0, tier:'special',  noise:3, shape:'key',  color:0xFFC93C},
+  {id:'cashbox', name:'收銀機抽屜',   v:320, slots:2, tier:'vault',   noise:7, shape:'bar',  color:0x9BE08A},
   /* 電擊槍的四個部件。跟三件組不一樣的地方是：
      它跨局累積，而且不佔提袋格子 —— 它不是貨，是你自己的裝備。
      一件都不值錢（v:0），所以拿它純粹是為了那把槍，不是為了這局的收入。 */
@@ -1323,6 +1350,23 @@ box(-4.6,-20.6,-1.6,-19.8,1.8,'shelf');
 box(2.0,-20.6,5.0,-19.8,1.8,'shelf');
 box(9.0,-20.6,12.0,-19.8,1.8,'shelf');
 box(15.0,-20.6,18.4,-19.8,1.8,'shelf');
+
+/* ---------- 辦公室（東南角，x 13.8~19.6, z 9.8~15.6） ----------
+   房間本身一開始就在那裡，看得到、進不去。門要用辦公室鑰匙開，而且要按住 5 秒 ——
+   那五秒站著不動是它全部的代價，也是為什麼它要放在離入口很近的地方：
+   你會在還很安全的時候看到它，然後在已經拿了一堆東西之後才有膽子回來開。
+
+   門的碰撞盒刻意放進 COL_STATIC，所以 waypoint 一開始就當它是關的，
+   店員進不去。解鎖的時候會把它從 COL 移除並重算 waypoint ——
+   也就是說，你開了門，他也就能進來了。 */
+box(13.0,9.0,19.6,9.8,3.2);                 // 辦公室北牆
+box(13.0,9.8,13.8,11.4,3.2);                // 西牆（門的南側）
+box(13.0,13.6,13.8,15.6,3.2);               // 西牆（門的北側）
+var OFFICE_DOOR=box(13.0,11.4,13.8,13.6,2.4,'wall');   // 門本身
+box(17.2,14.2,19.4,15.4,1.0,'shelf');       // 收銀檯
+box(14.2,10.2,17.2,11.6,0.78,'shelf');      // 辦公桌
+var OFFICE={x0:13.8,z0:9.8,x1:19.6,z1:15.6,
+            door:{x:13.4,z:12.5}, reg:{x:18.3,z:14.8}};
 
 var EXIT={x0:-3.5,z0:13.8,x1:3.5,z1:15.4};
 var SPAWN={x:0,z:13.4,yaw:0};
@@ -1532,8 +1576,9 @@ function buildAisles(seed){
 // 日光燈管 + 點光源
 /* 後四支是後場的。裡段（z<-16）刻意只給兩支、而且分得很開 ——
    越深越暗是這兩間房的賣點，但完全不給燈就變成只能靠手電筒的迷宮。 */
-var TUBES=[[-13,10],[0,2],[13,10],[-13,-2],[13,-2],[0,9],[0,-6],
-           [-14,-13],[10,-13],[-15,-19],[8,-19]];
+var TUBES=[[-13,10],[0,2],[10.5,9.5],[-13,-2],[13,-2],[0,9],[0,-6],
+           [-14,-13],[10,-13],[-15,-19],[8,-19],
+           [16.6,12.6]];          // 辦公室
 var lamps=[],tubeMeshes=[];
 var tubeGeo=new THREE.BoxGeometry(3.4,0.12,0.34);
 TUBES.forEach(function(p){
@@ -2564,14 +2609,15 @@ function newRun(){
     shrink:G.upgrades.shrink?1:0,
     revive:G.upgrades.revive?1:0,
     stop:  stopRunsLeft()>0?CFG.stopUses:0,
-    hasKey:false,
+    hasKey:false, hasOffKey:false,
     // 密碼每局重抽（100～999），所以背不起來，只能當場記
     code:String(100+Math.floor(Math.random()*900)),
     codeFound:false, codeFails:0,
     spotted:0, maxHeat:0, usedItem:false     // 評分用
   };
   shrinkT=0; stopT=0; doorPingT=0;
-  closeKeypad();
+  closeKeypad(); cancelHold(); dropDrag();
+  clerk.visible=true;
   document.body.classList.remove('stopped');
   clerk.rotation.z=0;
   G.run=r; G.shift++;
@@ -2744,8 +2790,22 @@ function buildItems(seed){
   // 入口櫃檯放兩件便宜的：讓玩家 10 秒內就完成第一次「按 E」
   spawnItem(BY_ID.bread,-6.0,1.0,11.4);
   spawnItem(BY_ID.milk,  6.0,1.0,11.4);
+  /* 辦公室鑰匙：只有電擊槍組好之後才會出現，而且出現就是每關都有。
+     這是刻意的階段門檻 —— 辦公室是「強勢期」才解鎖的那一塊內容，
+     它不該在你還在偷麵包的時候就攤開在面前。 */
+  if(tzReady()){
+    var os=grab(spots,null);
+    if(os)spawnItem(BY_ID.offkey,os.x,rand()<0.5?0.06:os.y,os.z);
+  }
   buildSafes(hasKeyThisRun);
   buildHides();
+  buildOffice();
+  /* 立櫃的碰撞盒是 buildHides 才推進 COL 的，而 buildWaypoints 在 buildAisles
+     裡面就先跑過一次了 —— 也就是說那份圖不知道立櫃的存在。
+     在這裡重算一次，讓導航圖跟碰撞清單看到的是同一個世界。
+     （不然開辦公室門時的那次重算會突然刪掉一批「一直都在」的節點，
+     店員的巡邏路線會在完全無關的另一頭莫名其妙改變。） */
+  buildWaypoints();
 
   /* 非賣品改成三件，隨機散在後場兩間房的「裡段」。
 
@@ -2767,6 +2827,107 @@ function buildItems(seed){
   forbidGlow.position.set(fpick[0][0],1.2,fpick[0][1]);
   forbidGlow.intensity=1.1;
 }
+/* ---------- 辦公室 ----------
+   門與收銀機都是「按住不放」的互動。灰盒裡最便宜的張力就是這個：
+   不需要新的謎題系統，只需要讓玩家在一個固定的點站滿幾秒鐘。
+   店員的威脅會自己把那幾秒變得難熬。 */
+var officeOpen=false, officeDoorObj=null, regObj=null, officeProps=[];
+function buildOffice(){
+  officeOpen=false;
+  if(OFFICE_DOOR.mesh)OFFICE_DOOR.mesh.visible=true;
+  /* 椅子沒有進 itemMeshes，所以 clearItems 不會收它 ——
+     不自己清的話每局都會多疊一張椅子在同一個座標上。 */
+  officeProps.forEach(function(m){scene.remove(m);}); officeProps=[];
+  // 門：用一塊薄板當互動目標，貼在門面上
+  var g=new THREE.Group();
+  g.add(P(GEO.box,0x6B5A32,[0.10,2.20,2.10],[0,1.10,0]));
+  g.add(P(GEO.box,0xC9CCC4,[0.07,0.16,0.06],[0.08,1.05,-0.72]));   // 把手
+  g.add(P(GEO.box,0xFF3B30,[0.06,0.06,0.04],[0.08,1.45,-0.72],1.5)); // 紅燈
+  g.position.set(OFFICE.door.x,0,OFFICE.door.z); scene.add(g);
+  officeDoorObj={mesh:g,officeDoor:true,taken:false,led:g.children[2],
+    def:{name:'辦公室門',tier:'door',slots:0,v:0}};
+  g.userData.item=officeDoorObj;
+  g.traverse(function(c){c.userData.item=officeDoorObj;});
+  itemMeshes.push(officeDoorObj);
+
+  // 收銀機
+  var r=new THREE.Group();
+  r.add(P(GEO.box,0x3A4640,[0.62,0.34,0.46],[0,1.17,0]));
+  r.add(P(GEO.box,0x1E2622,[0.50,0.14,0.06],[0,1.30,0.22]));
+  r.add(P(GEO.box,0x9BE08A,[0.34,0.10,0.03],[0,1.40,0.14],1.3));
+  r.position.set(OFFICE.reg.x,0,OFFICE.reg.z); r.rotation.y=Math.PI; scene.add(r);
+  regObj={mesh:r,register:true,opened:false,taken:false,
+    def:{name:'收銀機',tier:'door',slots:0,v:0}};
+  r.userData.item=regObj;
+  r.traverse(function(c){c.userData.item=regObj;});
+  itemMeshes.push(regObj);
+
+  // 辦公椅（純裝飾，沒有碰撞）
+  var ch=new THREE.Group();
+  ch.add(P(GEO.box,0x2A332D,[0.46,0.08,0.46],[0,0.46,0]));
+  ch.add(P(GEO.box,0x2A332D,[0.46,0.52,0.08],[0,0.74,0.22]));
+  ch.add(P(GEO.box,0x4A5450,[0.10,0.44,0.10],[0,0.22,0]));
+  ch.position.set(15.7,0,12.4); ch.rotation.y=0.4; scene.add(ch);
+  officeProps.push(ch);
+}
+
+/* ---------- 按住不放的互動 ----------
+   同一套機制給「開辦公室門」和「開收銀機」用。
+   規則故意很嚴：走開就重來、被追就重來。
+   所以它不是一個進度條，是一個「你現在敢不敢待在這裡」的問題。 */
+var holding=null, holdT=0, holdNeed=0;
+function startHold(kind,obj,need,label){
+  holding={kind:kind,obj:obj,label:label}; holdT=0; holdNeed=need;
+  $('holdlab').textContent=label;
+  document.body.classList.add('holding');
+}
+function cancelHold(msg){
+  if(!holding)return;
+  holding=null; holdT=0;
+  document.body.classList.remove('holding');
+  if(msg)toast(msg);
+}
+function stepHold(dt){
+  if(!holding)return;
+  // 離開、看向別處、或被追 —— 三種情況都中斷
+  if(AI.state==='CHASE'){ cancelHold('他來了 —— 中斷'); return; }
+  var o=holding.obj;
+  var d=Math.hypot(o.mesh.position.x-camera.position.x,o.mesh.position.z-camera.position.z);
+  if(d>CFG.reachDist+0.6){ cancelHold('走太遠了'); return; }
+  holdT+=dt;
+  $('holdfill').style.width=Math.round(holdT/holdNeed*100)+'%';
+  if(holdT<holdNeed)return;
+  var k=holding.kind; holding=null;
+  document.body.classList.remove('holding');
+  if(k==='door')finishOfficeDoor();
+  else finishRegister();
+}
+function finishOfficeDoor(){
+  officeOpen=true;
+  officeDoorObj.taken=true;
+  scene.remove(officeDoorObj.mesh);
+  if(OFFICE_DOOR.mesh)OFFICE_DOOR.mesh.visible=false;
+  /* 把門從碰撞清單拿掉，然後重算 waypoint。
+     不重算的話辦公室永遠是圖論上的孤島 —— 你會得到一個絕對安全的房間，
+     那正是這個機制最不該變成的東西。開了門，他也進得來。 */
+  var i=COL.indexOf(OFFICE_DOOR); if(i>=0)COL.splice(i,1);
+  buildWaypoints();
+  SFX.unlock(); makeNoise(CFG.hearWalk*1.1);
+  ev('office_opened');
+  showBeat('辦公室開了','收銀機在裡面。','門開著 —— 他現在也進得來。',3600);
+  updateAim();
+}
+function finishRegister(){
+  regObj.opened=true; regObj.taken=true;
+  regObj.mesh.children[2].material=itemMat(0xFFC93C,1.6);
+  makeNoise(CFG.hearSprint*0.9);        // 收銀機很吵
+  SFX.register();
+  spawnItem(BY_ID.cashbox,OFFICE.reg.x-0.9,1.05,OFFICE.reg.z);
+  ev('register_opened');
+  toast('抽屜彈出來了 · $'+BY_ID.cashbox.v+' · 2 格');
+  updateAim();
+}
+
 /* ---------- 躲藏處 ----------
    立櫃靠牆擺，不佔走道也不影響貨架重組。
    躲進去店員就看不到你，代價是不能動、視野被壓成一條門縫。
@@ -3364,14 +3525,53 @@ function updateAim(){
       '<span class="s">躲著他看不到你，但你也動不了</span>';
     cross.className=''; return;
   }
+  /* 拖著人的時候提示只有兩種：塞進去、或放手。
+     這時候其他互動全部不該出現，不然畫面會建議你去撿東西 —— 你手上有個人。 */
+  if(dragging){
+    aim=pickTarget();
+    var canStuff=aim&&aim.hide&&!aim.stuffed;
+    pr.className='on'+(canStuff?'':' forbid');
+    pr.innerHTML='<kbd>'+(IS_TOUCH?'拿':'E')+'</kbd>'+(canStuff?'塞進立櫃':'放開他')+
+      '<span class="s">'+(canStuff?(CFG.stuffStun+' 秒 · 這個櫃子之後不能躲')
+                                  :'拖到立櫃前面再按')+'</span>';
+    cross.className=canStuff?'hot':'';
+    return;
+  }
+  // 昏迷的店員就在腳邊：這個提示要蓋過所有物品提示
+  if(AI.state==='STUNNED'&&clerk.visible&&
+     Math.hypot(clerk.position.x-camera.position.x,clerk.position.z-camera.position.z)<2.0){
+    pr.className='on';
+    pr.innerHTML='<kbd>'+(IS_TOUCH?'拿':'E')+'</kbd>抓住他'+
+      '<span class="s">拖到立櫃裡可以關他 '+CFG.stuffStun+' 秒 · 剩 '+
+      Math.ceil(AI.stunT)+' 秒醒</span>';
+    cross.className='hot'; return;
+  }
   aim=pickTarget();
   if(aim){
     var d=aim.def, forb=d.tier==='forbidden';
-    if(aim.hide){
+    if(aim.officeDoor){
+      var hk=!!G.run.hasOffKey;
+      pr.className='on'+(hk?'':' forbid');
+      pr.innerHTML='<kbd>'+(IS_TOUCH?'拿':'E')+'</kbd>'+(hk?'開辦公室門':'辦公室（上鎖）')+
+        '<span class="s">'+(hk?('按住 '+CFG.officeUnlock+' 秒 · 中途被追就重來')
+                               :'鑰匙在賣場某處')+'</span>';
+      cross.className=hk?'hot':''; return;
+    }
+    if(aim.register){
+      if(aim.opened){ pr.className=''; cross.className=''; return; }
       pr.className='on';
-      pr.innerHTML='<kbd>'+(IS_TOUCH?'拿':'E')+'</kbd>躲進立櫃'+
-        '<span class="s">看得到外面一小塊，但不能移動</span>';
+      pr.innerHTML='<kbd>'+(IS_TOUCH?'拿':'E')+'</kbd>撬開收銀機'+
+        '<span class="p">$'+BY_ID.cashbox.v+'</span>'+
+        '<span class="s">按住 '+CFG.regOpen+' 秒 · 開的時候很吵</span>';
       cross.className='hot'; return;
+    }
+    if(aim.hide){
+      pr.className='on'+(aim.stuffed?' forbid':'');
+      pr.innerHTML='<kbd>'+(IS_TOUCH?'拿':'E')+'</kbd>'+
+        (aim.stuffed?'裡面有人':'躲進立櫃')+
+        '<span class="s">'+(aim.stuffed?'這個櫃子關著店員'
+                                       :'看得到外面一小塊，但不能移動')+'</span>';
+      cross.className=aim.stuffed?'':'hot'; return;
     }
     // 保險櫃：提示要講「開不開得了」，不是價格
     if(aim.safe){
@@ -3427,10 +3627,33 @@ function updateAim(){
   }else{ pr.className=''; cross.className=''; }
 }
 function tryInteract(){
+  if(holding){ cancelHold('停下來了'); return; }   // 按住中再按一次＝放棄
   if(keypadOpen){ closeKeypad(); return; }  // 鍵盤開著時 E 是「離開鍵盤」
   if(hiding){ exitHide(); return; }         // 躲著的時候 E 一律是「出來」
+  /* 拖行中：對著立櫃按 E 就是塞進去，對著別的地方按就是放手。
+     順序要在 aim 判斷之前，因為拖著人的時候 E 只有這兩種意思。 */
+  if(dragging){
+    if(aim&&aim.hide&&!aim.stuffed){ stuffClerk(aim); return; }
+    dropDrag('放開他了');
+    return;
+  }
+  // 站在昏迷的店員旁邊：E 是「抓住他」，優先於任何其他互動
+  if(AI.state==='STUNNED'&&tryDrag())return;
   if(!aim)return;
-  if(aim.hide){ enterHide(aim); return; }
+  if(aim.officeDoor){
+    if(!G.run.hasOffKey){ SFX.deny(); toast('鎖著 · 需要辦公室鑰匙'); return; }
+    startHold('door',aim,CFG.officeUnlock,'開鎖中 —— 別動');
+    return;
+  }
+  if(aim.register){
+    if(aim.opened)return;
+    startHold('reg',aim,CFG.regOpen,'撬收銀機 —— 很吵');
+    return;
+  }
+  if(aim.hide){
+    if(aim.stuffed){ toast('裡面塞著一個人'); return; }
+    enterHide(aim); return;
+  }
   if(aim.safe){
     if(aim.opened)return;
     if(aim.kind==='A')openSafeA(); else openKeypad();
@@ -3476,6 +3699,14 @@ function tryInteract(){
   if(aim.def.tier==='special'){
     aim.taken=true; scene.remove(aim.mesh);
     if(aim.halo)scene.remove(aim.halo); if(aim.tag)scene.remove(aim.tag);
+    if(aim.def.id==='offkey'){
+      G.run.hasOffKey=true; SFX.unlock(); makeNoise(aim.def.noise);
+      ev('office_key_found');
+      toast('辦公室鑰匙 · 東南角那扇門');
+      setObjective(G.run.unlocked?'可以脫身了 —— 或者去開辦公室':'繼續拿，順路去開辦公室',
+        false,'門要按住 '+CFG.officeUnlock+' 秒，中途被追就重來。裡面是收銀機。');
+      updateHUD(); updateAim(); return;
+    }
     G.run.hasKey=true; SFX.unlock(); makeNoise(aim.def.noise);
     ev('key_found');
     toast('拿到鑰匙 · 倉庫東牆的保險櫃打得開了');
@@ -3620,6 +3851,7 @@ function giveUpChase(msg){
 }
 function canSee(){
   if(hiding)return false;      // 躲在櫃子裡就是看不到，這是它唯一的價值
+  if(!clerk.visible)return false;   // 被塞在櫃子裡的人看不到任何東西
   var cx=clerk.position.x,cz=clerk.position.z,px=camera.position.x,pz=camera.position.z;
   var d=Math.hypot(px-cx,pz-cz);
   if(d>visionNow())return false;
@@ -3632,7 +3864,12 @@ function canSee(){
 }
 function setPathTo(x,z){
   var si=nearestNode(clerk.position.x,clerk.position.z), ti=nearestNode(x,z);
-  AI.path=findPath(si,ti).map(function(i){return {x:NODES[i].x,z:NODES[i].z};});
+  var p=findPath(si,ti);
+  /* 目標在圖上根本走不到（例如辦公室還鎖著）就直接放棄。
+     舊寫法不管有沒有路都會把終點 push 進去，於是店員會朝著那道鎖著的門
+     一路直線走過去撞牆，直到卡住偵測 1.2 秒後才清掉，然後再抽一次、再撞一次。 */
+  if(!p.length&&si!==ti){ AI.path=[]; return; }
+  AI.path=p.map(function(i){return {x:NODES[i].x,z:NODES[i].z};});
   AI.path.push({x:x,z:z});
 }
 function stepClerk(dt){
@@ -3655,10 +3892,26 @@ function stepClerk(dt){
   // 被電擊：整個人癱住，什麼都不做
   if(AI.state==='STUNNED'){
     AI.stunT-=dt;
-    clerk.rotation.z=Math.sin(now2()*22)*0.06;   // 抽動
+    if(dragging){ stepDrag(dt); return; }        // 拖行中由 stepDrag 接管位置
+    clerk.rotation.z=clerk.visible?Math.sin(now2()*22)*0.06:0;   // 抽動
     if(AI.stunT<=0){
       clerk.rotation.z=0; AI.state='SEARCH'; AI.searchT=0; AI.path=[];
       AI.calm=1.5; ev('taser_recovered');
+      if(!clerk.visible){
+        /* 從立櫃裡爬出來。推到門前 0.95m，跟玩家離開立櫃的處理一樣 ——
+           不然他會生成在櫃體內部然後被碰撞推到牆外面去。 */
+        clerk.visible=true;
+        var hs=hideObjs.filter(function(h){return h.stuffed;})[0];
+        if(hs){
+          /* 門朝 (sin ry, cos ry)，所以要往「＋」的方向推出來。
+             寫成負號的話他會被塞到櫃體後面 —— 那三個貼牆的立櫃後面就是牆，
+             他會在牆與櫃子之間被碰撞解算來回彈，永遠出不來。 */
+          clerk.position.set(hs.spot.x+Math.sin(hs.spot.ry)*0.95,0,
+                             hs.spot.z+Math.cos(hs.spot.ry)*0.95);
+          hs.stuffed=false;
+        }
+        SFX.deny(); toast('他從櫃子裡出來了');
+      }
     }
     return;
   }
@@ -3885,6 +4138,68 @@ function useTaser(){
   }
   updateHUD();
 }
+/* ---------- 拖行昏迷的店員 ----------
+   電擊槍原本是一個「必殺鍵」：按下去，威脅消失五秒，然後一切照舊。
+   加上拖行之後它變成一個布局的起手式 —— 命中只是第一步，
+   你還得決定要不要走過去、拖著他慢慢走、而且得在立櫃附近開打才有意義。
+   位置從此變成技術。
+
+   三個代價讓它不會變成無腦強勢：
+   走得慢（0.55x）、不能衝刺、而且一路都在發出聲音。
+   還有一個時間壓力：昏迷時間到了他就地掙脫，而你正好站在他旁邊。 */
+var dragging=false;
+function tryDrag(){
+  var r=G.run; if(!r||G.phase!=='play')return false;
+  /* clerk.visible 這個條件不能少：已經塞進櫃子的他也是 STUNNED 而且就在櫃子的座標上，
+     沒有這道關卡的話你站在櫃子前面按 E 會「再抓一次」一個看不見的人，
+     然後他在拖行中醒來 —— 變成一個隱形但抓得到你的店員。 */
+  if(AI.state!=='STUNNED'||!clerk.visible)return false;
+  var d=Math.hypot(clerk.position.x-camera.position.x,clerk.position.z-camera.position.z);
+  if(d>2.0)return false;
+  dragging=true;
+  document.body.classList.add('dragging');
+  SFX.deny(); ev('drag_start');
+  toast('抓住他了 · 拖到立櫃前再按一次');
+  return true;
+}
+function dropDrag(msg){
+  if(!dragging)return;
+  dragging=false;
+  document.body.classList.remove('dragging');
+  if(msg)toast(msg);
+}
+function stuffClerk(hideObj){
+  dragging=false;
+  document.body.classList.remove('dragging');
+  AI.stunT=CFG.stuffStun; AI.state='STUNNED'; AI.path=[]; AI.chaseT=0; AI.aware=0;
+  clerk.visible=false;                       // 他在櫃子裡
+  clerk.position.set(hideObj.spot.x,0,hideObj.spot.z);
+  hideObj.stuffed=true;                      // 這個櫃子這局不能再躲人
+  SFX.unlock(); makeNoise(CFG.hearWalk*0.8);
+  ev('clerk_stuffed',{sec:CFG.stuffStun});
+  showBeat('關進去了',CFG.stuffStun+' 秒',
+    '這個櫃子這局不能再躲了。',3200);
+  updateHUD(); updateAim();
+}
+// 拖行中：店員跟在玩家後面一點的位置
+function stepDrag(dt){
+  if(!dragging)return;
+  if(AI.state!=='STUNNED'||AI.stunT<=0){
+    // 拖到一半醒了 —— 而你就站在他旁邊
+    dropDrag('他醒了！');
+    clerk.visible=true; clerk.rotation.z=0;   // 這條路徑繞過了正常的甦醒處理
+    AI.state='CHASE'; AI.aware=1; AI.chaseT=0; AI.timer=0;
+    AI.lastSeen={x:camera.position.x,z:camera.position.z}; AI.path=[];
+    droneOn(); ev('drag_broke');
+    return;
+  }
+  camera.getWorldDirection(fwd);
+  var tx=camera.position.x-fwd.x*0.95, tz=camera.position.z-fwd.z*0.95;
+  clerk.position.x+=(tx-clerk.position.x)*Math.min(1,dt*9);
+  clerk.position.z+=(tz-clerk.position.z)*Math.min(1,dt*9);
+  clerk.rotation.y=Math.atan2(-fwd.x,-fwd.z);
+  makeNoise(CFG.hearWalk*0.5);               // 拖著一個人不可能安靜
+}
 function useShrink(){
   var r=G.run; if(!r||G.phase!=='play')return;
   if(!G.upgrades.shrink){toast('你沒有縮小劑');return;}
@@ -3952,7 +4267,9 @@ function stepPlayer(dt){
   var load=G.run.used/capacityNow();
   var loadMul=(load>=CFG.loadThreshold)?(1-pen):1;
   if(shrinkT>0)loadMul*=0.8;
-  var wantSprint=!!(keys['shift']||keys['shiftleft']);
+  // 拖著一個人：慢一截，而且衝不起來
+  if(dragging)loadMul*=CFG.dragSpeed;
+  var wantSprint=!!(keys['shift']||keys['shiftleft'])&&!dragging;
   var wantCrouch=!!(keys['c']||tDuck);
   var stickMag=(IS_TOUCH&&touchMove.mag>0)?touchMove.mag:0;
 
@@ -4979,9 +5296,14 @@ function frame(now){
         stopT-=dt;
         $('stopnum').textContent=Math.max(0,stopT).toFixed(1);
         if(stopT<=0)endStop();
+        /* stepDrag 平常掛在 stepClerk 的 STUNNED 分支裡，而這裡整個跳過 stepClerk。
+           不補這一行的話，午夜鐘期間你拖著人走，人留在原地，
+           時間恢復的瞬間他會橫越整個賣場瞬移到你背後。 */
+        if(dragging)stepDrag(dt);
       }else{
         stepClerk(dt);
       }
+      stepHold(dt);
       // 聽者跟著相機 —— 位置與朝向都要更新，不然轉頭時左右不會跟著換
       updateListener();
       /* 櫃子裡的倒數要看得見。
@@ -5034,7 +5356,11 @@ function frame(now){
   var t=animT;
   for(var i=0;i<itemMeshes.length;i++){
     var o=itemMeshes[i];
-    if(o.taken||o.safe||o.hide)continue;    // 保險箱與立櫃是固定物件，不浮動
+    /* 固定物件不參加浮動。門與收銀機一定要在這條名單裡 ——
+       它們沒有 baseY（那是 spawnItem 才會設的），
+       漏掉的話 undefined + sin() = NaN，物件的矩陣整個爛掉：
+       畫面上消失、射線也打不到，整個辦公室等於不存在。 */
+    if(o.taken||o.safe||o.hide||o.officeDoor||o.register)continue;
     if(o.def.tier!=='common'){
       o.mesh.position.y=o.baseY+Math.sin(t*1.7+i)*0.045;
       o.mesh.rotation.y+=0.005;
