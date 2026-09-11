@@ -741,7 +741,7 @@
     <div class="loop">
       <div><b>一</b>順走東西，提袋裡的金額往上跳</div>
       <div><b>二</b>拿到 6 件，後門解鎖 —— 現在就能乾淨脫身</div>
-      <div><b>三</b>但冷凍室有一件非賣品，拿了會出事</div>
+      <div><b>三</b>但後場深處有三件非賣品，拿了會出事</div>
       <div><b>四</b>脫身、變賣、添裝備，再幹一次</div>
     </div>
     <h4 class="sh">幾個活下來的訣竅</h4>
@@ -761,6 +761,9 @@
         單件只值 $20，湊齊三件會當場組裝成 $400 —— 但三件散在賣場的三個角落</div>
       <div><b>·</b><b style="color:var(--tube)">戴耳機</b>：店員的腳步聲有方向也有距離，
         20m 內、沒被牆或高貨架擋住就聽得到。閉著眼睛也能知道他在你左邊還是右邊</div>
+      <div><b>·</b>後場兩間房都分成前後兩段，中間各有一個缺口。
+        <b style="color:var(--forbid)">三件非賣品全部在裡段</b>，每局位置不同 ——
+        缺口前面各有一台監視器，可以先確認他不在裡面再進去；進去之後就只能靠耳朵</div>
       <div><b>·</b>冷凍室的壓縮機一直在響，那是店裡唯一固定的聲音地標。
         後門解鎖後會發出低頻脈衝，停電時會變快 —— 燈滅了也走得回去</div>
       <div><b>·</b>被發現不一定會死 —— 他追一段時間抓不到就會放棄</div>
@@ -925,7 +928,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v5.6';
+var BUILD='v6.0';
 
 /* 手機上沒有 console，一旦初始化丟錯就只剩黑畫面、完全無從查起。
    所以把錯誤直接印在畫面上。 */
@@ -1263,24 +1266,57 @@ function box(x0,z0,x1,z1,h,kind){
             h:h,kind:kind||'wall'});
   return COL[COL.length-1];
 }
-// 外牆
-box(-20.4,15.6,20.4,16.4,3.2); box(-20.4,-16.4,20.4,-15.6,3.2);
-box(-20.4,-16.4,-19.6,16.4,3.2); box(19.6,-16.4,20.4,16.4,3.2);
+/* 外牆。北牆從 z=-15.6 往後推到 z=-21.0 ——
+   後場兩間房因此從 5.2m 深變成 10.6m 深，大約兩倍。
+
+   為什麼要加深：數據顯示 extractItems 從 6 降到 4 之後，
+   四件在賣場前段就湊滿了，玩家 13 局只看到非賣品一次。
+   最高價值的東西必須放在「非去不可」的地方，光調數字沒有用。
+   但純粹放大等於更多無聊的走路，所以深處那一半都加了隔間與貨架， */
+box(-20.4,15.6,20.4,16.4,3.2); box(-20.4,-21.8,20.4,-21.0,3.2);
+box(-20.4,-21.8,-19.6,16.4,3.2); box(19.6,-21.8,20.4,16.4,3.2);
 // 後場隔牆（兩個門口：冷凍室 x-15.5~-12.5，倉庫 x8~11）
 box(-19.6,-10.4,-15.5,-9.6,3.2); box(-12.5,-10.4,8,-9.6,3.2); box(11,-10.4,19.6,-9.6,3.2);
-// 冷凍室 / 倉庫分隔
-box(-6.4,-15.6,-5.6,-9.6,3.2);
+// 冷凍室 / 倉庫分隔（跟著北牆一起拉長）
+box(-6.4,-21.0,-5.6,-9.6,3.2);
 // 貨架區不在這裡蓋 —— 它每次下手都重組（見 LAYOUTS）
 var XS=[-14,-8.4,-2.8,2.8,8.4,14], SEGS=[[-6.6,-1.2],[1.2,7.2]];
 // 收銀櫃檯（中央留入口通道）
 box(-10,10.8,-4,12.0,1.0,'shelf'); box(4,10.8,10,12.0,1.0,'shelf');
-// 冷凍室內部
+
+/* ---------- 冷凍室（x -19.6~-6.4, z -21.0~-10.4） ----------
+   淺的一半維持原樣，深的一半用一道隔牆切開，只留 x -13~-6.4 的缺口。
+   所以你不是走進一個大房間，是走進一個房間、再找到通往裡間的路。 */
 box(-19.0,-15.0,-17.4,-10.8,2.0,'shelf'); box(-15.6,-15.0,-14.0,-11.6,2.0,'shelf');
 box(-13.0,-14.8,-9.0,-13.8,1.2,'shelf');
-// 冷凍室最深處刻意留一條 1.8m 寬的死路走道 —— 禁忌品放在盡頭的地上，只有一個出口
-// 倉庫棧板
+/* 裡間：貨架全部貼著北牆排成一列（深 0.8m），中間留一條 2.4m 的橫向走道。
+
+   第一版我把貨架往房間中間放，結果貨架跟隔牆之間只剩 1.0m 的縫 ——
+   玩家半徑 0.36 勉強擠得過，店員半徑 0.5 過不去，於是整個裡間變成
+   絕對安全的藏寶室。灰盒階段最容易犯的錯就是這個：
+   看起來像通道的東西，實際上窄到只有玩家過得去。
+   現在最窄的地方是 2.4m，兩個人都走得過。 */
+box(-19.6,-17.4,-13.0,-16.6,2.6);            // 內間隔牆，缺口在東側 x -13~-6.4
+box(-18.6,-20.6,-16.2,-19.8,1.6,'shelf');
+box(-13.0,-20.6,-10.6,-19.8,1.6,'shelf');
+box(-9.0,-20.6,-7.0,-19.8,1.6,'shelf');
+
+/* ---------- 倉庫（x -5.6~19.6, z -21.0~-10.4） ----------
+   同樣切成前後兩段，缺口在 x 5~9 —— 跟冷凍室的缺口在相反側，
+   所以兩間房的動線不會長得一樣。 */
 box(-4.0,-15.0,-1.0,-12.5,1.6,'shelf'); box(1.0,-15.0,4.0,-13.2,1.2,'shelf');
-box(12.5,-15.0,16.5,-12.0,1.9,'shelf');
+/* 這排棧板的南緣是 -12.4 而不是 -12.0：
+   它跟隔牆之間那條走道要留到 2.0m，waypoint 才放得進去。
+   -12.0 的時候走道只有 1.6m，扣掉 0.62 的淨空之後可用的 z 只剩 0.36m 寬，
+   結果整條倉庫東側（含店員的起點 17.6,-11.2）一個節點都沒有。 */
+box(12.5,-15.0,16.5,-12.4,1.9,'shelf');
+box(-5.6,-17.2,5.0,-16.4,2.6);               // 貨架牆，缺口在 x 5~9
+box(9.0,-17.2,19.6,-16.4,2.6);
+// 裡段同樣貼北牆排一列，中間留 2.6m 橫向走道
+box(-4.6,-20.6,-1.6,-19.8,1.8,'shelf');
+box(2.0,-20.6,5.0,-19.8,1.8,'shelf');
+box(9.0,-20.6,12.0,-19.8,1.8,'shelf');
+box(15.0,-20.6,18.4,-19.8,1.8,'shelf');
 
 var EXIT={x0:-3.5,z0:13.8,x1:3.5,z1:15.4};
 var SPAWN={x:0,z:13.4,yaw:0};
@@ -1408,14 +1444,15 @@ var MAT={
   skin :new THREE.MeshLambertMaterial({color:0xD8C0A4})
 };
 
-// 地板
-var floor=new THREE.Mesh(new THREE.PlaneGeometry(40,32),MAT.floor);
-floor.rotation.x=-Math.PI/2; floor.position.set(0,0,0.2); scene.add(floor);
-var coldFloor=new THREE.Mesh(new THREE.PlaneGeometry(13.2,5.6),MAT.cold);
-coldFloor.rotation.x=-Math.PI/2; coldFloor.position.set(-13,0.02,-12.8); scene.add(coldFloor);
-var grid=new THREE.GridHelper(40,20,0x333D34,0x2C352D);
+/* 地板。北牆推到 z=-21.8 之後這三塊都要跟著加大 ——
+   漏掉的話後場裡段會是一片虛空，玩家會直接看穿到場景外面。 */
+var floor=new THREE.Mesh(new THREE.PlaneGeometry(40,39),MAT.floor);
+floor.rotation.x=-Math.PI/2; floor.position.set(0,0,-3.3); scene.add(floor);
+var coldFloor=new THREE.Mesh(new THREE.PlaneGeometry(13.2,10.8),MAT.cold);
+coldFloor.rotation.x=-Math.PI/2; coldFloor.position.set(-13,0.02,-15.6); scene.add(coldFloor);
+var grid=new THREE.GridHelper(44,22,0x333D34,0x2C352D);
 grid.material.transparent=true; grid.material.opacity=0.55;
-grid.position.set(0,0.04,0.2); scene.add(grid);
+grid.position.set(0,0.04,-3.0); scene.add(grid);
 
 // 外殼（牆、櫃檯、冷凍室、倉庫）—— 建一次就好
 var boxGeo=new THREE.BoxGeometry(1,1,1);
@@ -1487,7 +1524,10 @@ function buildAisles(seed){
 }
 
 // 日光燈管 + 點光源
-var TUBES=[[-13,10],[0,2],[13,10],[-13,-2],[13,-2],[0,9],[-14,-13],[10,-13],[0,-6]];
+/* 後四支是後場的。裡段（z<-16）刻意只給兩支、而且分得很開 ——
+   越深越暗是這兩間房的賣點，但完全不給燈就變成只能靠手電筒的迷宮。 */
+var TUBES=[[-13,10],[0,2],[13,10],[-13,-2],[13,-2],[0,9],[0,-6],
+           [-14,-13],[10,-13],[-15,-19],[8,-19]];
 var lamps=[],tubeMeshes=[];
 var tubeGeo=new THREE.BoxGeometry(3.4,0.12,0.34);
 TUBES.forEach(function(p){
@@ -1833,6 +1873,11 @@ monitor(-7,2.50,11.6,Math.PI);      // 收銀區西側櫃檯上方，朝北（�
 monitor(-19.15,2.35,0,Math.PI/2);   // 西側牆面，朝東
 monitor(-17.2,2.40,3,Math.PI);      // 西側逃生走道，朝北（往出口跑的時候看得到）
 monitor(14,2.50,-14.8);             // 倉庫，朝南
+/* 兩間房的裡段沒有監視器 —— 走進去就是瞎的，那是它的代價。
+   但缺口「前面」各放一台：你可以先確認他不在裡面再進去，
+   進去之後就只能靠耳朵。偵查與承諾分成兩個動作。 */
+monitor(-9.8,2.45,-16.2);           // 冷凍室內間缺口前，朝南
+monitor(7.0,2.50,-16.2);            // 倉庫內段缺口前，朝南
 // 冷凍室裡面：拿非賣品前後最需要知道他在哪的地方
 monitor(-11.5,2.45,-12.0,Math.PI/2*3);
 drawStatic(); camTex.needsUpdate=true;   // 第一格先給雜訊，主迴圈起來後就換成即時畫面
@@ -1989,11 +2034,25 @@ function buildWaypoints(){
       if(freeAt(x,z,0.72))NODES.push({x:+x.toFixed(2),z:+z.toFixed(2)});
     }
   }
-  // 後場（冷凍室與倉庫）節點比較稀疏，手工補足
-  [[-16.5,-11.4],[-16.5,-13.4],[-13.8,-11.0],[-11.0,-11.5],[-8.0,-11.4],
-   [-2.5,-11.0],[2.0,-11.6],[7.0,-11.4],[9.5,-10.8],[14.0,-10.8],[18.0,-13.4],
-   [-14.0,-9.9],[9.5,-9.9]
-  ].forEach(function(p){ if(freeAt(p[0],p[1],0.66))NODES.push({x:p[0],z:p[1]}); });
+  /* 後場的 z 用「指定幾條走道」而不是等距掃描。
+     等距掃描會把節點灑在貨架與隔牆的邊緣上，然後被 freeAt 幾乎全部刷掉 ——
+     實測第一版整個冷凍室裡間只活下來一個節點，而且跟前段連不起來。
+     直接指定三條真的存在的橫向走道，比調 step 可靠得多。 */
+  [-18.6, -14.6, -11.4].forEach(function(bz){
+    for(var bx=-18.4;bx<=18.4;bx+=2.2){
+      if(freeAt(bx,bz,0.62))NODES.push({x:+bx.toFixed(2),z:bz});
+    }
+  });
+  /* 手工補的三組節點，每一組都是「沒有它整塊就會斷開」的關鍵：
+     門口（賣場↔後場）、冷凍室內間缺口、倉庫內段缺口。
+     缺口那幾個特別重要 —— 隔牆兩側的節點距離如果超過 5.2 就連不上，
+     店員永遠進不了裡間，非賣品就變成免費的。 */
+  // -10.7 而不是 -10.9：這個節點是冷凍室門口唯一的連結點，
+  // 放 -10.9 的話離貨架 F2 的淨空只剩 8 公分，貨架稍微一動它就消失
+  [[-14.0,-9.4],[-14.0,-10.7],[9.5,-9.4],[9.5,-10.9],    // 兩個門口
+   [-7.8,-13.2],[-7.8,-15.8],[-9.8,-17.8],               // 冷凍室缺口那條路
+   [6.9,-15.6],[6.9,-18.2]                               // 倉庫缺口那條路
+  ].forEach(function(p){ if(freeAt(p[0],p[1],0.62))NODES.push({x:p[0],z:p[1]}); });
 
   NODES.forEach(function(n){n.adj=[];});
   for(var a=0;a<NODES.length;a++)for(var b=a+1;b<NODES.length;b++){
@@ -2572,10 +2631,17 @@ function clearItems(){
   itemMeshes.forEach(function(o){ scene.remove(o.mesh);
     if(o.halo)scene.remove(o.halo); if(o.tag)scene.remove(o.tag); });
   itemMeshes=[]; safeA=null; safeB=null;
-  if(beacon){scene.remove(beacon);beacon=null;}
+  beacons.forEach(function(b){scene.remove(b);}); beacons=[];
   forbidGlow.intensity=0;
 }
-var beacon=null;
+/* 非賣品的候選位置。全部落在隔牆之後的裡段（z < -16），
+   前四個在冷凍室、後四個在倉庫 —— 每局抽三個，所以兩間房一定都有東西，
+   但你不會知道是哪三個點。 */
+var FORBID_SPOTS=[
+  [-17.4,-18.6],[-14.6,-18.6],[-11.0,-18.6],[-8.2,-18.5],   // 冷凍室裡間
+  [ -3.2,-18.5],[  1.0,-18.5],[ 13.4,-18.5],[17.4,-18.5]    // 倉庫裡段
+];
+var beacons=[];
 function rng(seed){ var s=seed*9301+49297; return function(){ s=(s*9301+49297)%233280; return s/233280; }; }
 
 function buildItems(seed){
@@ -2674,14 +2740,26 @@ function buildItems(seed){
   spawnItem(BY_ID.milk,  6.0,1.0,11.4);
   buildSafes(hasKeyThisRun);
   buildHides();
-  // 禁忌品固定位置：冷凍室死路盡頭的地上
-  spawnItem(BY_ID.unknown,-16.5,0,-13.3);
+
+  /* 非賣品改成三件，隨機散在後場兩間房的「裡段」。
+
+     位置全部在新的深處（z < -16），也就是隔牆後面那一半 ——
+     所以拿它們不是繞個彎，是真的要穿過兩道缺口進到最裡面。
+     三件分開放也代表：第一件拿了就會停電，之後你是在警報狀態下
+     決定要不要去拿第二、第三件。那才是「還要不要再貪一次」的完整形狀。 */
+  var fpool=FORBID_SPOTS.slice();
+  shuffle(fpool);
+  var fpick=fpool.slice(0,3);
+  fpick.forEach(function(p){
+    spawnItem(BY_ID.unknown,p[0],0,p[1]);
+    // 光柱高過牆面，全場都看得見 —— 這是誘因，不是裝飾
+    var bm=new THREE.MeshBasicMaterial({color:0xC77DFF,transparent:true,opacity:.13,
+      blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide});
+    var b=new THREE.Mesh(new THREE.CylinderGeometry(0.7,1.1,16,10,1,true),bm);
+    b.position.set(p[0],8,p[1]); scene.add(b); beacons.push(b);
+  });
+  forbidGlow.position.set(fpick[0][0],1.2,fpick[0][1]);
   forbidGlow.intensity=1.1;
-  // 光柱：高過牆面，全場都看得見的誘因
-  var bm=new THREE.MeshBasicMaterial({color:0xC77DFF,transparent:true,opacity:.13,
-    blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide});
-  beacon=new THREE.Mesh(new THREE.CylinderGeometry(0.7,1.1,16,10,1,true),bm);
-  beacon.position.set(-16.5,8,-13.3); scene.add(beacon);
 }
 /* ---------- 躲藏處 ----------
    立櫃靠牆擺，不佔走道也不影響貨架重組。
@@ -3417,13 +3495,30 @@ function tryInteract(){
   if(d.set)handleSetPickup(r,d);
 
   if(d.tier==='forbidden'){
-    r.forbiddenTaken=true; r.forbiddenAt=r.t;
+    r.forbidCount=(r.forbidCount||0)+1;
+    r.forbiddenAt=r.forbiddenAt==null?r.t:r.forbiddenAt;
     STATS.forbiddenPicked++;
-    if(r.unlocked)STATS.pickedAfterUnlock++;
-    ev('forbidden_picked',{afterUnlock:r.unlocked});
-    if(beacon){scene.remove(beacon);beacon=null;}
-    forbidGlow.intensity=0;
-    triggerForbidden();
+    if(r.unlocked&&!r.forbiddenTaken)STATS.pickedAfterUnlock++;
+    ev('forbidden_picked',{afterUnlock:r.unlocked,n:r.forbidCount});
+    // 把這一件的光柱收掉（距離最近的那根），剩下的留著 —— 它們是下一個誘因
+    var bi=-1,bd=1e9;
+    beacons.forEach(function(b,i){
+      var dd=Math.hypot(b.position.x-aim.mesh.position.x,b.position.z-aim.mesh.position.z);
+      if(dd<bd){bd=dd;bi=i;}
+    });
+    if(bi>=0){ scene.remove(beacons[bi]); beacons.splice(bi,1); }
+
+    if(!r.forbiddenTaken){
+      // 第一件才觸發警報。之後每一件都是在停電狀態下做的決定。
+      r.forbiddenTaken=true;
+      forbidGlow.intensity=0;
+      triggerForbidden();
+    }else{
+      SFX.forbidden();
+      showBeat('第 '+r.forbidCount+' 件',
+        beacons.length?('還有 '+beacons.length+' 道紫光'):'三件都拿到了',
+        beacons.length?'警報已經在響了。':'現在只剩走出去。',3200);
+    }
   }
   if(!r.unlocked&&r.count>=CFG.extractItems)unlockExit();
   updateHUD();
@@ -3462,9 +3557,9 @@ function unlockExit(){
   if(r.forbiddenTaken){ setObjective('快回後門！',true); return; }
   // 這就是整個原型要測的那一刻：把選擇明白攤在玩家面前
   setObjective('你現在就可以乾淨脫身了',false,
-    '或者，再往裡面走一點。冷凍室那道紫光是一件 $'+forbiddenValueNow()+' 的非賣品。');
+    '或者往後場走。那邊有三道紫光，每一道是 $'+forbiddenValueNow()+'。');
   showBeat('現在就能走 · 提袋 $'+r.value,
-    '但冷凍室那道紫光值 $'+forbiddenValueNow()+'。',
+    '後場那三道紫光，每道 $'+forbiddenValueNow()+'。',
     '要走，還是再進去一次？',6000);
 }
 function triggerForbidden(){
@@ -4936,7 +5031,9 @@ function frame(now){
       o.tag.visible=vis>0.02;
     }
   }
-  if(beacon)beacon.material.opacity=0.10+Math.sin(t*1.5)*0.045;
+  // 每道光柱錯開相位，三根一起呼吸會像裝飾，錯開才像三個獨立的東西
+  for(var bi2=0;bi2<beacons.length;bi2++)
+    beacons[bi2].material.opacity=0.10+Math.sin(t*1.5+bi2*2.1)*0.045;
   renderer.render(scene,camera);
 }
 requestAnimationFrame(frame);
