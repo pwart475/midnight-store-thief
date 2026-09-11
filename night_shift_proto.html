@@ -155,8 +155,11 @@
     display:block;margin-bottom:4px}
   #pa em{font-style:normal}
 
+  /* 停電相位的紅暈。收窄也調淡了 ——
+     它原本疊在已經很暗的畫面上，四周 40px 的擴散幾乎把走道兩側吃掉，
+     而被追時 #chasefx 還會再疊一層紅。氣氛不該用「看不見」來換。 */
   #vignette{position:absolute;inset:0;opacity:0;transition:opacity .5s;
-    box-shadow:inset 0 0 190px 40px rgba(255,59,48,.42)}
+    box-shadow:inset 0 0 130px 8px rgba(255,59,48,.26)}
   #vignette.on{opacity:1}
 
   /* 正在被追：畫面四周閃紅。
@@ -601,9 +604,14 @@
   #btnJump{width:68px;height:68px;font-size:17px;
     right:calc(var(--sar) + 112px);bottom:calc(var(--sab) + 30px);
     border-color:var(--fresh);color:var(--fresh)}
-  #btnTaser{width:60px;height:60px;font-size:16px;
+  /* 電擊槍那顆做大一點：它要同時裝得下「電」和下面那行 1/3 或 3發 */
+  #btnTaser{width:66px;height:66px;font-size:16px;flex-direction:column;line-height:1;
     right:calc(var(--sar) + 116px);bottom:calc(var(--sab) + 112px);
     border-color:#7FE3F5;color:#7FE3F5}
+  #btnTaser small{display:block;margin-top:3px;font-size:10px;font-weight:700;
+    letter-spacing:.02em;opacity:.9}
+  /* 還沒組好、或沒子彈：壓暗，但仍然看得到進度 */
+  #btnTaser.dry{border-color:#3E5A60;color:#5E8A92}
   #btnShrink{width:60px;height:60px;font-size:16px;
     right:calc(var(--sar) + 190px);bottom:calc(var(--sab) + 60px);
     border-color:var(--forbid);color:var(--forbid)}
@@ -770,6 +778,12 @@
       <div><b>·</b>鑰匙<b style="color:var(--price)">每次只有一半機率會出現</b>，位置隨機 ——
         沒看到鑰匙，這條線今晚就是斷的，別浪費時間繞過去</div>
       <div><b>·</b>每次下手商品位置都重新洗牌，記路線沒有用</div>
+      <div><b>·</b>店裡每關有 70% 機率出現<b style="color:#7FE3F5">一個電擊槍部件</b>（握把 / 電池 / 電極），
+        地上或架上都有可能。<b>一局最多只會出現一個</b>，撿到就等下一關 ——
+        <b>湊滿三件</b>組成一把帶 3 發的電擊槍。部件不佔提袋格子，但
+        <b style="color:var(--danger)">被抓會連槍一起沒收</b></div>
+      <div><b>·</b>子彈打完之後：藏身處可以花 $300 補 3 發，
+        或者在店裡撿（有槍沒彈的時候，每關 20% 機率出現彈藥）</div>
       <div><b>·</b>藏身處的<b style="color:var(--price)">貨全部公開</b>，最便宜到最貴一次看完 ——
         你會知道還差多少錢，也會知道自己在為什麼多拿那一件</div>
       <div><b>·</b>架上有一樣<b style="color:#FFF3C4">$3000 的東西看不到名字</b>。
@@ -788,7 +802,7 @@
       <div><b>C</b>潛行 · 幾乎沒聲音</div>
       <div><b>E</b>塞進提袋</div>
       <div><b>空白</b>小跳（需購買）</div>
-      <div><b>Q</b>電擊槍（需購買）</div>
+      <div><b>Q</b>電擊槍（撿滿三件部件）</div>
       <div><b>R</b>縮小劑（需購買）</div>
       <div><b>X</b>午夜鐘（需購買）</div>
       <div><b>F</b>全螢幕</div>
@@ -911,7 +925,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v5.3';
+var BUILD='v5.6';
 
 /* 手機上沒有 console，一旦初始化丟錯就只剩黑畫面、完全無從查起。
    所以把錯誤直接印在畫面上。 */
@@ -960,6 +974,18 @@ var DEF = {
   // 小跳：峰值 0.68m，視點衝到 2.33m，剛好越過 1.9m 的貨架看一眼
   jumpSpeed:4.2, gravity:13,
   safeChance:0.5, keyChance:0.5,
+  /* 警報相位（停電）的亮度，是平常的幾成。
+     原本是硬寫的 0.14 / 0.05，大約只有平常的兩成，而且閃爍有 78% 的時間
+     停在暗的那一格 —— 結果不是「緊張」，是根本看不到路。
+     0.45 還是明顯停電了，但你認得出走道與貨架。 */
+  alarmLight:0.45,
+  // 警報時非追擊狀態的移動倍率。他不是在追你，是在快步巡邏。
+  alarmPatrolMul:1.5,
+  /* 電擊槍：四個部件收集制。
+     partChance 是每關出現一個部件的機率，而且只出你還沒撿到的那幾種 ——
+     所以四關左右一定湊得完，不會卡在「一直重複掉同一個」。
+     ammoChance 是槍已經組好、但沒子彈時，店內出現彈藥的機率。 */
+  tzPartChance:0.70, tzAmmoChance:0.20, tzAmmoCost:300, tzAmmoPer:3,
   /* 密碼要不要留在畫面上。
      開著（1）＝ 這條鏈的代價是「橫跨整個後場的距離與風險」。
      關掉（0）＝ 再加一層記憶負擔。
@@ -1032,12 +1058,18 @@ var KNOBS = [
   ['k-clerk','chaseGiveUp','追多久就放棄',3,30,1,' s'],
   ['k-clerk','calmTime','放棄後不理你',0,20,1,' s'],
   ['k-clerk','hideGiveUp','躲櫃子時多久放棄',2,20,.5,' s'],
+  ['k-clerk','alarmPatrolMul','警報時非追擊速度 ×',1,3,.1,'x'],
+  ['k-econ','alarmLight','警報時亮度（平常的幾成）',0.1,1,.05,''],
   ['k-clerk','catchDist','抓到距離',.8,3,.05,' m'],
   ['k-clerk','hearSprint','衝刺聲響半徑',4,34,1,' m'],
   ['k-econ','capacity','提袋格數（基礎）',4,30,1,' 格'],
   ['k-econ','gearLost','被抓沒收幾件裝備',0,6,1,' 件'],
   ['k-econ','keyChance','鑰匙出現機率',0,1,.05,''],
   ['k-econ','codeHint','密碼留在畫面上',0,1,1,''],
+  ['k-econ','tzPartChance','電擊槍部件出現機率',0,1,.05,''],
+  ['k-econ','tzAmmoChance','店內彈藥出現機率',0,1,.05,''],
+  ['k-econ','tzAmmoCost','彈藥價格',50,800,10,''],
+  ['k-econ','tzAmmoPer','一次補幾發',1,10,1,' 發'],
   ['k-econ','setChance','三件組出現機率',0,1,.05,''],
   ['k-econ','safeChance','保險箱中獎機率',0,1,.05,''],
   ['k-clerk','taserRange','電擊槍射程',5,40,1,' m'],
@@ -1081,6 +1113,13 @@ var ITEMS = [
   {id:'unknown', name:'午夜限定・不明肉品', v:120, slots:2, tier:'forbidden', noise:34, shape:'blob', color:0x8E4BC4},
   // 特殊物件：鑰匙不佔格子也沒價值，它的價值在保險箱裡
   {id:'safekey', name:'保險箱鑰匙',   v:0,  slots:0, tier:'special',  noise:3, shape:'key',  color:0x7FE3F5},
+  /* 電擊槍的四個部件。跟三件組不一樣的地方是：
+     它跨局累積，而且不佔提袋格子 —— 它不是貨，是你自己的裝備。
+     一件都不值錢（v:0），所以拿它純粹是為了那把槍，不是為了這局的收入。 */
+  {id:'tz_grip',  name:'電擊槍・握把', v:0, slots:0, tier:'gear', noise:3, shape:'tzgrip',  color:0x7FE3F5},
+  {id:'tz_cell',  name:'電擊槍・電池', v:0, slots:0, tier:'gear', noise:4, shape:'tzcell',  color:0x7FE3F5},
+  {id:'tz_probe', name:'電擊槍・電極', v:0, slots:0, tier:'gear', noise:3, shape:'tzprobe', color:0x7FE3F5},
+  {id:'tz_ammo',  name:'電擊槍彈藥 ×3', v:0, slots:0, tier:'gear', noise:3, shape:'tzammo', color:0xFFC93C, ammo:3},
   {id:'watch',   name:'瑞士錶',       v:210, slots:1, tier:'vault',   noise:2, shape:'can',  color:0xE8D9A0},
   {id:'goldbar', name:'金條',         v:260, slots:2, tier:'vault',   noise:6, shape:'bar',  color:0xFFC93C},
   {id:'coins',   name:'零錢包',       v:45,  slots:1, tier:'rare',    noise:5, shape:'bag',  color:0xB9A66B},
@@ -1095,6 +1134,14 @@ var ITEMS = [
   {id:'bot_full', name:'合金機器人（完整）', v:400, slots:2, tier:'vault', noise:8,
     shape:'botfull', color:0x9FBBD8}
 ];
+/* 電擊槍的四個部件與相關查詢。
+   刻意跟 SET_PARTS（三件組機器人）分開：機器人是「這局的貨」，
+   組起來馬上變成錢；電擊槍是「跨局的裝備」，組起來變成一個動詞。 */
+var TZ_PARTS=['tz_grip','tz_cell','tz_probe'];
+function tzHave(){ return TZ_PARTS.filter(function(id){return G.tzParts[id];}).length; }
+function tzReady(){ return tzHave()>=TZ_PARTS.length; }
+function tzMissing(){ return TZ_PARTS.filter(function(id){return !G.tzParts[id];}); }
+
 var SET_PARTS={bot:['bot_head','bot_body','bot_arm']};
 var SET_RESULT={bot:'bot_full'};
 var SET_NAME={bot:'合金機器人'};
@@ -1115,8 +1162,12 @@ var UPGRADES = [
   {id:'bag2',    name:'加大側袋',   cost:900, desc:'提袋再 +6 格。但別忘了越重越慢。'},
   {id:'shrink',  name:'縮小劑',     cost:1000, consumable:1,
     desc:'每次下手可用 1 次。'+CFG.shrinkTime+' 秒內縮到 0.3 倍，矮到幾乎不會被看見。'},
-  {id:'taser',   name:'電擊槍',     cost:1200, consumable:3,
-    desc:'每次下手 3 發。命中店員讓他當場癱 '+CFG.taserStun+' 秒。'},
+  /* 電擊槍本體不賣了 —— 那是店裡撿四個部件湊出來的。
+     架上只賣子彈，而且只有在你已經有槍的時候才會出現（見 renderShop）。
+     這樣 $300 買的不是「一個能力」，是「讓已經有的能力還能用」。 */
+  {id:'tz_ammo_buy', name:'電擊槍彈藥 ×'+DEF.tzAmmoPer, cost:DEF.tzAmmoCost,
+    repeat:1, needsTz:1,
+    desc:'補 '+DEF.tzAmmoPer+' 發。店裡也有機會撿到，但那是運氣，這個是保險。'},
   {id:'revive',  name:'備用鑰匙',   cost:1500, consumable:1,
     desc:'被抓時免費掙脫 1 次，提袋保住 —— 但你會被丟到離後門最遠的地方。'},
   /* 隱藏技能。刻意做得比其他所有裝備強一個量級，
@@ -1191,6 +1242,10 @@ function resetProgress(){
   }
   G.shift=0;                          // 下一次下手會是第 1 次
   if(!G.upgrades.timestop)G.stopRuns=0;
+  /* 電擊槍連部件一起沒收。
+     這是它整個設計的重點：那把槍是你四、五局慢慢撿回來的，
+     所以「被抓」的代價不再只是現金，而是一段具體的努力。 */
+  G.tzParts={}; G.tzAmmo=0;
   applyFlashlight();
   return lost;
 }
@@ -1561,6 +1616,22 @@ var SHAPES={
   botarm:function(c){return [P(GEO.box,c,[.11,.30,.11],[0,.16,0],0.35),
     P(GEO.box,c,[.15,.10,.15],[0,.34,0],0.35),
     P(GEO.box,0xE87A2B,[.12,.04,.12],[0,.05,0],1.1)];},
+  /* 電擊槍部件：四個都用青色 + 一小塊黑色機殼，
+     形狀刻意做得很不一樣，遠遠一眼就知道還缺哪一個。 */
+  tzgrip:function(c){return [P(GEO.box,0x24303A,[.09,.22,.13],[0,.11,0]),
+    P(GEO.box,c,[.06,.05,.10],[0,.24,0],1.3),
+    P(GEO.box,0x24303A,[.07,.05,.16],[0,.05,.04])];},
+  tzcell:function(c){return [P(GEO.box,0x24303A,[.16,.11,.10],[0,.06,0]),
+    P(GEO.box,c,[.12,.03,.07],[0,.13,0],1.5),
+    P(GEO.box,0xFFC93C,[.03,.03,.03],[.05,.13,0],1.2)];},
+  tzprobe:function(c){return [P(GEO.box,0x24303A,[.10,.05,.10],[0,.03,0]),
+    P(GEO.box,c,[.02,.20,.02],[-.03,.14,0],1.5),
+    P(GEO.box,c,[.02,.20,.02],[.03,.14,0],1.5),
+    P(GEO.box,c,[.09,.02,.02],[0,.25,0],1.5)];},
+  tzammo:function(c){return [P(GEO.box,0x2A2418,[.17,.09,.12],[0,.05,0]),
+    P(GEO.box,c,[.03,.13,.03],[-.05,.08,0],1.4),
+    P(GEO.box,c,[.03,.13,.03],[0,.08,0],1.4),
+    P(GEO.box,c,[.03,.13,.03],[.05,.08,0],1.4)];},
   botfull:function(c){return [P(GEO.box,c,[.30,.34,.20],[0,.30,0],0.55),
     P(GEO.box,c,[.26,.24,.24],[0,.59,0],0.55),
     P(GEO.box,0x1E2A34,[.18,.07,.02],[0,.62,-.13]),
@@ -1581,6 +1652,8 @@ function buildModel(def){
   if(def.tier==='vault')g.add(P(GEO.box,0xFFC93C,[.40,.014,.40],[0,.004,0],1.8));
   if(def.tier==='special')g.add(P(GEO.box,0x7FE3F5,[.34,.012,.34],[0,.004,0],1.6));
   if(def.tier==='part')g.add(P(GEO.box,0xE87A2B,[.34,.012,.34],[0,.004,0],1.5));
+  // 電擊槍部件用青色底光。它跟商品不同類 —— 那是裝備，不是貨
+  if(def.tier==='gear')g.add(P(GEO.box,0x7FE3F5,[.34,.012,.34],[0,.004,0],1.8));
   return g;
 }
 
@@ -2397,6 +2470,10 @@ function musicDuck(dt){
 var G={
   phase:'title',            // title | play | result | shop | paused
   shift:0, cash:0, upgrades:{}, stopRuns:0,
+  /* 電擊槍是跨局累積的裝備，所以狀態掛在 G 而不是 G.run。
+     tzParts 是已經撿到的部件（用 id 當 key），tzAmmo 是槍裡的子彈。
+     被抓的話兩個一起歸零 —— 見 resetProgress。 */
+  tzParts:{}, tzAmmo:0,
   run:null, spawned:[], t:0, lastTime:performance.now()
 };
 var STATS={runs:0,extracted:0,caught:0,forbiddenSeen:0,forbiddenPicked:0,
@@ -2419,7 +2496,6 @@ function newRun(){
     log:[], noiseTimer:0, firstMoveDone:false, firstPickDone:false,
     unlockedAt:null, forbiddenAt:null,
     // 一次性道具：每次下手重新補滿
-    taser: G.upgrades.taser?3:0,
     shrink:G.upgrades.shrink?1:0,
     revive:G.upgrades.revive?1:0,
     stop:  stopRunsLeft()>0?CFG.stopUses:0,
@@ -2560,6 +2636,25 @@ function buildItems(seed){
     if(ks)spawnItem(BY_ID.safekey,ks.x,ks.y,ks.z);
   }
 
+  /* 電擊槍部件：每關最多出「一個」，機率 70%，而且只出你還沒撿到的那幾種。
+
+     一局一個是刻意的：它讓收集變成跨局的節奏，而不是「運氣好一局就湊完」。
+     三件 ÷ 70% ≈ 四局多一點，剛好是一段會讓你開始在意「這局別被抓」的長度。
+     只出缺的那幾種同樣重要 —— 純隨機的話會一直撿到重複的，期望局數會爆掉。
+     一半機率放地上、一半放架上，所以你得同時看高處和低處。 */
+  var miss=tzMissing();
+  if(miss.length&&rand()<CFG.tzPartChance){
+    var pid=miss[Math.floor(rand()*miss.length)];
+    var ps=grab(spots,null);
+    if(ps)spawnItem(BY_ID[pid],ps.x,rand()<0.5?0.06:ps.y,ps.z);
+  }
+  /* 彈藥：只有在「槍已經組好但沒子彈」的時候才會出現。
+     槍還沒組好就撿到彈藥是純噪音，組好又有子彈也不需要。 */
+  if(tzReady()&&G.tzAmmo<=0&&rand()<CFG.tzAmmoChance){
+    var as=grab(spots,null);
+    if(as)spawnItem(BY_ID.tz_ammo,as.x,rand()<0.5?0:as.y,as.z);
+  }
+
   // 剩下的位置才填一般商品
   var freeS=spots.filter(function(s,i){return !claimed['s'+i];});
   var useCount=Math.round(freeS.length*(0.62+rand()*0.22));
@@ -2592,12 +2687,16 @@ function buildItems(seed){
    立櫃靠牆擺，不佔走道也不影響貨架重組。
    躲進去店員就看不到你，代價是不能動、視野被壓成一條門縫。
    位置固定，所以它是可以被精通的資源 —— 記住櫃子在哪就是實力。 */
+/* ry 是「門開向哪裡」。門板在 local +z，繞 Y 轉 a 之後 (0,0,1) 會指向
+   (sin a, cos a)。所以：0=朝南(+z)、π/2=朝東(+x)、-π/2=朝西(-x)、π=朝北(-z)。
+   每一個都必須朝向房間內部 —— 倉庫那個原本寫 Math.PI，
+   門正對著 2m 外的北牆，躲進去只看得到牆，整個機制等於沒有。 */
 var HIDES=[
-  {x:-19.0, z:6.2,  ry:Math.PI/2},    // 西側逃生走道
-  {x:19.0,  z:6.2,  ry:-Math.PI/2},   // 東側走道
-  {x:-19.0, z:-4.0, ry:Math.PI/2},    // 西側靠北
-  {x:18.6,  z:-13.6,ry:Math.PI},      // 倉庫
-  {x:-8.6,  z:-14.6,ry:0}             // 冷凍室門邊
+  {x:-19.0, z:6.2,  ry:Math.PI/2},    // 西側逃生走道 · 朝東進賣場
+  {x:19.0,  z:6.2,  ry:-Math.PI/2},   // 東側走道 · 朝西進賣場
+  {x:-19.0, z:-4.0, ry:Math.PI/2},    // 西側靠北 · 朝東
+  {x:8.2,   z:-14.9,ry:0},            // 倉庫北牆 · 朝南，正對倉庫入口
+  {x:-8.6,  z:-14.6,ry:0}             // 冷凍室門邊 · 朝南
 ];
 var hideObjs=[];
 function buildHides(){
@@ -2620,7 +2719,12 @@ function buildHides(){
     door.add(P(GEO.box,0xC9CCC4,[0.06,0.16,0.05],[0.34,0.72,0.36]));// 把手
     g.add(door);
     g.position.set(h.x,0,h.z); g.rotation.y=h.ry; scene.add(g);
-    COL.push({x0:h.x-0.55,z0:h.z-0.42,x1:h.x+0.55,z1:h.z+0.42,h:2.05,kind:'shelf'});
+    /* 碰撞盒是軸對齊的，所以要自己跟著旋轉換半徑 ——
+       櫃體是 0.98 寬 × 0.66 深，轉 90 度之後寬深要互換，
+       不然朝東西的那三個櫃子碰撞盒會比實體胖一圈（或瘦一圈）。 */
+    var side=Math.abs(Math.abs(h.ry)-Math.PI/2)<0.1;   // 朝東或朝西
+    var hw=side?0.40:0.56, hd=side?0.56:0.40;
+    COL.push({x0:h.x-hw,z0:h.z-hd,x1:h.x+hw,z1:h.z+hd,h:2.05,kind:'shelf'});
     var o={mesh:g,hide:true,spot:h,taken:false,
       def:{name:'立櫃',tier:'hide',slots:0,v:0}};
     g.userData.item=o; g.traverse(function(c){c.userData.item=o;});
@@ -2801,13 +2905,14 @@ function spawnItem(def,x,y,z){
   var o={mesh:g,def:def,baseY:y,taken:false,halo:null,tag:null};
   if(def.tier!=='common'){
     var col=def.tier==='forbidden'?0xC77DFF:
-            def.tier==='special'?0x7FE3F5:0xFFC93C;
+            (def.tier==='special'||def.tier==='gear')?0x7FE3F5:0xFFC93C;
     var sc=def.tier==='forbidden'?2.8:(def.tier==='vault'?2.2:1.7);
     var h=new THREE.Sprite(new THREE.SpriteMaterial({map:HALO,color:col,transparent:true,
       blending:THREE.AdditiveBlending,depthWrite:false,opacity:def.tier==='common'?.4:.7}));
     h.scale.set(sc,sc,1); h.position.set(x,y+0.18,z); scene.add(h); o.halo=h;
   }
-  if(def.tier!=='special'){                    // 鑰匙沒有價格，不掛價格標
+  // 鑰匙與電擊槍部件沒有價格，不掛價格標（不然會掛一個 $0 上去）
+  if(def.tier!=='special'&&def.tier!=='gear'){
     o.tag=makeTag(val,def.tier);
     o.tag.position.set(x,y+0.56,z); scene.add(o.tag);
   }
@@ -2821,16 +2926,19 @@ function setDanger(on){
   var r=G.run; if(r)r.danger=on;
   document.getElementById('vignette').classList.toggle('on',on);
   document.getElementById('objective').classList.toggle('alarm',on);
-  ambient.intensity = on?0.14:0.74;
-  sky.intensity = on?0.07:0.40;
-  lamps.forEach(function(L){L.intensity=on?0.05:0.62;});
+  // 停電後的亮度全部由 alarmLight 一個係數決定，方便一次調整
+  var k = on?CFG.alarmLight:1;
+  ambient.intensity = 0.74*k;
+  sky.intensity = 0.40*k;
+  lamps.forEach(function(L){L.intensity=0.62*k;});
   tubeMeshes.forEach(function(t){t.material.color.setHex(on?0x2A3028:0xE4F0DE);});
   signs.forEach(function(s){s.material.color.setHex(on?0xFF3B30:0x4ADE80);});
   guides.forEach(function(m){
     m.material.color.setHex(on?0xFF3B30:0x3FBF6A);
     if(!on)m.material.opacity=.30;
   });
-  scene.fog.density = on?0.045:0.019;
+  // 霧也放淡一點。0.045 疊在低亮度上會讓五公尺外整片糊掉
+  scene.fog.density = on?0.030:0.019;
   ambienceHum(!on);              // 停電，日光燈的嗡嗡跟著消失
   if(on){droneOn();}else{droneOff();}
   updateExitChip();
@@ -3210,6 +3318,17 @@ function updateAim(){
       if(IS_TOUCH)pr.innerHTML=pr.innerHTML.replace('<kbd>E</kbd>','<kbd>拿</kbd>');
       cross.className='hot'; return;
     }
+    // 電擊槍部件／彈藥：沒有價格也不佔格子，提示要講「這是裝備」
+    if(d.tier==='gear'){
+      pr.className='on';
+      pr.innerHTML='<kbd>E</kbd>'+d.name+
+        '<span class="s">不佔格子 · '+
+        (d.ammo?('補 '+d.ammo+' 發')
+               :('部件 '+(tzHave()+1)+'/'+TZ_PARTS.length+
+                 (tzHave()+1>=TZ_PARTS.length?' · 拿了就組好了':'')))+'</span>';
+      if(IS_TOUCH)pr.innerHTML=pr.innerHTML.replace('<kbd>E</kbd>','<kbd>拿</kbd>');
+      cross.className='hot'; return;
+    }
     var fits = G.run.used + d.slots <= capacityNow();
     var val = forb ? forbiddenValueNow() : d.v;
     pr.className='on'+(forb?' forbid':'');
@@ -3234,6 +3353,41 @@ function tryInteract(){
     return;
   }
   if(aim.taken)return;
+  /* 電擊槍部件與彈藥：不佔格子、不算錢、直接進裝備欄。
+     刻意做成「撿到就算」而不是「帶出去才算」——
+     被抓本來就會把整組清空，所以兩種寫法的結果一樣，撿到就算比較好懂。 */
+  if(aim.def.tier==='gear'){
+    aim.taken=true; scene.remove(aim.mesh);
+    if(aim.halo)scene.remove(aim.halo); if(aim.tag)scene.remove(aim.tag);
+    makeNoise(aim.def.noise);
+    if(aim.def.ammo){
+      G.tzAmmo+=aim.def.ammo;
+      SFX.register(); ev('tz_ammo_found',{ammo:G.tzAmmo});
+      toast('撿到彈藥 · 電擊槍剩 '+G.tzAmmo+' 發');
+    }else{
+      G.tzParts[aim.def.id]=true;
+      var n=tzHave();
+      ev('tz_part_found',{id:aim.def.id,have:n});
+      if(n>=TZ_PARTS.length){
+        G.tzAmmo=CFG.tzAmmoPer;
+        SFX.unlock();
+        showBeat('電擊槍組好了',
+          K('按 Q 發射 · 目前 '+G.tzAmmo+' 發','按「電」發射 · 目前 '+G.tzAmmo+' 發'),
+          '命中店員讓他當場癱 '+CFG.taserStun+' 秒。被抓會連槍一起沒收。',5000);
+        syncItemButtons();
+      }else{
+        /* 一局最多只會出現一個部件（生成時就決定了），
+           所以撿到之後要明講「這一局不會再有了」——
+           不然玩家會在店裡繼續找一個根本不存在的東西，那是白白的風險。 */
+        SFX.scan();
+        showBeat('電擊槍部件 '+n+'/'+TZ_PARTS.length,
+          '還缺 '+tzMissing().map(function(id){
+            return BY_ID[id].name.replace('電擊槍・','');}).join('、'),
+          '這一局不會再出現第二個 —— 下一關才有機會。',4200);
+      }
+    }
+    updateHUD(); updateAim(); return;
+  }
   // 鑰匙：不佔格子、不算錢，拿了就標記在身上
   if(aim.def.tier==='special'){
     aim.taken=true; scene.remove(aim.mesh);
@@ -3318,11 +3472,11 @@ function triggerForbidden(){
   flashScreen();
   setDanger(true);
   SFX.forbidden();
-  // 不移動店員 —— 他從自己當下的位置過來，位置才是可預測的
-  setObjective('放下已經太晚了 —— 衝回後門',true,
-    K('Shift 衝刺比店員快，但腳步聲會被聽到。','搖桿推到外圈比店員快，但腳步聲會被聽到。'));
-  showBeat('他知道了',
-    K('按住 Shift 衝回後門。','搖桿推到最外面，衝回後門。'),'',3500);
+  /* 不移動店員 —— 他從自己當下的位置過來，位置才是可預測的。
+     文字刻意只留一行。原本這裡同時有目標列、目標列的補充說明、
+     螢幕下方一整個 beat 方塊、還有廣播 —— 四塊字疊在最需要看路的那幾秒，
+     而且畫面同時變暗。現在只留頂端一行「衝回後門」，其餘靠紅暈與導引燈帶講。 */
+  setObjective('衝回後門',true);
   setTimeout(function(){ if(G.phase==='play')pa('偵測到非賣品離架。保全程序已啟動，請留在原地不要移動。'); },1600);
   AI.state='CHASE'; AI.lastSeen={x:camera.position.x,z:camera.position.z};
   AI.timer=0; AI.chaseT=0; AI.calm=0; AI.path=[]; clerk.visible=true;
@@ -3508,6 +3662,12 @@ function stepClerk(dt){
       break;
   }
 
+  /* 警報響了但他沒在追你：走路速度 ×1.5。
+     這條規則補掉一個以前很怪的空窗 —— 停電之後如果他跟丟了，
+     他會用平常那個 2 m/s 悠悠地晃，而你正拿著非賣品在跑。
+     現在他是在快步搜店，追逐速度不受影響（那本來就已經比你快）。 */
+  if(r.danger&&AI.state!=='CHASE')speed*=CFG.alarmPatrolMul;
+
   // 移動：追逐且視線通暢 → 直接衝；否則沿 waypoint 路徑
   var tx,tz;
   if(AI.state==='CHASE'&&sees){ tx=px; tz=pz; }
@@ -3589,9 +3749,15 @@ function poseName(){
 /* ---------- 一次性道具 ---------- */
 function useTaser(){
   var r=G.run; if(!r||G.phase!=='play')return;
-  if(!G.upgrades.taser){toast('你沒有電擊槍');return;}
-  if(r.taser<=0){toast('電擊槍沒電了');return;}
-  r.taser--;
+  if(!tzReady()){
+    toast('電擊槍還沒組好 · '+tzHave()+'/'+TZ_PARTS.length+' 件');
+    return;
+  }
+  if(G.tzAmmo<=0){
+    toast('沒有子彈 · 藏身處可以買，店裡也有機會撿到');
+    return;
+  }
+  G.tzAmmo--;
   SFX.taser();
   makeNoise(CFG.hearWalk*0.8);
   // 從準心射出去：算店員到視線的垂直距離，夠近就算命中
@@ -3612,9 +3778,9 @@ function useTaser(){
   if(hit){
     AI.state='STUNNED'; AI.stunT=CFG.taserStun; AI.path=[]; AI.chaseT=0;
     droneOff(); ev('taser_hit');
-    toast('命中 · 他癱了 '+CFG.taserStun+' 秒 · 剩 '+r.taser+' 發');
+    toast('命中 · 他癱了 '+CFG.taserStun+' 秒 · 剩 '+G.tzAmmo+' 發');
   }else{
-    toast('打空了 · 剩 '+r.taser+' 發'); ev('taser_miss');
+    toast('打空了 · 剩 '+G.tzAmmo+' 發'); ev('taser_miss');
   }
   updateHUD();
 }
@@ -3987,7 +4153,14 @@ function updateHUD(){
   $('basket').classList.toggle('hot',h>0.66);
   // 一次性道具存量
   var it='';
-  if(G.upgrades.taser) it+='<div class="'+(r.taser>0?'ready':'empty')+'">Q 電擊 '+r.taser+'</div>';
+  /* 電擊槍：還沒組好就顯示進度（那是你這局的第二個目標），
+     組好之後顯示子彈數。兩種狀態都要一直看得見。 */
+  if(tzReady())
+    it+='<div class="'+(G.tzAmmo>0?'ready':'empty')+'">'+
+        K('Q','電')+' 電擊 '+G.tzAmmo+' 發</div>';
+  else if(tzHave()>0)
+    it+='<div class="ready" style="border-color:#7FE3F5;color:#7FE3F5">電擊槍 '+
+        tzHave()+'/'+TZ_PARTS.length+'</div>';
   if(G.upgrades.shrink)it+='<div class="'+(r.shrink>0?'ready':'empty')+'">R 縮小 '+r.shrink+'</div>';
   if(G.upgrades.revive)it+='<div class="'+(r.revive>0?'ready':'empty')+'">掙脫 '+r.revive+'</div>';
   if(stopRunsLeft()>0)
@@ -4010,6 +4183,7 @@ function updateHUD(){
   }
   $('items').innerHTML=it;
   $('layouthud').textContent=layoutName;
+  syncTaserBtn();            // 撿到部件的當下按鍵上的 1/3 要跟著跳
   updateExitChip();
 }
 
@@ -4101,7 +4275,10 @@ function renderShop(){
   var list=UPGRADES.slice().sort(function(a,b){return a.cost-b.cost;});
   var target=null;               // 下一個買不起的東西 —— 這就是今晚的目標
   list.forEach(function(u){
-    var owned=!!G.upgrades[u.id];
+    // 需要先有電擊槍才會出現的東西（子彈）：沒槍就整張卡不顯示
+    if(u.needsTz&&!tzReady())return;
+    // repeat 的東西不進 G.upgrades，所以永遠不算「已擁有」，可以一直買
+    var owned=!u.repeat&&!!G.upgrades[u.id];
     var locked=!!u.secret&&!secretOpen();
     var can=!owned&&!locked&&G.cash>=u.cost;
     if(!owned&&!locked&&G.cash<u.cost&&!target)target=u;
@@ -4118,6 +4295,7 @@ function renderShop(){
     }else{
       d.innerHTML='<h3>'+u.name+
           (u.secret?' <em class="tagc">只跟你 '+CFG.stopRuns+' 回合</em>'
+           :u.repeat?' <em class="tagc">目前 '+G.tzAmmo+' 發</em>'
                    :(u.consumable?' <em class="tagc">每次 '+u.consumable+' 次</em>':''))+'</h3>'+
         '<p>'+u.desc+'</p>'+
         '<div class="cost">'+(owned?'已裝備':'$'+u.cost)+'</div>'+
@@ -4126,7 +4304,14 @@ function renderShop(){
                 (can?'買下':'還差 $'+(u.cost-G.cash))+'</button>');
     }
     if(can)d.querySelector('button').addEventListener('click',function(){
-      G.cash-=u.cost; G.upgrades[u.id]=true;
+      G.cash-=u.cost;
+      // 子彈是消耗品，不進 G.upgrades —— 不然買一次就再也買不到第二次
+      if(u.repeat){
+        G.tzAmmo+=CFG.tzAmmoPer;
+        ev('tz_ammo_bought',{ammo:G.tzAmmo}); SFX.register();
+        toast('補彈 · 電擊槍 '+G.tzAmmo+' 發'); renderShop(); save(); return;
+      }
+      G.upgrades[u.id]=true;
       if(u.id==='light')applyFlashlight();
       if(u.id==='timestop'){
         G.stopRuns=CFG.stopRuns;
@@ -4145,10 +4330,24 @@ function renderShop(){
 }
 function renderGear(){
   var el=$('gearlist'), html='';
-  var owned=UPGRADES.filter(function(u){return G.upgrades[u.id];});
-  if(!owned.length){
+  /* 電擊槍不在 UPGRADES 裡（它是撿的不是買的），所以要自己插一列。
+     還沒湊齊的時候也要顯示 —— 那個「還缺哪兩件」就是你下一局的理由。 */
+  if(tzReady()){
+    html+='<div class="gearrow consum"><b>電擊槍</b>'+
+      '<span>三件部件都到手了。命中店員讓他癱 '+CFG.taserStun+
+      ' 秒。被抓會連槍一起沒收。</span>'+
+      '<em>'+G.tzAmmo+' 發</em></div>';
+  }else if(tzHave()>0){
+    html+='<div class="gearrow"><b>電擊槍（未完成）</b>'+
+      '<span>還缺 '+tzMissing().map(function(id){
+        return BY_ID[id].name.replace('電擊槍・','');}).join('、')+
+      '。每關最多出一個，機率 '+Math.round(CFG.tzPartChance*100)+'%，地上或架上都有可能。</span>'+
+      '<em>'+tzHave()+' / '+TZ_PARTS.length+'</em></div>';
+  }
+  var owned=UPGRADES.filter(function(u){return !u.repeat&&G.upgrades[u.id];});
+  if(!owned.length&&!html){
     html+='<div class="gearempty">身上什麼都沒有。買一件再進去吧。</div>';
-  }else{
+  }else if(owned.length){
     owned.forEach(function(u){
       var tail = u.secret ? ('剩 '+stopRunsLeft()+' 回合')
                : (u.consumable?('每次 '+u.consumable+' 用'):'永久');
@@ -4373,6 +4572,8 @@ function renderMenuFoot(){
   f.innerHTML='已下手 <b>'+s.runs+'</b> 次 · 最長連續沒被抓 <b>'+s.bestStreak+'</b> 次'+
     '<br>目前連續 <b>'+s.streak+'</b> 次 · 手上有 <b>$'+G.cash+'</b>'+
     ' · 裝備 <b>'+gear+'</b> 件'+
+    (tzReady()?' · 電擊槍 <b>'+G.tzAmmo+'</b> 發'
+             :(tzHave()>0?' · 電擊槍部件 <b>'+tzHave()+'/'+TZ_PARTS.length+'</b>':''))+
     '<br><span style="opacity:.7">關掉瀏覽器就從零開始。只有犯案紀錄會留著。</span>'+
     /* 隱藏技能的解鎖狀態放在標題頁 —— 它是唯一永久的東西，
        所以它必須是玩家一開遊戲就看得到的那個目標。 */
@@ -4401,6 +4602,7 @@ function wipeSave(){
   try{ localStorage.removeItem('nightshift_v1'); }catch(e){}
   G.cash=0; G.upgrades={}; G.shift=0;
   G.stopRuns=0; G.lastStopExpired=false; G.lastLost=[];
+  G.tzParts={}; G.tzAmmo=0;
   CFG.capacity=DEF.capacity;
   // 五軸的最佳值也要一起清，漏掉會變成 undefined 印在收據上
   STATS={runs:0,extracted:0,caught:0,forbiddenSeen:0,forbiddenPicked:0,
@@ -4444,10 +4646,28 @@ function startGame(){
   if(IS_TOUCH&&!fsActive())goFullscreen();
   hideAll(); manualPause=false; G.phase='play'; newRun(); syncItemButtons(); requestLock();
 }
+/* 電擊槍那顆按鍵要在「還沒組好」的時候就出現，並且顯示進度。
+   理由是它現在是一個跨局的目標 —— 看得到 1/3 才知道自己在收集什麼；
+   等組好了才第一次看到按鈕，前面那幾局的收集就沒有回饋。
+   撿到部件的當下也要更新，所以 updateHUD 也會呼叫這支。 */
+function syncTaserBtn(){
+  if(!IS_TOUCH)return;
+  var b=$('btnTaser');
+  var show=tzReady()||tzHave()>0;
+  b.hidden=!show;
+  if(!show)return;
+  if(tzReady()){
+    b.innerHTML='電<small>'+G.tzAmmo+'發</small>';
+    b.classList.toggle('dry',G.tzAmmo<=0);
+  }else{
+    b.innerHTML='電<small>'+tzHave()+'/'+TZ_PARTS.length+'</small>';
+    b.classList.add('dry');           // 還不能用，壓暗
+  }
+}
 function syncItemButtons(){
   if(!IS_TOUCH)return;
   $('btnJump').hidden=!G.upgrades.jump;
-  $('btnTaser').hidden=!G.upgrades.taser;
+  syncTaserBtn();
   $('btnShrink').hidden=!G.upgrades.shrink;
   $('btnStop').hidden=stopRunsLeft()<=0;
 }
@@ -4678,14 +4898,18 @@ function frame(now){
       $('posehud').textContent=poseName();
       // 停電閃爍
       if(G.run.danger&&stopT<=0){
+        /* 閃爍：亮的那一格拉高、暗的那一格不再是全黑，
+           而且亮的機率從 22% 提到 38% —— 原本 78% 的時間停在最暗，
+           那不是閃爍，那是黑畫面偶爾閃一下。 */
         flickerT-=dt;
-        if(flickerT<=0){ flickerT=0.1+Math.random()*0.55;
-          var on=Math.random()<0.22;
-          lamps.forEach(function(L){L.intensity=on?0.3:0.05;});
-          ambient.intensity=on?0.3:0.14;
+        if(flickerT<=0){ flickerT=0.1+Math.random()*0.45;
+          var on=Math.random()<0.38;
+          var k=CFG.alarmLight;
+          lamps.forEach(function(L){L.intensity=0.62*k*(on?1.75:0.72);});
+          ambient.intensity=0.74*k*(on?1.35:0.94);
         }
-        // 疏散導引燈帶在停電時閃動 —— 黑掉之後這是唯一看得見的路
-        var gp=0.45+Math.abs(Math.sin(now/230))*0.5;
+        // 疏散導引燈帶在停電時閃動 —— 黑掉之後這是最明確的一條路
+        var gp=0.62+Math.abs(Math.sin(now/230))*0.38;
         guides.forEach(function(m){m.material.opacity=gp;});
       }
     }
