@@ -785,6 +785,8 @@
         地上或架上都有可能。<b>一局最多只會出現一個</b>，撿到就等下一關 ——
         <b>湊滿三件</b>組成一把帶 3 發的電擊槍。部件不佔提袋格子，但
         <b style="color:var(--danger)">被抓會連槍一起沒收</b></div>
+      <div><b>·</b>不想撿的話，藏身處也<b style="color:var(--price)">直接賣整把 $2000</b>（含 3 發）——
+        同一把槍，差別只在你想花錢還是花局數。買來的一樣會被沒收</div>
       <div><b>·</b>子彈打完之後：藏身處可以花 $300 補 3 發，
         或者在店裡撿（有槍沒彈的時候，每關 20% 機率出現彈藥）</div>
       <div><b>·</b>藏身處的<b style="color:var(--price)">貨全部公開</b>，最便宜到最貴一次看完 ——
@@ -928,7 +930,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v6.0';
+var BUILD='v6.1';
 
 /* 手機上沒有 console，一旦初始化丟錯就只剩黑畫面、完全無從查起。
    所以把錯誤直接印在畫面上。 */
@@ -1002,7 +1004,7 @@ var DEF = {
   clerkStepVol:0.46, doorPingVol:0.10,
   musicVol:0.30,         // 背景配樂的總量。它是襯底，不該壓過腳步聲
   noiseVol:0.55,         // 白噪音那一層（冰櫃風聲、壓縮機沙沙）的總量
-  setChance:0.65,        // 三件組出現的機率
+  setChance:0.50,        // 三件組出現的機率
   hideFov:38,            // 躲在櫃子裡的視野角，越小越像從門縫看出去
   // 能左右轉的弧度。0.5 rad（約 29 度）加上 38 度視野，剛好等於洞口的寬度 ——
   // 轉再多就會看到門板側緣外面去，那會破功。
@@ -1165,9 +1167,13 @@ var UPGRADES = [
   {id:'bag2',    name:'加大側袋',   cost:900, desc:'提袋再 +6 格。但別忘了越重越慢。'},
   {id:'shrink',  name:'縮小劑',     cost:1000, consumable:1,
     desc:'每次下手可用 1 次。'+CFG.shrinkTime+' 秒內縮到 0.3 倍，矮到幾乎不會被看見。'},
-  /* 電擊槍本體不賣了 —— 那是店裡撿四個部件湊出來的。
-     架上只賣子彈，而且只有在你已經有槍的時候才會出現（見 renderShop）。
-     這樣 $300 買的不是「一個能力」，是「讓已經有的能力還能用」。 */
+  /* 電擊槍有兩條路：店裡撿三個部件（免費，但要四局左右，而且被抓就全沒），
+     或者直接花 $2000 買整把。$2000 卡在備用鑰匙($1500)與午夜鐘($3000)之間 ——
+     它買的不是「一個能力」，是「那四局的時間與風險」。
+     已經有槍的時候這張卡會整個消失，換成賣子彈的那張。 */
+  {id:'tz_gun_buy', name:'電擊槍（整把）', cost:2000, repeat:1, givesTz:1, hideIfTz:1,
+    desc:'直接拿一把，含 '+DEF.tzAmmoPer+' 發。店裡撿三個部件也是同一把 —— '+
+         '差別只在你想花錢還是花局數。一樣被抓就沒收。'},
   {id:'tz_ammo_buy', name:'電擊槍彈藥 ×'+DEF.tzAmmoPer, cost:DEF.tzAmmoCost,
     repeat:1, needsTz:1,
     desc:'補 '+DEF.tzAmmoPer+' 發。店裡也有機會撿到，但那是運氣，這個是保險。'},
@@ -4372,6 +4378,8 @@ function renderShop(){
   list.forEach(function(u){
     // 需要先有電擊槍才會出現的東西（子彈）：沒槍就整張卡不顯示
     if(u.needsTz&&!tzReady())return;
+    // 反過來：已經有槍了就別再賣整把
+    if(u.hideIfTz&&tzReady())return;
     // repeat 的東西不進 G.upgrades，所以永遠不算「已擁有」，可以一直買
     var owned=!u.repeat&&!!G.upgrades[u.id];
     var locked=!!u.secret&&!secretOpen();
@@ -4390,7 +4398,8 @@ function renderShop(){
     }else{
       d.innerHTML='<h3>'+u.name+
           (u.secret?' <em class="tagc">只跟你 '+CFG.stopRuns+' 回合</em>'
-           :u.repeat?' <em class="tagc">目前 '+G.tzAmmo+' 發</em>'
+           :u.givesTz?(tzHave()>0?' <em class="tagc">你已經有 '+tzHave()+'/'+TZ_PARTS.length+' 件</em>':'')
+           :u.needsTz?' <em class="tagc">目前 '+G.tzAmmo+' 發</em>'
                    :(u.consumable?' <em class="tagc">每次 '+u.consumable+' 次</em>':''))+'</h3>'+
         '<p>'+u.desc+'</p>'+
         '<div class="cost">'+(owned?'已裝備':'$'+u.cost)+'</div>'+
@@ -4400,6 +4409,16 @@ function renderShop(){
     }
     if(can)d.querySelector('button').addEventListener('click',function(){
       G.cash-=u.cost;
+      /* 整把電擊槍：直接把三個部件標成已取得。
+         不寫進 G.upgrades，因為被抓的時候它要跟著 tzParts 一起被沒收 ——
+         寫進 upgrades 的話會變成「買過就永遠有」，那條風險就消失了。 */
+      if(u.givesTz){
+        TZ_PARTS.forEach(function(id){ G.tzParts[id]=true; });
+        G.tzAmmo=Math.max(G.tzAmmo,CFG.tzAmmoPer);
+        ev('tz_gun_bought'); SFX.unlock();
+        toast('電擊槍到手 · '+G.tzAmmo+' 發');
+        syncItemButtons(); renderShop(); save(); return;
+      }
       // 子彈是消耗品，不進 G.upgrades —— 不然買一次就再也買不到第二次
       if(u.repeat){
         G.tzAmmo+=CFG.tzAmmoPer;
