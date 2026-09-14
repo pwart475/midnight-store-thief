@@ -465,6 +465,14 @@
     font-size:11px;letter-spacing:.14em;color:#8A7A46;border:1px dashed #55492A}
   .shopgoal{margin-top:14px;font-size:12.5px;color:var(--dim);line-height:1.7}
   .shopgoal b{color:var(--price);font-family:var(--f-num);font-size:15px}
+  /* 「下面還有東西」的提示。只有真的捲得動的時候才出現，
+     而且一捲就消失 —— 它的任務是告訴你可以捲，不是一直待在那裡。 */
+  #morehint{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);
+    z-index:31;pointer-events:none;font-family:var(--f-mono);font-size:11px;
+    letter-spacing:.14em;color:var(--price);opacity:0;transition:opacity .3s;
+    background:rgba(6,9,6,.86);padding:5px 12px;border:1px solid var(--line-hi)}
+  #morehint.on{opacity:1;animation:morebob 1.6s ease-in-out infinite}
+  @keyframes morebob{0%,100%{transform:translate(-50%,0)}50%{transform:translate(-50%,4px)}}
   .cash{font-family:var(--f-num);font-size:34px;color:var(--price);font-variant-numeric:tabular-nums}
 
   /* 戰績卡 */
@@ -815,8 +823,9 @@
       <div><b>·</b>冷凍室的壓縮機一直在響，那是店裡唯一固定的聲音地標。
         後門解鎖後會發出低頻脈衝，停電時會變快 —— 燈滅了也走得回去</div>
       <div><b>·</b>被發現不一定會死 —— 他追一段時間抓不到就會放棄</div>
-      <div><b>·</b><b style="color:var(--danger)">被抓到的代價</b>：現金歸零、隨機沒收兩件裝備、關卡回到第 1 次。
-        有護身符的話會自動啟用把裝備保下來</div>
+      <div><b>·</b><b style="color:var(--danger)">被抓到的代價</b>：現金歸零、關卡回到第 1 次、
+        沒收<b>最便宜的兩件</b>裝備 —— 貴的守得住，所以值得買。
+        有護身符的話會自動啟用把裝備全部保下來</div>
       <div><b>·</b>關掉瀏覽器也會從零開始 —— 錢和裝備都不跨次保留。
         <b style="color:var(--price)">只有犯案紀錄永遠留著</b>，那是唯一的成績</div>
       <div><b>·</b>地上那條綠線一路通到後門，停電後會變紅並閃動</div>
@@ -905,21 +914,31 @@
 </div>
 
 <div class="layer screen hidden" id="s-shop">
+  <!-- 順序刻意改過：商店擺第一。
+       原本第一屏是「犯案紀錄」那張大卡，商店被推到摺線以下，
+       結果玩家不知道要往下滑，整個商店等於不存在。
+       兩次下手之間唯一要做的決定是「買什麼」，那就該是第一個看到的東西；
+       戰績與歷史是回顧，放後面。 -->
   <div class="card">
-    <div class="eyebrow">藏身處 · 兩次下手之間</div>
     <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:20px;flex-wrap:wrap">
-      <h1 style="font-size:clamp(28px,5vw,42px)">犯案<em>紀錄</em></h1>
+      <div>
+        <div class="eyebrow">藏身處 · 兩次下手之間</div>
+        <h1 style="font-size:clamp(26px,4.4vw,38px)">買<em>裝備</em></h1>
+      </div>
       <div style="text-align:right"><div class="eyebrow" style="margin:0 0 2px">變賣所得</div>
         <div class="cash" id="shopcash">$0</div></div>
     </div>
-    <div id="card" class="card-rec"></div>
-    <h4 class="sh">架上的貨 · 全部公開</h4>
     <div class="shopgoal" id="shopgoal"></div>
     <div class="shopgrid" id="shopgrid"></div>
+    <div class="cardfoot" style="margin-top:18px">
+      <button class="btn" id="btn-shift">再幹一次 <kbd>Enter</kbd></button>
+    </div>
     <h4 class="sh">現有裝備</h4>
     <div id="gearlist"></div>
     <h4 class="sh">下一次會變這樣</h4>
     <div class="nextbox" id="next"></div>
+    <h4 class="sh">犯案紀錄</h4>
+    <div id="card" class="card-rec"></div>
     <h4 class="sh">歷次犯案</h4>
     <table class="mtable" id="history"></table>
     <details class="devdata">
@@ -927,11 +946,12 @@
       <table class="mtable" id="metrics"></table>
     </details>
     <div class="cardfoot">
-      <button class="btn" id="btn-shift">再幹一次 <kbd>Enter</kbd></button>
       <button class="btn ghost" id="btn-brag">複製戰績</button>
       <button class="btn ghost" id="btn-copy">複製原始數據</button>
     </div>
   </div>
+  <!-- 內容超出畫面時在下緣顯示，告訴玩家還有東西 -->
+  <div id="morehint">▼ 還有裝備欄與紀錄</div>
 </div>
 
 <div id="stopfx">
@@ -991,7 +1011,55 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v6.9';
+var BUILD='v7.2';
+
+/* ================================================================
+   目錄與凍結狀態
+
+   搜尋 "N. " （含後面的空格）就會跳到對應段落的標題。
+
+   🔒 = 已凍結。驗證過、很久沒動、不打算再改。改動之前先問一句為什麼。
+   🔧 = 施工中。平衡與新機制都發生在這幾段。
+
+   ── 資料（要調平衡就來這裡，幾乎不用看別的） ──────────────
+   🔧  0.  可調參數 CFG        所有數值。調參面板（T）會即時改這裡
+   🔧  1.  商品定義            ITEMS / UPGRADES / TZ_PARTS / SET_PARTS
+
+   ── 世界（蓋好了，除非要改地圖） ───────────────────────────
+   🔧  2.  關卡幾何            牆、房間、辦公室。動這裡一定要重驗 waypoint
+   🔒  2b. 模組化貨架區        六種佈局，每局重組
+   🔒  3.  Three.js 場景       材質、燈光、招牌、監視器、店員模型
+   🔒  4.  碰撞 / 視線         resolve() 與 blocked()。全遊戲最底層
+   🔒  5.  Waypoint 圖         節點與 Dijkstra。改幾何才需要回來看
+
+   ── 感官（做完了） ────────────────────────────────────────
+   🔒  6.  音效                合成、方位、環境音
+   🔒  6b. 背景配樂            三層即時生成
+
+   ── 玩法（大部分改動都在這裡） ─────────────────────────────
+   🔧  7.  遊戲狀態            G / STATS / newRun / buildItems 生成規則
+   🔒  8.  輸入                鍵盤、滑鼠、指標鎖定、觸控
+   🔧  9.  互動                撿東西、保險櫃、密碼、辦公室、字條
+   🔧  10. 店員 AI             FSM 結構穩定，數值常調
+   🔧  11. 局內更新            stepPlayer、拖行、道具、躲藏
+
+   ── 外框（做完了） ────────────────────────────────────────
+   🔧  12. HUD
+   🔒  13. 收據 / 商店 / 數據
+   🔒  14. 存檔
+   🔒  15. 畫面切換
+   🔒  16. 調參面板
+   🔧  17. 主迴圈
+
+   ── 常見任務對照 ──────────────────────────────────────────
+   改數值平衡              → 0
+   加一件商品 / 一個升級    → 1
+   改地圖                  → 2（改完重跑一次 waypoint 檢查）
+   加一個可互動的東西      → 1（定義）+ 9（互動）+ 7（生成位置）
+   改店員行為              → 10
+   改玩家移動 / 道具       → 11
+   改畫面上的字            → 12，或各段落裡的 showBeat / toast
+   ================================================================ */
 
 /* 手機上沒有 console，一旦初始化丟錯就只剩黑畫面、完全無從查起。
    所以把錯誤直接印在畫面上。 */
@@ -1010,7 +1078,9 @@ if(!window.THREE){document.getElementById('narrow').style.display='flex';
   document.getElementById('narrow').textContent='3D 引擎載入失敗，請重新整理。';return;}
 
 /* ============================================================
-   0. 可調參數 —— 這是原型的核心產出，全部即時生效
+   0. 可調參數 —— 這是原型的核心產出，全部即時生效　🔧 施工中
+   調平衡請只動這一段。按 T 開調參面板可以現場拉，不用改檔案。
+   每一個數字旁邊的註解寫的是「為什麼是這個值」，改之前先讀一下。
    ============================================================ */
 var DEF = {
   walkSpeed:4.2, sprintSpeed:6.8, mouseSens:0.0023,
@@ -1028,7 +1098,18 @@ var DEF = {
      這個整個原型要測的那一刻，根本沒有發生的空間。
      拉長單局的工作現在交給鑰匙／密碼／三件組那幾條目標鏈，
      解鎖要早一點回到局中，那個抉擇才會是抉擇。 */
-  capacity:12, riskBonus:1.2, forbiddenValue:120, extractItems:4,
+  /* 非賣品的價值。從 120 拉到 300 —— 這是一個純算術的修正。
+
+     120 是「店裡最貴的東西只有 $70」那個時代訂的。之後陸續加進來的
+     金條 $260、瑞士錶 $210、機器人 $400、收銀機抽屜 $320 全部沒有回頭調它，
+     結果是：非賣品變成全場「每格價值」最差的東西之一（$60/格），
+     卻是唯一會觸發警報的東西。
+     最高風險配上倒數的報酬 —— 理性玩家當然不會去拿。
+     那不是心理問題，是數字問題。
+
+     riskBonus 也改成跟數量掛勾（見 extract）：拿越多件，整袋加成越高。
+     所以「再進去一次」在最後一刻永遠還有一個具體的數字在拉你。 */
+  capacity:12, riskBonus:0.25, forbiddenValue:300, extractItems:4,
   // 負重：只有超過門檻才罰，且是固定一級，不是連續遞減
   loadThreshold:0.80, loadPenalty:0.10,
   // 店員：以基礎值的百分比表示，每三次下手各加 growthPer3
@@ -1068,7 +1149,11 @@ var DEF = {
   // 有方位的聲源：音量給的是「原音量」，距離衰減由 PannerNode 處理
   clerkStepVol:0.46, doorPingVol:0.10,
   musicVol:0.30,         // 背景配樂的總量。它是襯底，不該壓過腳步聲
-  noiseVol:0.55,         // 白噪音那一層（冰櫃風聲、壓縮機沙沙）的總量
+  /* 白噪音關掉（0）。它是「吵」的主要來源，而且寬頻噪音會遮蔽
+     用來定位店員腳步的中高頻 —— 拿掉之後反而更好聽出他在哪。
+     冷凍室的聲音地標改用純音重做，不受這個值影響。
+     想試回來就把它拉起來，下次進遊戲生效。 */
+  noiseVol:0,
   setChance:0.50,        // 三件組出現的機率
   hideFov:38,            // 躲在櫃子裡的視野角，越小越像從門縫看出去
   // 能左右轉的弧度。0.5 rad（約 29 度）加上 38 度視野，剛好等於洞口的寬度 ——
@@ -1155,7 +1240,7 @@ var KNOBS = [
   ['k-econ','heatFullValue','注意度滿的金額',150,1500,10,''],
   ['k-econ','heatVision','注意度→視線加成',0,1.5,.05,''],
   ['k-econ','forbiddenValue','禁忌品價值',20,400,10,''],
-  ['k-econ','riskBonus','風險加成',1,2.5,.05,'x'],
+  ['k-econ','riskBonus','每件非賣品的整袋加成',0,1,.05,''],
   ['k-econ','extractItems','解鎖撤離所需件數',1,10,1,' 件'],
   ['k-econ','stopTime','午夜鐘停止秒數',2,20,.5,' s'],
   ['k-econ','stopUses','午夜鐘每局次數',1,6,1,' 次'],
@@ -1328,10 +1413,19 @@ function resetProgress(){
   if(G.upgrades.charm){
     delete G.upgrades.charm;          // 自動啟用，用掉就沒了
   }else{
-    var owned=Object.keys(G.upgrades);
+    /* 沒收「最便宜的兩件」，不是隨機兩件。
+
+       隨機沒收有一個結構性的問題：損失是固定「件數」，
+       所以一件 $3000 的東西被沒收，代價跟一件 $200 的一模一樣。
+       換算下來越貴的東西每塊錢承受的風險越高 —— 於是理性的買法
+       永遠是「只買便宜的」，商店上半部就變成裝飾品。
+       改成從便宜的開始拿走之後，貴的東西是你真正守得住的資產，
+       而「再買一件便宜的」則多了一層意義：它會變成下一次的緩衝。 */
+    var owned=Object.keys(G.upgrades).sort(function(a,b){
+      return upCost(a)-upCost(b);
+    });
     for(var i=0;i<CFG.gearLost&&owned.length;i++){
-      var k=Math.floor(Math.random()*owned.length);
-      lost.push(owned[k]); delete G.upgrades[owned[k]]; owned.splice(k,1);
+      lost.push(owned[0]); delete G.upgrades[owned[0]]; owned.shift();
     }
   }
   G.shift=0;                          // 下一次下手會是第 1 次
@@ -1347,9 +1441,20 @@ function gearName(id){
   for(var i=0;i<UPGRADES.length;i++)if(UPGRADES[i].id===id)return UPGRADES[i].name;
   return id;
 }
+function upCost(id){
+  for(var i=0;i<UPGRADES.length;i++)if(UPGRADES[i].id===id)return UPGRADES[i].cost;
+  return 0;
+}
 
 /* ============================================================
-   2. 關卡幾何 —— 手工灰盒；碰撞用 AABB 清單
+   2. 關卡幾何 —— 手工灰盒；碰撞用 AABB 清單　🔧 施工中（改完必驗）
+   box(x0,z0,x1,z1,高,類型) 同時產生碰撞盒與方塊，一行就是一面牆。
+
+   ⚠ 改過這一段之後一定要重新檢查第 5 段的 waypoint：
+     · 節點有沒有落在新的貨架裡（freeAt 的淨空 0.62）
+     · 新房間有沒有跟賣場連通（邊長上限 5.2）
+     · 有沒有「玩家 0.36 過得去、店員 0.5 過不去」的窄縫
+   這三件事各出過一次包，而且症狀都是「店員永遠不去那裡」，玩起來不會報錯。
    ============================================================ */
 var COL=[];
 function box(x0,z0,x1,z1,h,kind){
@@ -2137,7 +2242,9 @@ function animClerk(dt,moved,chasing){
 }
 
 /* ============================================================
-   4. 碰撞 / 視線
+   4. 碰撞 / 視線　🔒 凍結
+   全遊戲最底層的兩個函式，所有移動、視線、聽覺遮蔽都走這裡。
+   動它等於同時動店員 AI、玩家移動、立櫃、電擊槍命中判定。
    ============================================================ */
 function resolve(p,r){
   for(var i=0;i<COL.length;i++){var c=COL[i];
@@ -2171,7 +2278,10 @@ function blocked(ax,az,bx,bz,minH){
 }
 
 /* ============================================================
-   5. Waypoint 圖 —— 手工節點座標，鄰接由通行性自動建立
+   5. Waypoint 圖 —— 節點掃描 + Dijkstra　🔒 凍結
+   只有改了第 2 段的幾何才需要回來看這裡，而且改完一定要重驗：
+   節點會不會落在貨架裡、後場有沒有跟賣場連通、有沒有孤島。
+   （做過兩次驗證，兩次都抓到「只有玩家過得去、店員過不去」的縫。）
    ============================================================ */
 var NODES=[];
 function freeAt(x,z,pad){
@@ -2247,7 +2357,9 @@ function findPath(si,ti){
 }
 
 /* ============================================================
-   6. 音效（純合成，無外部檔案）
+   6. 音效（純合成，無外部檔案）　🔒 凍結
+   合成、方位（PannerNode）、環境音、iOS 靜音鍵處理都做完了。
+   音量請去第 0 段的 CFG 調，不要動這裡的合成參數。
    ============================================================ */
 var AC=null,master=null,drone=null,droneGain=null,dronePan=null;
 function audioInit(){
@@ -2365,35 +2477,40 @@ function ambienceOn(){
     var g1=AC.createGain(); g1.gain.value=0.5; o1.connect(g1); g1.connect(ambGain);
     var o2=AC.createOscillator(); o2.type='sine'; o2.frequency.value=120;
     var g2=AC.createGain(); g2.gain.value=0.16; o2.connect(g2); g2.connect(ambGain);
-    // 冰櫃風聲：兩秒的噪音 buffer 循環播放，低通濾掉高頻
-    var n=Math.floor(AC.sampleRate*2), b=AC.createBuffer(1,n,AC.sampleRate),
-        d=b.getChannelData(0);
-    for(var i=0;i<n;i++)d[i]=Math.random()*2-1;
-    var src=AC.createBufferSource(); src.buffer=b; src.loop=true;
-    var lp=AC.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=400;
-    var ng=AC.createGain(); ng.gain.value=0.030;
-    /* 所有的噪音（白噪音那一層）都先過 nAll 這一個節點再分岔。
-       這樣「把白噪音關小」和「被追時把白噪音整個抽掉」都只要動一個 gain，
-       不用去追每一條分支。 */
-    var nAll=AC.createGain(); nAll.gain.value=CFG.noiseVol; src.connect(nAll);
-    noiseCur=CFG.noiseVol;      // 平滑器的起點要跟實際值一致，不然開場會先大一下
-    nAll.connect(lp); lp.connect(ng); ng.connect(ambGain);
-    /* 冷凍室的壓縮機：同一個噪音來源再分一路，掛在冷凍室門口的座標上。
-       這是店裡唯一一個固定的聽覺地標 —— 停電之後你看不到「冷凍室」那塊招牌，
-       但那個嗡嗡還在原地，轉頭就知道自己面朝哪邊。 */
-    var cp=panAt(-14,1.2,-11.6,ambGain);
-    // 190Hz 是壓縮機的機殼震動，1100Hz 是風扇的沙沙聲。
-    // 沙沙那一段刻意壓得很低 —— 它是最容易變成「吵」的頻段，
-    // 留一點點只是為了讓手機喇叭也定得出冷凍室的方向。
-    var bp=AC.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=190; bp.Q.value=0.9;
-    var bp2=AC.createBiquadFilter(); bp2.type='bandpass'; bp2.frequency.value=1100; bp2.Q.value=0.7;
-    var cg=AC.createGain();  cg.gain.value =cp?0.34:0;
-    var cg2=AC.createGain(); cg2.gain.value=cp?0.09:0;
-    nAll.connect(bp);  bp.connect(cg);
-    nAll.connect(bp2); bp2.connect(cg2);
-    cg.connect(cp||ambGain); cg2.connect(cp||ambGain);
-    o1.start(); o2.start(); src.start();
-    amb={o1:o1,o2:o2,src:src,hum:g1,hum2:g2,noise:nAll};
+    /* ---------- 白噪音拿掉了 ----------
+       原本這裡有一條循環的噪音 buffer 當冰櫃風聲。它一直是「吵」的來源：
+       寬頻噪音不但自己惱人，還會遮蔽定位店員腳步用的中高頻。
+       noiseVol 預設 0，整條鏈根本不建立 —— 連 buffer 都不配置。
+       想要回來的話把調參面板的「白噪音」往上拉就會重建（下次進遊戲生效）。 */
+    var nAll=null;
+    if(CFG.noiseVol>0){
+      var n=Math.floor(AC.sampleRate*2), b=AC.createBuffer(1,n,AC.sampleRate),
+          d=b.getChannelData(0);
+      for(var i=0;i<n;i++)d[i]=Math.random()*2-1;
+      var src=AC.createBufferSource(); src.buffer=b; src.loop=true;
+      var lp=AC.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=400;
+      var ng=AC.createGain(); ng.gain.value=0.030;
+      nAll=AC.createGain(); nAll.gain.value=CFG.noiseVol; src.connect(nAll);
+      noiseCur=CFG.noiseVol;
+      nAll.connect(lp); lp.connect(ng); ng.connect(ambGain);
+      src.start();
+    }
+    /* 冷凍室的壓縮機 —— 改用純音而不是噪音。
+       它是店裡唯一固定的聽覺地標（停電後看不到招牌，但這個嗡嗡還在原地），
+       所以不能跟著白噪音一起消失。
+       48Hz + 96Hz 的三角波加上一個很慢的振幅起伏，
+       聽起來像壓縮機在運轉，但完全沒有沙沙聲。 */
+    var cp=panAt(-14,1.2,-11.6,ambGain,4,1.35);
+    var c1=AC.createOscillator(); c1.type='triangle'; c1.frequency.value=48;
+    var c2=AC.createOscillator(); c2.type='triangle'; c2.frequency.value=96;
+    var cg=AC.createGain(); cg.gain.value=0.26;
+    c1.connect(cg); c2.connect(cg);
+    var clfo=AC.createOscillator(); clfo.type='sine'; clfo.frequency.value=0.17;
+    var clg=AC.createGain(); clg.gain.value=0.10;
+    clfo.connect(clg); clg.connect(cg.gain);       // 壓縮機的起停感
+    cg.connect(cp||ambGain);
+    o1.start(); o2.start(); c1.start(); c2.start(); clfo.start();
+    amb={o1:o1,o2:o2,hum:g1,hum2:g2,noise:nAll};
     ambGain.gain.linearRampToValueAtTime(CFG.ambience,AC.currentTime+1.6);
   }catch(e){amb=null;}
 }
@@ -2764,11 +2881,13 @@ function newRun(){
   updateHUD();
   setObjective(K('走到商品前面，按 E 塞進提袋','走到商品前面，按「拿」塞進提袋'),false,
     '需要 '+CFG.extractItems+' 件才能脫身。櫃檯上就有兩件。');
-  // 開場這行在手機上只有 400px 寬可用，寫太長會擠成三行還溢出去
-  if(G.shift===1) showBeat('已從後門進入',
-    K('W A S D 走路 · 滑鼠轉頭 · E 撿東西',
-      '左下拖曳走路 · 右半邊轉頭 · 按「拿」撿'),
-    '',4500);
+  /* 開場只給一行 toast，不再用畫面中央的 beat。
+     beat 那個框留給「會改變你這一局要做什麼」的事件：
+     電擊槍部件、機器人組裝、密碼、辦公室、非賣品、解鎖抉擇。
+     操作說明不屬於那一類 —— 它擋在畫面中央的成本比它的資訊量高。 */
+  if(G.shift===1)
+    toast(K('W A S D 走路 · 滑鼠轉頭 · E 撿東西',
+            '左下拖曳走路 · 右半邊轉頭 · 按「拿」撿'));
 }
 
 /* 開場廣播：一次工作階段只播一次，用來建立「這裡有人在看」。
@@ -3045,7 +3164,7 @@ function finishOfficeDoor(){
   buildWaypoints();
   SFX.unlock(); makeNoise(CFG.hearWalk*1.1);
   ev('office_opened');
-  showBeat('辦公室開了','收銀機在裡面。','門開著 —— 他現在也進得來。',3600);
+  toast('辦公室開了 · 門開著，他現在也進得來');
   updateAim();
 }
 /* 讀字條。刻意不停止時間、不暫停 ——
@@ -3343,7 +3462,10 @@ function pa(text){
 }
 
 /* ============================================================
-   8. 輸入
+   8. 輸入　🔒 凍結
+   鍵盤、滑鼠、指標鎖定、觸控搖桿。踩過的坑都在註解裡：
+   Ctrl+W 關分頁、Esc 一定會解除指標鎖定、手機 touchmove 會吃掉捲動、
+   SCREENS 必須先宣告才能裝觸控代理。不要重排這一段的順序。
    ============================================================ */
 var keys={}, yaw=SPAWN.yaw, pitch=0, vel=new THREE.Vector3();
 var locked=false, lockFailed=false, manualPause=false, cursorX=0.5;
@@ -3627,7 +3749,10 @@ function syncPause(){
 }
 
 /* ============================================================
-   9. 互動
+   9. 互動　🔧 施工中
+   新機制幾乎都加在這裡。目前的分支順序（tryInteract 裡）有意義：
+   按住中 → 密碼鍵盤 → 躲在櫃子裡 → 拖著人 → 昏迷的店員 → 才輪到 aim。
+   越「你現在手上正在做的事」越前面，不然一個 E 會同時觸發兩件事。
    ============================================================ */
 var ray=new THREE.Raycaster();
 var fwd=new THREE.Vector3(), aim=null;
@@ -3909,9 +4034,12 @@ function tryInteract(){
       triggerForbidden();
     }else{
       SFX.forbidden();
-      showBeat('第 '+r.forbidCount+' 件',
-        beacons.length?('還有 '+beacons.length+' 道紫光'):'三件都拿到了',
-        beacons.length?'警報已經在響了。':'現在只剩走出去。',3200);
+      showBeat('第 '+r.forbidCount+' 件 · 整袋 ×'+
+          (1+CFG.riskBonus*r.forbidCount).toFixed(2),
+        beacons.length?('還有 '+beacons.length+' 道紫光 · 每道 $'+forbiddenValueNow())
+                      :'三件都拿到了',
+        beacons.length?'再一件，整袋再加 '+Math.round(CFG.riskBonus*100)+'%。'
+                      :'現在只剩走出去。',3600);
     }
   }
   if(!r.unlocked&&r.count>=CFG.extractItems)unlockExit();
@@ -3949,11 +4077,16 @@ function unlockExit(){
   toast('後門已可脫身');
   updateExitChip();
   if(r.forbiddenTaken){ setObjective('快回後門！',true); return; }
-  // 這就是整個原型要測的那一刻：把選擇明白攤在玩家面前
+  /* 這就是整個原型要測的那一刻：把選擇明白攤在玩家面前。
+     兩個數字一定要同時出現 —— 「現在走能拿多少」與「回頭去能拿多少」。
+     只講其中一個的話那不是抉擇，那是提示。 */
+  var fv=forbiddenValueNow();
+  var all=Math.round((r.value+fv*3)*(1+CFG.riskBonus*3));
   setObjective('你現在就可以乾淨脫身了',false,
-    '或者往後場走。那邊有三道紫光，每一道是 $'+forbiddenValueNow()+'。');
-  showBeat('現在就能走 · 提袋 $'+r.value,
-    '後場那三道紫光，每道 $'+forbiddenValueNow()+'。',
+    '後場三道紫光，每道 $'+fv+'，而且每拿一件整袋再加 '+
+    Math.round(CFG.riskBonus*100)+'%。');
+  showBeat('現在走 · $'+r.value,
+    '三件全拿 · 約 $'+all,
     '要走，還是再進去一次？',6000);
 }
 function triggerForbidden(){
@@ -4349,8 +4482,7 @@ function stuffClerk(hideObj){
   hideObj.stuffed=true;                      // 這個櫃子這局不能再躲人
   SFX.unlock(); makeNoise(CFG.hearWalk*0.8);
   ev('clerk_stuffed',{sec:CFG.stuffStun});
-  showBeat('關進去了',CFG.stuffStun+' 秒',
-    '他出來之前，這個櫃子你不能躲。',3200);
+  toast('關進去了 · '+CFG.stuffStun+' 秒 · 他出來前這個櫃子不能躲');
   updateHUD(); updateAim();
 }
 // 拖行中：店員跟在玩家後面一點的位置
@@ -4382,9 +4514,8 @@ function useShrink(){
   document.body.classList.remove('shrink-end');
   $('shrinknum').textContent=shrinkT.toFixed(1);
   SFX.shrink(); ev('shrink_used');
-  showBeat('縮小 '+CFG.shrinkTime+' 秒',
-    '這段時間他抓不到你。',
-    '但他不會停 —— 藥效退的時候別站在他腳邊。',3600);
+  // 狀態已經由畫面邊緣的紫光與倒數講得很清楚了，不需要再擋一個框
+  toast('縮小 '+CFG.shrinkTime+' 秒 · 這段時間他抓不到你');
   updateHUD();
 }
 
@@ -4575,7 +4706,12 @@ function stepPlayer(dt){
 function extract(){
   var r=G.run; if(r.extracted||r.caught)return;
   r.extracted=true; ev('extracted',{value:r.value,forbidden:r.forbiddenTaken});
-  var bonus = r.forbiddenTaken?CFG.riskBonus:1;
+  /* 風險加成按「帶出去幾件非賣品」累加，作用在整袋上。
+     1 件 ×1.25、2 件 ×1.50、3 件 ×1.75 ——
+     所以第三件真正的價值不只是它自己的 $300，
+     還包括它讓你已經扛著的那一整袋再貴 25%。
+     這就是為什麼在後場多待那 20 秒會是一個真的抉擇。 */
+  var bonus = 1 + CFG.riskBonus*(r.forbidCount||0);
   r.gross=r.value; r.bonus=Math.round(r.value*(bonus-1)); r.net=Math.round(r.value*bonus);
   G.cash += r.net;
   STATS.extracted++; STATS.times.push(r.t); STATS.cashTotal+=r.net;
@@ -4783,6 +4919,14 @@ function updateHUD(){
         'style="border-color:#FFF3C4;color:#FFF3C4">'+
         K('X','鐘')+' 午夜鐘 '+r.stop+'　<small style="opacity:.6">剩 '+
         stopRunsLeft()+' 回合</small></div>';
+  /* 非賣品的誘因要一直掛在畫面上，不能只在解鎖那一刻講一次。
+     那個抉擇會持續整整後半局 —— 提醒也應該一直在。 */
+  if(beacons.length&&(r.unlocked||r.forbidCount))
+    it+='<div class="ready" style="border-color:#C77DFF;color:#C77DFF">紫光 '+
+        beacons.length+' · 每件 $'+forbiddenValueNow()+'</div>';
+  if(r.forbidCount)
+    it+='<div class="ready" style="border-color:#C77DFF;color:#C77DFF">整袋 ×'+
+        (1+CFG.riskBonus*r.forbidCount).toFixed(2)+'</div>';
   if(r.hasKey)it+='<div class="ready" style="border-color:#7FE3F5;color:#7FE3F5">鑰匙</div>';
   // 密碼：拿到之後就是這一局的第二個目標，要一直看得見
   if(r.codeFound)it+='<div class="ready" style="border-color:#7FE3F5;color:#7FE3F5">'+
@@ -4846,7 +4990,8 @@ function renderReceipt(){
     '<div class="rule"></div>'+ rows +'<div class="rule"></div>'+
     '<div class="row"><span>贓物小計</span><span>$'+r.gross+'</span></div>'+
     (r.forbiddenTaken&&!r.caught
-      ? '<div class="row"><span>風險加成 ×'+CFG.riskBonus.toFixed(2)+'</span><span>+$'+r.bonus+'</span></div>'
+      ? '<div class="row"><span>風險加成 '+(r.forbidCount||0)+' 件 ×'+
+        (1+CFG.riskBonus*(r.forbidCount||0)).toFixed(2)+'</span><span>+$'+r.bonus+'</span></div>'
       : '')+
     (r.caught?'<div class="row mut"><span>全部丟在現場</span><span>-$'+r.gross+'</span></div>':'')+
     (r.caught&&r.lostCash?'<div class="row mut"><span>沒收累計所得</span><span>-$'+r.lostCash+'</span></div>':'')+
@@ -5299,7 +5444,18 @@ function syncItemButtons(){
   $('btnShrink').hidden=!G.upgrades.shrink;
   $('btnStop').hidden=stopRunsLeft()<=0;
 }
-function gotoShop(){ G.phase='shop'; renderShop(); show('s-shop'); }
+function gotoShop(){
+  G.phase='shop'; renderShop(); show('s-shop');
+  /* 每次進商店都把捲軸拉回最上面（也就是商店本身），
+     並且判斷內容有沒有超出畫面 —— 有的話才顯示下緣的提示。
+     用 setTimeout 是因為要等這一幀排版完成才量得到 scrollHeight。 */
+  var sc=$('s-shop'), hint=$('morehint');
+  setTimeout(function(){
+    sc.scrollTop=0;
+    var more=sc.scrollHeight-sc.clientHeight>40;
+    hint.classList.toggle('on',more);
+  },40);
+}
 function nextShift(){
   STATS.nextShifts++; ev('next_shift_started'); save();
   hideAll(); manualPause=false; G.phase='play'; newRun(); syncItemButtons(); requestLock();
@@ -5358,6 +5514,10 @@ $('btn-board-copy').addEventListener('click',copyBrag);
     keypadPress(b.getAttribute('data-k'));
   });
 })();
+// 一開始捲動就把「下面還有東西」的提示收掉 —— 它的任務已經完成了
+$('s-shop').addEventListener('scroll',function(){
+  if(this.scrollTop>20)$('morehint').classList.remove('on');
+},{passive:true});
 setupUiTouchProxy();
 $('vertag').textContent='灰盒驗證原型 '+BUILD;
 $('btn-next').addEventListener('click',gotoShop);
