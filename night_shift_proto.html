@@ -199,6 +199,24 @@
         rgba(4,6,4,0) 83%,#040604 91%,#040604 100%)}
   body.hidden-in #hidefx{opacity:1}
   body.hidden-in #basket,body.hidden-in #objective{opacity:.35}
+  /* 拉霸。放在畫面正中央偏上 —— 這三秒就是要你盯著它看，
+     而「你正在盯著它看、背對著門」本身就是這個機制的代價。 */
+  #slot{position:absolute;left:50%;top:34%;transform:translateX(-50%);
+    text-align:center;opacity:0;transition:opacity .2s;pointer-events:none}
+  body.slotting #slot{opacity:1}
+  #slot .reels{display:flex;gap:8px;background:rgba(8,11,8,.92);
+    border:2px solid var(--price);padding:12px 14px}
+  #slot .reels b{display:block;width:56px;height:66px;line-height:66px;
+    font-family:var(--f-num);font-size:38px;color:var(--tube);
+    background:#12180F;border:1px solid var(--line-hi)}
+  #slot .reels b.lock{color:var(--price);
+    text-shadow:0 0 18px rgba(255,201,60,.6);border-color:var(--price)}
+  #slotmsg{margin-top:10px;font-family:var(--f-num);font-size:26px;
+    text-shadow:0 2px 12px rgba(0,0,0,.9)}
+  @media (max-width:820px),(max-height:520px){
+    #slot .reels b{width:42px;height:50px;line-height:50px;font-size:28px}
+    #slotmsg{font-size:20px}
+  }
   /* 按住進度條。放在準心正下方 —— 這幾秒你唯一該看的就是準心與周圍，
      把條子放在螢幕邊緣的話玩家會低頭看它，剛好錯過店員走過來。 */
   #hold{position:absolute;left:50%;top:calc(50% + 42px);transform:translateX(-50%);
@@ -755,6 +773,10 @@
   <div id="prompt"></div>
   <div id="toast"></div>
   <div id="pa"><span>店內廣播</span><em id="patext"></em></div>
+  <div id="slot">
+    <div class="reels"><b id="sl0">7</b><b id="sl1">7</b><b id="sl2">7</b></div>
+    <div id="slotmsg"></div>
+  </div>
   <div id="hold"><div id="holdlab"></div><div class="bar"><i id="holdfill"></i></div></div>
   <div id="shrinkfx"></div>
   <div id="shrinktag">抓不到你 · <b id="shrinknum">0.0</b></div>
@@ -848,10 +870,14 @@
         拖到立櫃前再按一次就關進去，昏 5 秒變 <b>30 秒</b>。
         代價：拖著走得慢、不能衝刺、一路有聲音，而且他醒來的時候你就站在旁邊 ——
         所以要在立櫃附近開打，位置就是技術</div>
-      <div><b>·</b>東南角有一扇<b style="color:var(--danger)">紅色的門</b>，旁邊掛著「辦公室」的牌子，
-        一開始就鎖著。
+      <div><b>·</b>賣場<b>西牆</b>有個門口，一條 12 公尺的走廊通到最西邊的
+        <b style="color:var(--danger)">辦公室</b>（紅門，旁邊有牌子）。
+        走廊<b style="color:var(--danger)">沒有任何掩體</b> —— 在裡面被看到就只能一路衝到底。
         鑰匙只有在你已經組好電擊槍之後才會出現（那之後每關都有），
-        開門要<b>按住 5 秒</b>不動，中途被追就重來。裡面是收銀機（$320，開的時候很吵）</div>
+        開門要<b>按住 5 秒</b>不動，中途被追就重來</div>
+      <div><b>·</b>辦公室裡有一台<b style="color:var(--price)">拉霸機</b>，每次開門可以拉一次，全自動。
+        <b>$0 到 $1000</b>，<b style="color:var(--danger)">兩成機率什麼都沒有</b>。
+        機台很吵，而且拉的三秒你背對著門 —— 牆上那台監視器是你唯一的後照鏡</div>
       <div><b>·</b><b style="color:var(--danger)">門開了他也進得來</b> —— 辦公室不是安全屋</div>
       <div><b>·</b><b style="color:var(--forbid)">縮小劑</b>（R）發動後他<b>抓不到你</b> ——
         但他不會停下來追。畫面邊緣的紫光是安全的證明，
@@ -1014,7 +1040,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v7.4';
+var BUILD='v7.5';
 
 /* ================================================================
    目錄與凍結狀態
@@ -1310,6 +1336,38 @@ var ITEMS = [
 /* 電擊槍的四個部件與相關查詢。
    刻意跟 SET_PARTS（三件組機器人）分開：機器人是「這局的貨」，
    組起來馬上變成錢；電擊槍是「跨局的裝備」，組起來變成一個動詞。 */
+/* ---------- 拉霸機的賠率表 ----------
+   辦公室裡那台，每次開門可以拉一次，全自動。
+
+   p 是機率、v 是金額、s 是三個滾輪停下來的符號。
+   0 元固定 20% —— 那 20% 是整個機制的重點：
+   你跑了一趟最遠的房間、站著不動三秒，然後什麼都沒有。
+   沒有這個機率它就只是一個免費的獎勵箱。
+
+   期望值 $213：
+     0×.20 + 80×.22 + 150×.20 + 250×.15 + 400×.11 + 600×.07 + 800×.04 + 1000×.01
+   大約等於一趟乾淨脫身的收入，但有 1% 的機會是五趟。
+   機率合計必須是 1.00，改的時候記得重算。 */
+var SLOT_TABLE=[
+  {p:0.20, v:0,    s:'-'},
+  {p:0.22, v:80,   s:'■'},
+  {p:0.20, v:150,  s:'●'},
+  {p:0.15, v:250,  s:'▲'},
+  {p:0.11, v:400,  s:'◆'},
+  {p:0.07, v:600,  s:'★'},
+  {p:0.04, v:800,  s:'✦'},
+  {p:0.01, v:1000, s:'7'}
+];
+var SLOT_SYMS=['■','●','▲','◆','★','✦','7'];
+function rollSlot(){
+  var r=Math.random(), acc=0;
+  for(var i=0;i<SLOT_TABLE.length;i++){
+    acc+=SLOT_TABLE[i].p;
+    if(r<acc)return SLOT_TABLE[i];
+  }
+  return SLOT_TABLE[0];
+}
+
 var TZ_PARTS=['tz_grip','tz_cell','tz_probe'];
 function tzHave(){ return TZ_PARTS.filter(function(id){return G.tzParts[id];}).length; }
 function tzReady(){ return tzHave()>=TZ_PARTS.length; }
@@ -1479,7 +1537,9 @@ function box(x0,z0,x1,z1,h,kind){
    最高價值的東西必須放在「非去不可」的地方，光調數字沒有用。
    但純粹放大等於更多無聊的走路，所以深處那一半都加了隔間與貨架， */
 box(-20.4,15.6,20.4,16.4,3.2); box(-20.4,-21.8,20.4,-21.0,3.2);
-box(-20.4,-21.8,-19.6,16.4,3.2); box(19.6,-21.8,20.4,16.4,3.2);
+// 西牆從中間切開，留 z -1.6~1.6 當通往辦公室走廊的門口
+box(-20.4,-21.8,-19.6,-1.6,3.2); box(-20.4,1.6,-19.6,16.4,3.2);
+box(19.6,-21.8,20.4,16.4,3.2);
 // 後場隔牆（兩個門口：冷凍室 x-15.5~-12.5，倉庫 x8~11）
 box(-19.6,-10.4,-15.5,-9.6,3.2); box(-12.5,-10.4,8,-9.6,3.2); box(11,-10.4,19.6,-9.6,3.2);
 // 冷凍室 / 倉庫分隔（跟著北牆一起拉長）
@@ -1531,14 +1591,28 @@ box(15.0,-20.6,18.4,-19.8,1.8,'shelf');
    門的碰撞盒刻意放進 COL_STATIC，所以 waypoint 一開始就當它是關的，
    店員進不去。解鎖的時候會把它從 COL 移除並重算 waypoint ——
    也就是說，你開了門，他也就能進來了。 */
-box(13.0,9.0,19.6,9.8,3.2);                 // 辦公室北牆
-box(13.0,9.8,13.8,11.4,3.2);                // 西牆（門的南側）
-box(13.0,13.6,13.8,15.6,3.2);               // 西牆（門的北側）
-var OFFICE_DOOR=box(13.0,11.4,13.8,13.6,2.4,'wall');   // 門本身
-box(17.2,14.2,19.4,15.4,1.0,'shelf');       // 收銀檯
-box(14.2,10.2,17.2,11.6,0.78,'shelf');      // 辦公桌
-var OFFICE={x0:13.8,z0:9.8,x1:19.6,z1:15.6,
-            door:{x:13.4,z:12.5}, reg:{x:18.3,z:14.8}};
+/* 走廊：從賣場西牆往西 12m，寬 3.2m。
+   走廊本身是一條沒有掩體的直線 —— 中間被看到就只能一路衝到底，
+   所以「要不要去辦公室」這個決定的代價有一半在這條路上。 */
+box(-32.2,-2.4,-19.6,-1.6,3.2);             // 走廊南牆
+box(-32.2, 1.6,-19.6, 2.4,3.2);             // 走廊北牆
+
+/* 辦公室：走廊盡頭，x -39.6~-33.0, z -4.4~4.4。
+   放在店的最西邊而不是角落，是為了讓它跟後場（北側）與出口（南側）
+   形成三個不同方向的目標 —— 一局之內你不可能全部都去。 */
+box(-40.4,-5.2,-39.6, 5.2,3.2);             // 辦公室西牆
+box(-40.4, 4.4,-32.2, 5.2,3.2);             // 北牆
+box(-40.4,-5.2,-32.2,-4.4,3.2);             // 南牆
+box(-33.0,-5.2,-32.2,-1.6,3.2);             // 東牆（門的南側）
+box(-33.0, 1.6,-32.2, 5.2,3.2);             // 東牆（門的北側）
+var OFFICE_DOOR=box(-33.0,-1.6,-32.2,1.6,2.4,'wall');  // 門本身
+box(-39.4,-1.3,-38.0, 1.3,1.0,'shelf');     // 拉霸機的檯座
+/* 桌子後緣收到 3.2 而不是 3.4：原本它跟牆之間剛好 1.0m，
+   等於玩家（半徑 0.36）鑽得過去、店員（0.5）鑽不過去 ——
+   那個縫會變成一個免費的安全角落。1.2m 兩個人都過得去。 */
+box(-37.6, 2.0,-34.6, 3.2,0.78,'shelf');    // 辦公桌
+var OFFICE={x0:-39.6,z0:-4.4,x1:-33.0,z1:4.4,
+            door:{x:-32.6,z:0}, reg:{x:-38.6,z:0}};
 
 var EXIT={x0:-3.5,z0:13.8,x1:3.5,z1:15.4};
 var SPAWN={x:0,z:13.4,yaw:0};
@@ -1675,6 +1749,17 @@ coldFloor.rotation.x=-Math.PI/2; coldFloor.position.set(-13,0.02,-15.6); scene.a
 var grid=new THREE.GridHelper(44,22,0x333D34,0x2C352D);
 grid.material.transparent=true; grid.material.opacity=0.55;
 grid.position.set(0,0.04,-3.0); scene.add(grid);
+/* 西翼（走廊＋辦公室）自己鋪地板，不要把主地板整個拉寬 ——
+   拉寬的話 x-40~-20 的空曠處也會長出地板，從賣場往西看會看到一片
+   飄在建築外面的地。 */
+/* 13.4 寬而不是 12.8：要一路蓋到辦公室東牆（x=-33.0），
+   短了的話門口會留一條 0.1m 的縫，門打開的瞬間就看得到底下的虛空。
+   y 抬到 0.005 是為了不跟主地板共面 —— 兩塊 y=0 的地板重疊在門口
+   會 z-fighting，出現一條閃爍的條紋。 */
+var corrFloor=new THREE.Mesh(new THREE.PlaneGeometry(13.4,4.0),MAT.floor);
+corrFloor.rotation.x=-Math.PI/2; corrFloor.position.set(-26.3,0.005,0); scene.add(corrFloor);
+var offFloor=new THREE.Mesh(new THREE.PlaneGeometry(7.6,10.0),MAT.cold);
+offFloor.rotation.x=-Math.PI/2; offFloor.position.set(-36.3,0.01,0); scene.add(offFloor);
 
 // 外殼（牆、櫃檯、冷凍室、倉庫）—— 建一次就好
 var boxGeo=new THREE.BoxGeometry(1,1,1);
@@ -1752,7 +1837,7 @@ function buildAisles(seed){
    越深越暗是這兩間房的賣點，但完全不給燈就變成只能靠手電筒的迷宮。 */
 var TUBES=[[-13,10],[0,2],[10.5,9.5],[-13,-2],[13,-2],[0,9],[0,-6],
            [-14,-13],[10,-13],[-15,-19],[8,-19],
-           [16.6,12.6]];          // 辦公室
+           [-25.5,0],[-36.3,0]];  // 走廊、辦公室
 var lamps=[],tubeMeshes=[];
 var tubeGeo=new THREE.BoxGeometry(3.4,0.12,0.34);
 TUBES.forEach(function(p){
@@ -1774,7 +1859,7 @@ function makeSign(x,y,z,w,h){
 makeSign(0,2.35,15.35,6.6,0.34);   // 出口招牌下方的燈條
 makeSign(-14,1.32,-9.55,3.0,0.2);  // 冷凍室門口燈條
 makeSign(9.5,1.32,-9.55,2.6,0.2);  // 倉庫門口燈條
-makeSign(13.35,2.20,12.5,0.2,2.0); // 辦公室門框燈條（直的，貼在門邊）
+makeSign(-32.6,2.20,-1.75,0.2,2.0);  // 辦公室門框燈條（直的，貼在門邊）
 
 // 地面緊急疏散導引燈帶：從冷凍室門口一路帶到出口。停電時變紅並閃動
 var guides=[];
@@ -2013,7 +2098,8 @@ signExit.position.set(0,3.05,15.3); scene.add(signExit);
 var signExit2=textPlane('← 出口',2.6,0.62,'#5DF39B',72,'rgba(6,30,16,.96)');
 signExit2.position.set(0,2.55,-8.5); scene.add(signExit2);
 var signExit3=textPlane('出口',2.0,0.5,'#5DF39B',72,'rgba(6,30,16,.96)');
-signExit3.position.set(-17.2,2.55,0); signExit3.rotation.y=Math.PI/2; scene.add(signExit3);
+// 移到 z=6.5：原本在 z=0，正好擋在往辦公室走廊的門口，會指錯方向
+signExit3.position.set(-17.2,2.55,6.5); signExit3.rotation.y=Math.PI/2; scene.add(signExit3);
 
 // 冷凍室：發光門框 + 大型警告，讓「那邊有東西」和「那邊很危險」同時成立
 var signFreezer=textPlane('冷凍室',3.8,0.92,'#7FE3F5',96,'rgba(6,24,30,.96)');
@@ -2141,7 +2227,8 @@ monitor(0,2.62,0);                  // 中央橫向通道，朝南（走進來�
 monitor(3.5,2.55,-8.4);             // 後場通道，朝南 —— 進冷凍室前最後一次確認
 monitor(-7,2.50,11.6,Math.PI);      // 收銀區西側櫃檯上方，朝北（跑回來脫身時看得到）
                                     // 不能放在 x=0：那條是出生點正前方的通道，會整片擋住視野
-monitor(-19.15,2.35,0,Math.PI/2);   // 西側牆面，朝東
+// 原本在 z=0，現在那裡是往辦公室的門口 —— 移到 z=-5 免得懸在走道中間
+monitor(-19.15,2.35,-5.0,Math.PI/2);   // 西側牆面，朝東
 monitor(-17.2,2.40,3,Math.PI);      // 西側逃生走道，朝北（往出口跑的時候看得到）
 monitor(14,2.50,-14.8);             // 倉庫，朝南
 /* 兩間房的裡段沒有監視器 —— 走進去就是瞎的，那是它的代價。
@@ -2149,6 +2236,11 @@ monitor(14,2.50,-14.8);             // 倉庫，朝南
    進去之後就只能靠耳朵。偵查與承諾分成兩個動作。 */
 monitor(-9.8,2.45,-16.2);           // 冷凍室內間缺口前，朝南
 monitor(7.0,2.50,-16.2);            // 倉庫內段缺口前，朝南
+/* 西翼兩台。走廊那台裝在門口內側朝東 —— 你踏進走廊前的最後一次確認，
+   因為走廊裡沒有任何掩體，進去之後就沒有回頭的餘裕。
+   辦公室那台在最裡面，拉霸的時候你背對門，它是你唯一的後照鏡。 */
+monitor(-21.0,2.45,0,Math.PI/2);    // 走廊東端，朝東（回頭看賣場）
+monitor(-39.3,2.40,0,Math.PI/2);    // 辦公室西牆，朝東（面對門口）
 // 冷凍室裡面：拿非賣品前後最需要知道他在哪的地方
 monitor(-11.5,2.45,-12.0,Math.PI/2*3);
 drawStatic(); camTex.needsUpdate=true;   // 第一格先給雜訊，主迴圈起來後就換成即時畫面
@@ -2327,7 +2419,16 @@ function buildWaypoints(){
   // 放 -10.9 的話離貨架 F2 的淨空只剩 8 公分，貨架稍微一動它就消失
   [[-14.0,-9.4],[-14.0,-10.7],[9.5,-9.4],[9.5,-10.9],    // 兩個門口
    [-7.8,-13.2],[-7.8,-15.8],[-9.8,-17.8],               // 冷凍室缺口那條路
-   [6.9,-15.6],[6.9,-18.2]                               // 倉庫缺口那條路
+   [6.9,-15.6],[6.9,-18.2],                              // 倉庫缺口那條路
+   /* 西翼：走廊只有 3.2m 寬，格子掃描一定掃不到，必須手工鋪。
+      間距都在 3.2 以內，遠低於 5.2 的連邊上限，所以整條一定連得起來。 */
+   [-19.0,0],[-22.2,0],[-25.4,0],[-28.6,0],[-31.4,0],    // 走廊
+   /* 這兩個座標是驗算過才挪的：
+      原本的 (-36.3,2.4) 落在辦公桌的 AABB 裡（桌高 0.78 < 1.0，
+      freeAt 與 blocked 都忽略它，但 resolve 不會）—— 店員會一直頂著桌子；
+      原本的 (-38,0) 則被拉霸機檯座（高剛好 1.0）判定成不通行而整個消失，
+      結果離機台最近的那個節點不存在。 */
+   [-34.2,0],[-36.3,1.0],[-36.3,-2.4],[-37.2,0]          // 辦公室
   ].forEach(function(p){ if(freeAt(p[0],p[1],0.62))NODES.push({x:p[0],z:p[1]}); });
 
   NODES.forEach(function(n){n.adj=[];});
@@ -2849,6 +2950,11 @@ function newRun(){
   };
   shrinkT=0; stopT=0; doorPingT=0;
   document.body.classList.remove('shrunk','shrink-end');
+  /* 拉霸的狀態一定要在這裡清掉。
+     不清的話：拉到一半被抓 → slot 還留著 done:false →
+     下一局 stepSlot 接著跑完舊的計時器，把錢加進「新的」那一袋，
+     而且 regObj.opened 已經重置，你還可以再拉一次。免費的雙倍。 */
+  slot=null; document.body.classList.remove('slotting');
   closeKeypad(); cancelHold(); dropDrag();
   clerk.visible=true;
   document.body.classList.remove('stopped');
@@ -3063,7 +3169,7 @@ function buildItems(seed){
   forbidGlow.position.set(fpick[0][0],1.2,fpick[0][1]);
   forbidGlow.intensity=1.1;
 }
-/* ---------- 辦公室 ----------
+/* ---------- 辦公室（賣場西邊，走廊盡頭） ----------
    門與收銀機都是「按住不放」的互動。灰盒裡最便宜的張力就是這個：
    不需要新的謎題系統，只需要讓玩家在一個固定的點站滿幾秒鐘。
    店員的威脅會自己把那幾秒變得難熬。 */
@@ -3092,23 +3198,33 @@ function buildOffice(){
      有了它，這扇門從「一塊紅色的東西」變成「辦公室」——
      玩家第一次經過就知道那是什麼，而不是拿到鑰匙才恍然大悟。 */
   var plate=textPlane('辦公室',1.5,0.44,'#FF6A5A',72,'rgba(30,8,6,.96)');
-  plate.position.set(12.93,2.05,10.6);
-  plate.rotation.y=-Math.PI/2;           // 面向西邊（賣場那一側）
+  plate.position.set(-32.15,2.05,3.0);
+  plate.rotation.y=Math.PI/2;            // 面向東邊（走廊來的方向）
   scene.add(plate); officeProps.push(plate);
+  // 走廊口再掛一塊，讓人在賣場裡就知道西邊那條路通到哪
+  // 貼在西牆的東面，面向賣場（跟 signExit3 同一個做法），不然會埋進牆裡
+  var plate2=textPlane('← 辦公室',2.2,0.5,'#FF6A5A',68,'rgba(30,8,6,.96)');
+  plate2.position.set(-19.55,2.45,3.4); plate2.rotation.y=Math.PI/2;
+  scene.add(plate2); officeProps.push(plate2);
   officeDoorObj={mesh:g,officeDoor:true,taken:false,
     def:{name:'辦公室門',tier:'door',slots:0,v:0}};
   g.userData.item=officeDoorObj;
   g.traverse(function(c){c.userData.item=officeDoorObj;});
   itemMeshes.push(officeDoorObj);
 
-  // 收銀機
+  // 拉霸機：一個立式機台，面向門口（朝東）
   var r=new THREE.Group();
-  r.add(P(GEO.box,0x3A4640,[0.62,0.34,0.46],[0,1.17,0]));
-  r.add(P(GEO.box,0x1E2622,[0.50,0.14,0.06],[0,1.30,0.22]));
-  r.add(P(GEO.box,0x9BE08A,[0.34,0.10,0.03],[0,1.40,0.14],1.3));
-  r.position.set(OFFICE.reg.x,0,OFFICE.reg.z); r.rotation.y=Math.PI; scene.add(r);
+  r.add(P(GEO.box,0x2E1A1A,[0.52,1.30,0.92],[0,0.65,0]));           // 機身
+  r.add(P(GEO.box,0x0E1512,[0.10,0.44,0.74],[0.26,1.02,0]));        // 面板
+  r.add(P(GEO.box,0xFFC93C,[0.08,0.10,0.18],[0.30,1.02,-0.22],1.3)); // 三個窗口
+  r.add(P(GEO.box,0xFFC93C,[0.08,0.10,0.18],[0.30,1.02,0]   ,1.3));
+  r.add(P(GEO.box,0xFFC93C,[0.08,0.10,0.18],[0.30,1.02,0.22],1.3));
+  r.add(P(GEO.box,0xE03428,[0.10,0.30,0.10],[0.22,1.42,0.40],1.0)); // 拉桿
+  r.add(P(GEO.box,0xC9CCC4,[0.12,0.12,0.12],[0.22,1.58,0.40]));     // 拉桿頭
+  // 機台站在檯座上（檯座高 1.0），不然機身有一半埋在座子裡
+  r.position.set(OFFICE.reg.x,1.0,OFFICE.reg.z); scene.add(r);
   regObj={mesh:r,register:true,opened:false,taken:false,
-    def:{name:'收銀機',tier:'door',slots:0,v:0}};
+    def:{name:'拉霸機',tier:'door',slots:0,v:0}};
   r.userData.item=regObj;
   r.traverse(function(c){c.userData.item=regObj;});
   itemMeshes.push(regObj);
@@ -3121,7 +3237,7 @@ function buildOffice(){
   nt.add(P(GEO.box,0x8A8F86,[0.20,0.004,0.02],[0,0.80,-0.10]));
   nt.add(P(GEO.box,0x8A8F86,[0.22,0.004,0.02],[0,0.80,-0.04]));
   nt.add(P(GEO.box,0x8A8F86,[0.16,0.004,0.02],[0,0.80,0.02]));
-  nt.position.set(15.6,0,10.9); nt.rotation.y=-0.25; scene.add(nt);
+  nt.position.set(-36.1,0,2.7); nt.rotation.y=-0.25; scene.add(nt);
   noteObj={mesh:nt,note:true,taken:false,
     def:{name:'一張字條',tier:'door',slots:0,v:0}};
   nt.userData.item=noteObj;
@@ -3133,7 +3249,7 @@ function buildOffice(){
   ch.add(P(GEO.box,0x2A332D,[0.46,0.08,0.46],[0,0.46,0]));
   ch.add(P(GEO.box,0x2A332D,[0.46,0.52,0.08],[0,0.74,0.22]));
   ch.add(P(GEO.box,0x4A5450,[0.10,0.44,0.10],[0,0.22,0]));
-  ch.position.set(15.7,0,12.4); ch.rotation.y=0.4; scene.add(ch);
+  ch.position.set(-36.1,0,1.2); ch.rotation.y=1.9; scene.add(ch);
   officeProps.push(ch);
 }
 
@@ -3193,15 +3309,61 @@ function readNote(){
     '我是店長。最近附近有外星人入侵，所以午夜時刻我把這家店關了。',
     '如果你看到店裡有人走動 —— 那一定不是我。',9000);
 }
+/* ---------- 拉霸 ----------
+   全自動：按下去之後你什麼都不用做，只能站在那裡看三個滾輪停下來。
+
+   結果是「先抽再演」——先用賠率表決定金額，再倒推要顯示哪三個符號。
+   真正的吃角子老虎也是這樣做的：滾輪只是把已經決定的事情演出來。
+   這樣機率是乾淨的，不會被動畫的取整誤差污染。
+
+   拉的過程 2.4 秒，全程站著不動而且很吵。那就是它的代價 ——
+   你在全店最遠的房間裡，背對門口，發出聲音，等一個 20% 會歸零的結果。 */
+var slot=null;
 function finishRegister(){
-  regObj.opened=true; regObj.taken=true;
-  regObj.mesh.children[2].material=itemMat(0xFFC93C,1.6);
-  makeNoise(CFG.hearSprint*0.9);        // 收銀機很吵
-  SFX.register();
-  spawnItem(BY_ID.cashbox,OFFICE.reg.x-0.9,1.05,OFFICE.reg.z);
-  ev('register_opened');
-  toast('抽屜彈出來了 · $'+BY_ID.cashbox.v+' · 2 格');
+  regObj.opened=true;                  // 每次開門只能拉一次
+  var res=rollSlot();
+  slot={t:0,res:res,stop:[0.9,1.5,2.2],done:false};
+  $('slotmsg').innerHTML='';            // 不清的話會留著上一把的結果整整三秒
+  document.body.classList.add('slotting');
+  makeNoise(CFG.hearSprint*0.9);       // 機台很吵，整間店都聽得到
+  ev('slot_start');
   updateAim();
+}
+function stepSlot(dt){
+  if(!slot)return;
+  slot.t+=dt;
+  var cells=[$('sl0'),$('sl1'),$('sl2')];
+  for(var i=0;i<3;i++){
+    if(slot.t<slot.stop[i]){
+      // 還在轉：每 60ms 換一個符號
+      cells[i].textContent=SLOT_SYMS[Math.floor(slot.t*16+i*3)%SLOT_SYMS.length];
+      cells[i].className='';
+    }else if(!cells[i].classList.contains('lock')){
+      cells[i].textContent = slot.res.v>0 ? slot.res.s
+                           : SLOT_SYMS[i*2%SLOT_SYMS.length];   // 沒中就湊三個不一樣的
+      cells[i].className='lock';
+      SFX.scan();
+    }
+  }
+  if(slot.t<slot.stop[2]+0.45||slot.done)return;
+  slot.done=true;
+  var v=slot.res.v;
+  if(v>0){
+    G.run.value+=v; G.run.slotWin=v;
+    SFX.register();
+    $('slotmsg').innerHTML='<b style="color:var(--price)">+ $'+v+'</b>';
+    showBeat('拉霸 $'+v,'直接進提袋，不佔格子。',
+      v>=800?'今晚不會再有第二次了。':'',3600);
+  }else{
+    SFX.deny();
+    $('slotmsg').innerHTML='<b style="color:var(--danger)">沒中</b>';
+    showBeat('拉霸 $0','跑這一趟什麼都沒有。','機率就是機率。',3200);
+  }
+  ev('slot_result',{v:v});
+  updateHUD();
+  setTimeout(function(){
+    document.body.classList.remove('slotting'); slot=null; updateAim();
+  },1400);
 }
 
 /* ---------- 躲藏處 ----------
@@ -3621,7 +3783,7 @@ function setupTouch(){
      漏掉任何一個，那個面板就捲不動 —— 因為一旦 lookId 被設起來，
      onMove 會 preventDefault，瀏覽器原生的捲動就被吃掉了。
      調參面板（#dev）就是這樣卡住的：它在畫面右半邊，而右半邊正是轉頭區。 */
-  var UI_HOLD='#touch,#dev,#devtoggle,#keypad,#fsbtn,#hold,.layer.screen';
+  var UI_HOLD='#touch,#dev,#devtoggle,#keypad,#fsbtn,#hold,#slot,.layer.screen';
   function onStart(e){
     if(G.phase!=='play')return;          // 標題／商店／排行榜的觸控要留給 UI
     if(devOpen())return;                 // 調參面板開著的時候整個畫面都讓給它
@@ -3799,7 +3961,8 @@ function pickTarget(){
     var o=live[i], c=o.mesh.position;
     /* 瞄準輔助的目標高度。門與收銀機的 Group 原點在地板上（y=0），
        用預設的 0.20 會瞄到腳邊，15 度的容差就永遠輸給旁邊的商品。 */
-    var aimY = o.officeDoor?1.10 : o.register?1.17 : o.note?0.80 : o.safe?0.46 : 0.20;
+    // 拉霸機的 Group 已經在 y=1.0，所以這裡只要再加機身的一半
+    var aimY = o.officeDoor?1.10 : o.register?0.65 : o.note?0.80 : o.safe?0.46 : 0.20;
     _to.set(c.x-camera.position.x,
             (c.y+aimY)-camera.position.y,
             c.z-camera.position.z);
@@ -3866,9 +4029,9 @@ function updateAim(){
     if(aim.register){
       if(aim.opened){ pr.className=''; cross.className=''; return; }
       pr.className='on';
-      pr.innerHTML='<kbd>'+(IS_TOUCH?'拿':'E')+'</kbd>撬開收銀機'+
-        '<span class="p">$'+BY_ID.cashbox.v+'</span>'+
-        '<span class="s">按住 '+CFG.regOpen+' 秒 · 開的時候很吵</span>';
+      pr.innerHTML='<kbd>'+(IS_TOUCH?'拿':'E')+'</kbd>拉一把'+
+        '<span class="p">$0–1000</span>'+
+        '<span class="s">按住 '+CFG.regOpen+' 秒啟動 · 很吵 · 兩成機率什麼都沒有</span>';
       cross.className='hot'; return;
     }
     if(aim.hide){
@@ -3953,7 +4116,7 @@ function tryInteract(){
   }
   if(aim.register){
     if(aim.opened)return;
-    startHold('reg',aim,CFG.regOpen,'撬收銀機 —— 很吵');
+    startHold('reg',aim,CFG.regOpen,'啟動拉霸 —— 很吵');
     return;
   }
   if(aim.note){ readNote(); return; }
@@ -4009,9 +4172,10 @@ function tryInteract(){
     if(aim.def.id==='offkey'){
       G.run.hasOffKey=true; SFX.unlock(); makeNoise(aim.def.noise);
       ev('office_key_found');
-      toast('辦公室鑰匙 · 東南角那扇門');
-      setObjective(G.run.unlocked?'可以脫身了 —— 或者去開辦公室':'繼續拿，順路去開辦公室',
-        false,'門要按住 '+CFG.officeUnlock+' 秒，中途被追就重來。裡面是收銀機。');
+      toast('辦公室鑰匙 · 賣場西牆那條走廊的盡頭');
+      setObjective(G.run.unlocked?'可以脫身了 —— 或者去拉一把':'繼續拿，順路去辦公室',
+        false,'西牆的走廊走到底。門要按住 '+CFG.officeUnlock+
+              ' 秒，中途被追就重來。裡面的拉霸 $0–1000。');
       updateHUD(); updateAim(); return;
     }
     G.run.hasKey=true; SFX.unlock(); makeNoise(aim.def.noise);
@@ -4852,6 +5016,7 @@ function pushHistory(r,result){
 function endRun(){
   G.phase='result';
   closeKeypad(); cancelHold(); dropDrag();
+  slot=null; document.body.classList.remove('slotting');
   if(stopT>0){ stopT=0; document.body.classList.remove('stopped'); droneQuiet(false); }
   /* 午夜鐘按「回合」而不是「次數」過期：
      不管你這局有沒有按下去，它都少一回合。
@@ -5012,7 +5177,10 @@ function renderReceipt(){
     '<h2>午夜超商</h2>'+
     '<div class="meta">未結帳清單 · 第 '+String(G.shift).padStart(3,'0')+' 次 · 停留 '+
     mm+':'+String(ss).padStart(2,'0')+'</div>'+
-    '<div class="rule"></div>'+ rows +'<div class="rule"></div>'+
+    '<div class="rule"></div>'+ rows +
+    // 拉霸的錢不在 r.loot 裡，不單獨列一行的話明細加起來對不上小計
+    (r.slotWin?'<div class="row"><span>拉霸</span><span>$'+r.slotWin+'</span></div>':'')+
+    '<div class="rule"></div>'+
     '<div class="row"><span>贓物小計</span><span>$'+r.gross+'</span></div>'+
     (r.forbiddenTaken&&!r.caught
       ? '<div class="row"><span>風險加成 '+(r.forbidCount||0)+' 件 ×'+
@@ -5693,7 +5861,7 @@ function frame(now){
       }else{
         stepClerk(dt);
       }
-      stepHold(dt);
+      stepHold(dt); stepSlot(dt);
       // 聽者跟著相機 —— 位置與朝向都要更新，不然轉頭時左右不會跟著換
       updateListener();
       /* 櫃子裡的倒數要看得見。
