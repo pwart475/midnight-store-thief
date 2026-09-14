@@ -609,7 +609,9 @@
   html,body{-webkit-user-select:none;user-select:none;
     -webkit-tap-highlight-color:transparent}
   #stage,#stage canvas,#touch{touch-action:none}
-  .layer.screen,.card,.rwrap,.receipt,#dev{touch-action:pan-y}
+  .layer.screen,.card,.rwrap,.receipt,#dev{touch-action:pan-y;-webkit-overflow-scrolling:touch}
+  /* 滑桿自己要吃掉手勢，不然橫向拖曳會被當成想捲動面板 */
+  #dev input[type=range]{touch-action:none}
   /* 安全區：橫向持握時 iPhone 的凹口在左右側，home 指示條在下緣 */
   :root{--sal:env(safe-area-inset-left,0px);--sar:env(safe-area-inset-right,0px);
         --sab:env(safe-area-inset-bottom,0px);--sat:env(safe-area-inset-top,0px)}
@@ -1012,7 +1014,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v7.3';
+var BUILD='v7.4';
 
 /* ================================================================
    目錄與凍結狀態
@@ -1156,6 +1158,11 @@ var DEF = {
      想試回來就把它拉起來，下次進遊戲生效。 */
   noiseVol:0,
   setChance:0.50,        // 三件組出現的機率
+  /* 視野角（垂直 FOV，度）。74 是原本寫死在 PerspectiveCamera 建構子裡的值。
+     手機橫向的寬高比很寬，垂直 74 換算出來的水平視野會超過 100 度 ——
+     看得比較多，但走道會有明顯的桶狀變形，而且會讓人低估店員的距離。
+     65 左右比較像一般 FPS 的手感；想看得廣就往上拉。 */
+  fov:74,
   hideFov:38,            // 躲在櫃子裡的視野角，越小越像從門縫看出去
   // 能左右轉的弧度。0.5 rad（約 29 度）加上 38 度視野，剛好等於洞口的寬度 ——
   // 轉再多就會看到門板側緣外面去，那會破功。
@@ -1192,6 +1199,7 @@ var KNOBS = [
   ['k-audio','doorPingVol','後門脈衝',0,0.4,.01,''],
   ['k-audio','musicVol','背景配樂',0,0.8,.02,''],
   ['k-audio','noiseVol','白噪音',0,1.2,.05,''],
+  ['k-player','fov','視野角',50,100,1,'°'],
   ['k-player','walkSpeed','走路速度',2,8,.1,' m/s'],
   ['k-player','sprintSpeed','衝刺速度',3,12,.1,' m/s'],
   ['k-player','mouseSens','滑鼠靈敏度',.0008,.006,.0001,''],
@@ -2850,7 +2858,7 @@ function newRun(){
   yaw=SPAWN.yaw; pitch=0; vel.set(0,0,0); crouchNow=false;
   jumpY=0; jumpV=0; onGround=true; tJumpQueued=false;
   if(hiding){hiding=null;document.body.classList.remove('hidden-in');}
-  camera.fov=74; camera.updateProjectionMatrix();
+  camera.fov=CFG.fov; camera.updateProjectionMatrix();
   /* 每局的亂數種子 —— 這行是這一版最重要的一個修正。
 
      原本兩個 build 都是用 G.shift 當種子，也就是「第 1 關」永遠是
@@ -3608,18 +3616,27 @@ function setupTouch(){
     applyStick(stickOX,stickOY);
   },{passive:false});
 
+  /* 從這些元素上起手的觸控一律不當成「轉頭拖曳」。
+
+     漏掉任何一個，那個面板就捲不動 —— 因為一旦 lookId 被設起來，
+     onMove 會 preventDefault，瀏覽器原生的捲動就被吃掉了。
+     調參面板（#dev）就是這樣卡住的：它在畫面右半邊，而右半邊正是轉頭區。 */
+  var UI_HOLD='#touch,#dev,#devtoggle,#keypad,#fsbtn,#hold,.layer.screen';
   function onStart(e){
     if(G.phase!=='play')return;          // 標題／商店／排行榜的觸控要留給 UI
+    if(devOpen())return;                 // 調參面板開著的時候整個畫面都讓給它
     clearBeat();
     for(var i=0;i<e.changedTouches.length;i++){
       var t=e.changedTouches[i];
-      if(t.target&&t.target.closest&&t.target.closest('#touch'))continue;   // 交給搖桿與按鈕
+      if(t.target&&t.target.closest&&t.target.closest(UI_HOLD))continue;
       if(lookId===null){ lookId=t.identifier; lookLX=t.clientX; lookLY=t.clientY; }
     }
   }
   function onMove(e){
-    // 只有真的在操作遊戲時才攔預設行為。
-    // 無條件 preventDefault 會讓商店卡片捲不動、按鈕的 tap 也不會變成 click。
+    /* 只有真的在操作遊戲時才攔預設行為。
+       無條件 preventDefault 會讓商店卡片捲不動、按鈕的 tap 也不會變成 click。
+       面板開著的時候也要放行，否則搖桿那半邊的殘留手指會擋住捲動。 */
+    if(devOpen()){ clearStick(); lookId=null; return; }
     if(stickId===null&&lookId===null)return;
     e.preventDefault();
     for(var i=0;i<e.changedTouches.length;i++){
@@ -4398,7 +4415,7 @@ function exitHide(){
   // 推到櫃門前方，不要卡在櫃體裡
   var fx=-Math.sin(hideYaw), fz=-Math.cos(hideYaw);
   camera.position.set(o.spot.x+fx*0.95,1.65,o.spot.z+fz*0.95);
-  camera.fov=74; camera.updateProjectionMatrix();
+  camera.fov=CFG.fov; camera.updateProjectionMatrix();
   document.body.classList.remove('hidden-in');
   ev('hide_exit');
 }
@@ -5627,6 +5644,14 @@ function frame(now){
   requestAnimationFrame(frame);
   var dt=Math.min(0.05,(now-G.lastTime)/1000); G.lastTime=now;
 
+  /* FOV 集中在這裡套用，所以調參面板拉滑桿就會即時反應。
+     被抓特寫（catchCam）有自己的 FOV 動畫，那段期間讓它自己管。 */
+  if(G.phase!=='catchcam'){
+    var wantFov = hiding?CFG.hideFov:CFG.fov;
+    if(Math.abs(camera.fov-wantFov)>0.01){
+      camera.fov=wantFov; camera.updateProjectionMatrix();
+    }
+  }
   document.body.classList.toggle('playing',
     G.phase==='play'&&!isPaused()&&lookMode==='delta');
   updateFeed(dt,now);
