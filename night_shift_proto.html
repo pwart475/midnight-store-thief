@@ -65,8 +65,12 @@
   #objective.alarm .line{color:var(--danger)}
 
   /* 只給真正要做決定的那幾個時刻，其他事件走 #toast 單行 */
+  /* box-sizing 一定要 border-box：沒有的話 width 只算內容區，
+     padding 會再往外長 36px，框比你設的寬、文字卻照 width 換行，
+     兩者的中心就對不齊了。 */
   #beat{position:absolute;left:50%;top:auto;bottom:16%;transform:translateX(-50%);
-    width:min(76vw,460px);text-align:center;background:rgba(8,11,8,.82);
+    box-sizing:border-box;width:min(76vw,460px);text-align:center;
+    background:rgba(8,11,8,.82);
     border-top:2px solid var(--price);border-bottom:2px solid var(--price);
     padding:13px 18px;opacity:0;transition:opacity .3s;backdrop-filter:blur(3px)}
   #beat.on{opacity:1}
@@ -204,6 +208,22 @@
     text-shadow:0 2px 10px rgba(0,0,0,.9)}
   #hold .bar{height:5px;background:rgba(8,11,8,.8);border:1px solid var(--line-hi)}
   #holdfill{display:block;height:100%;width:0%;background:var(--price)}
+  /* 縮小：一圈紫色的內光。
+     「現在抓不到我」這件事一定要看得見 —— 否則玩家不敢貼著他走，
+     而貼著他走正是這十秒唯一值得做的事。
+     最後三秒整圈轉紅並開始閃：藥效退掉的那一瞬間如果他還站在你頭上，你就被抓了。 */
+  #shrinkfx{position:absolute;inset:0;opacity:0;transition:opacity .2s;pointer-events:none;
+    box-shadow:inset 0 0 120px 16px rgba(199,125,255,.34)}
+  body.shrunk #shrinkfx{opacity:1}
+  body.shrunk.shrink-end #shrinkfx{box-shadow:inset 0 0 130px 22px rgba(255,59,48,.44);
+    animation:shrinkend .42s steps(2,end) infinite}
+  @keyframes shrinkend{0%,100%{opacity:1}50%{opacity:.4}}
+  #shrinktag{position:absolute;left:50%;top:calc(50% + 64px);transform:translateX(-50%);
+    font-size:12px;letter-spacing:.16em;color:#C77DFF;opacity:0;transition:opacity .2s;
+    white-space:nowrap;text-shadow:0 2px 10px rgba(0,0,0,.9);pointer-events:none}
+  #shrinktag b{font-family:var(--f-num);font-size:17px}
+  body.shrunk #shrinktag{opacity:1}
+  body.shrunk.shrink-end #shrinktag{color:var(--danger)}
   /* 拖著人的時候畫面下緣壓一條暗邊，提醒你手上有東西 */
   #dragfx{position:absolute;inset:0;opacity:0;transition:opacity .2s;pointer-events:none;
     box-shadow:inset 0 -90px 70px -60px rgba(255,201,60,.30)}
@@ -398,7 +418,11 @@
     .receipt .tot{font-size:16px}
     .stamp{font-size:30px}
     .rwrap{gap:14px;flex-direction:row;align-items:flex-start}
-    #beat{padding:14px 18px;top:70%}
+    /* 只能動 bottom，不能設 top。
+       基礎規則是 top:auto + bottom:16%；這裡如果再給一個 top，
+       絕對定位的元素就會被「上下都釘住」而被拉長 ——
+       文字擠在被拉高的框的上緣，看起來就是字跟框沒對上。 */
+    #beat{padding:14px 18px;bottom:22%}
     #beat .b1{font-size:22px}
     #beat .b2{font-size:13px;margin-top:7px}
     #beat .b3{font-size:12px;margin-top:8px;padding-top:8px}
@@ -650,7 +674,7 @@
   body.touch #objective .tag{display:none}
   body.touch #objective .line{font-size:13.5px}
   body.touch #objective .hint{font-size:11px}
-  body.touch #beat{bottom:26%;width:min(58vw,400px);padding:11px 14px}
+  body.touch #beat{top:auto;bottom:26%;width:min(58vw,400px);padding:11px 14px}
   body.touch #beat .b1{font-size:18px}
   body.touch #beat .b2{font-size:12px}
   body.touch #beat .b3{font-size:11px}
@@ -722,6 +746,8 @@
   <div id="toast"></div>
   <div id="pa"><span>店內廣播</span><em id="patext"></em></div>
   <div id="hold"><div id="holdlab"></div><div class="bar"><i id="holdfill"></i></div></div>
+  <div id="shrinkfx"></div>
+  <div id="shrinktag">抓不到你 · <b id="shrinknum">0.0</b></div>
   <div id="dragfx"></div>
   <div id="dragtag">拖著店員 · 走得慢、不能衝、一路有聲音</div>
   <div id="hidefx"></div>
@@ -756,8 +782,10 @@
   <div class="card">
     <div class="eyebrow">遊戲說明</div>
     <h1 style="font-size:clamp(26px,5vw,40px)">怎麼<em>玩</em></h1>
-    <p class="sub">塞滿提袋，從後門出去。越靠裡面的東西越貴，價格標就浮在商品上面
-      —— 你看得到哪邊值錢。但提袋只有 12 格，而且店裡還有一個值班的人。</p>
+    <p class="sub">塞滿提袋，從後門出去。越靠裡面的東西越貴 ——
+      但價格標<b style="color:var(--price)">要走近才讀得到</b>，
+      所以「這條走道值不值得進去」永遠是先走進去才知道。
+      提袋只有 12 格，而且店裡還有一個值班的人。</p>
     <div class="loop">
       <div><b>一</b>順走東西，提袋裡的金額往上跳</div>
       <div><b>二</b>拿到 6 件，後門解鎖 —— 現在就能乾淨脫身</div>
@@ -805,6 +833,19 @@
         地上或架上都有可能。<b>一局最多只會出現一個</b>，撿到就等下一關 ——
         <b>湊滿三件</b>組成一把帶 3 發的電擊槍。部件不佔提袋格子，但
         <b style="color:var(--danger)">被抓會連槍一起沒收</b></div>
+      <div><b>·</b>電昏他之後走過去按 <b>E</b> 可以<b style="color:var(--price)">抓住他拖走</b>，
+        拖到立櫃前再按一次就關進去，昏 5 秒變 <b>30 秒</b>。
+        代價：拖著走得慢、不能衝刺、一路有聲音，而且他醒來的時候你就站在旁邊 ——
+        所以要在立櫃附近開打，位置就是技術</div>
+      <div><b>·</b>東南角有一間<b style="color:var(--price)">辦公室</b>，一開始就鎖著。
+        鑰匙只有在你已經組好電擊槍之後才會出現（那之後每關都有），
+        開門要<b>按住 5 秒</b>不動，中途被追就重來。裡面是收銀機（$320，開的時候很吵）</div>
+      <div><b>·</b><b style="color:var(--danger)">門開了他也進得來</b> —— 辦公室不是安全屋</div>
+      <div><b>·</b><b style="color:var(--forbid)">縮小劑</b>（R）發動後他<b>抓不到你</b> ——
+        但他不會停下來追。畫面邊緣的紫光是安全的證明，
+        <b style="color:var(--danger)">最後三秒會轉紅並閃動</b>：藥效退的那一幀如果他還站在你腳邊，你就被抓了</div>
+      <div><b>·</b>辦公桌上有<b style="color:var(--price)">一張字條</b>。它不給錢也不給能力 ——
+        但讀完之後，你會用不一樣的眼光看走道上那個人</div>
       <div><b>·</b>不想撿的話，藏身處也<b style="color:var(--price)">直接賣整把 $2000</b>（含 3 發）——
         同一把槍，差別只在你想花錢還是花局數。買來的一樣會被沒收</div>
       <div><b>·</b>子彈打完之後：藏身處可以花 $300 補 3 發，
@@ -950,7 +991,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v6.1';
+var BUILD='v6.9';
 
 /* 手機上沒有 console，一旦初始化丟錯就只剩黑畫面、完全無從查起。
    所以把錯誤直接印在畫面上。 */
@@ -1034,6 +1075,7 @@ var DEF = {
   // 轉再多就會看到門板側緣外面去，那會破功。
   hideLook:0.50,
   hideGiveUp:6,          // 躲著時店員在附近找多久就放棄
+  tagRange:10,                     // 價格標看得到的距離（估價鏡 ×1.8）
   reachDist:3.4, aimAssist:15      // 互動距離與瞄準寬容度（度）
 };
 var CFG = Object.assign({},DEF);
@@ -1088,6 +1130,10 @@ var KNOBS = [
   ['k-clerk','calmTime','放棄後不理你',0,20,1,' s'],
   ['k-clerk','hideGiveUp','躲櫃子時多久放棄',2,20,.5,' s'],
   ['k-clerk','alarmPatrolMul','警報時非追擊速度 ×',1,3,.1,'x'],
+  ['k-clerk','stuffStun','塞進立櫃昏多久',5,90,5,' s'],
+  ['k-player','dragSpeed','拖行速度倍率',0.2,1,.05,'x'],
+  ['k-econ','officeUnlock','辦公室開鎖秒數',1,15,.5,' s'],
+  ['k-econ','regOpen','收銀機開啟秒數',1,12,.5,' s'],
   ['k-econ','alarmLight','警報時亮度（平常的幾成）',0.1,1,.05,''],
   ['k-clerk','catchDist','抓到距離',.8,3,.05,' m'],
   ['k-clerk','hearSprint','衝刺聲響半徑',4,34,1,' m'],
@@ -1099,6 +1145,7 @@ var KNOBS = [
   ['k-econ','tzAmmoChance','店內彈藥出現機率',0,1,.05,''],
   ['k-econ','tzAmmoCost','彈藥價格',50,800,10,''],
   ['k-econ','tzAmmoPer','一次補幾發',1,10,1,' 發'],
+  ['k-econ','tagRange','價格標可視距離',4,30,1,' m'],
   ['k-econ','setChance','三件組出現機率',0,1,.05,''],
   ['k-econ','safeChance','保險箱中獎機率',0,1,.05,''],
   ['k-clerk','taserRange','電擊槍射程',5,40,1,' m'],
@@ -1183,7 +1230,9 @@ var UPGRADES = [
   {id:'shoes',   name:'消音球鞋',   cost:200, desc:'走路與衝刺速度 +12%。跑得掉，才敢多拿一件。'},
   {id:'bag',     name:'大號提袋',   cost:250, desc:'提袋 +6 格。裝得更多，也走得更久。'},
   {id:'light',   name:'強光手電筒', cost:300, desc:'停電後照明範圍加大，找路快得多。'},
-  {id:'scanner', name:'贓物估價鏡', cost:340, desc:'價格標可視距離 15m → 26m。整條走道的行情一眼看完。'},
+  {id:'scanner', name:'贓物估價鏡', cost:340,
+    desc:'價格標可視距離 ×1.8。不用走進走道就知道那條值不值得進去 —— '+
+         '省下來的是停留時間，而停留時間就是被抓的機率。'},
   {id:'charm',   name:'隨身護身符', cost:420, consumable:1,
     desc:'被抓時自動啟用，保住身上所有裝備（現金還是會沒）。用掉就碎了。'},
   {id:'jump',    name:'彈簧鞋墊',   cost:550,
@@ -1193,7 +1242,8 @@ var UPGRADES = [
   {id:'muffler', name:'消音貼片',   cost:800, desc:'腳步聲傳播距離 ×0.6。他更難聽到你在哪。'},
   {id:'bag2',    name:'加大側袋',   cost:900, desc:'提袋再 +6 格。但別忘了越重越慢。'},
   {id:'shrink',  name:'縮小劑',     cost:1000, consumable:1,
-    desc:'每次下手可用 1 次。'+CFG.shrinkTime+' 秒內縮到 0.3 倍，矮到幾乎不會被看見。'},
+    desc:'每次下手可用 1 次。'+DEF.shrinkTime+' 秒內縮到 0.3 倍 —— '+
+         '這段時間他<b>抓不到你</b>，但他不會停下來，藥效退的瞬間你就又抓得到了。'},
   /* 電擊槍有兩條路：店裡撿三個部件（免費，但要四局左右，而且被抓就全沒），
      或者直接花 $2000 買整把。$2000 卡在備用鑰匙($1500)與午夜鐘($3000)之間 ——
      它買的不是「一個能力」，是「那四局的時間與風險」。
@@ -1245,7 +1295,15 @@ function hearMul(){
   return CFG.clerkSense*growth()*(1+CFG.heatHearing*heat())*(G.upgrades.muffler?0.6:1);
 }
 function forbiddenValueNow(){ return Math.round(CFG.forbiddenValue*(1+0.6*danger())); }
-function tagRange(){ return G.upgrades.scanner?26:15; }
+/* 價格標的可視距離。
+
+   15m 太遠了 —— 那等於站在走道口就把整條的行情掃完，
+   然後直線走向最貴的那一件。中間沒有停留，也沒有判斷。
+   縮到 10m 之後你必須真的走進走道才讀得到數字，
+   而「走進走道」正是店員抓得到你的地方。
+   估價鏡（scanner）還是明顯有用：18m 大約是一條走道的長度，
+   它買的就是「不必走進去也能決定」這件事。 */
+function tagRange(){ return G.upgrades.scanner?CFG.tagRange*1.8:CFG.tagRange; }
 function capacityNow(){
   return CFG.capacity + (G.upgrades.bag?6:0) + (G.upgrades.bag2?6:0);
 }
@@ -1554,6 +1612,8 @@ function buildAisles(seed){
     });
   });
 
+  placeAisleSigns(o.shelves);   // 招牌跟著這一局的貨架走
+
   // 鐵捲門：隨機封掉 0~2 個橫向缺口，逃脫路線每次不一樣。
   // 只封貨架之間，西側走道與南側通道永遠通行，所以出口不會被鎖死。
   // 只有南北向長排的佈局才放鐵捲門，否則門會插進橫向貨架裡
@@ -1600,6 +1660,7 @@ function makeSign(x,y,z,w,h){
 makeSign(0,2.35,15.35,6.6,0.34);   // 出口招牌下方的燈條
 makeSign(-14,1.32,-9.55,3.0,0.2);  // 冷凍室門口燈條
 makeSign(9.5,1.32,-9.55,2.6,0.2);  // 倉庫門口燈條
+makeSign(13.35,2.20,12.5,0.2,2.0); // 辦公室門框燈條（直的，貼在門邊）
 
 // 地面緊急疏散導引燈帶：從冷凍室門口一路帶到出口。停電時變紅並閃動
 var guides=[];
@@ -1736,15 +1797,29 @@ var SHAPES={
     P(GEO.sph,c,[.20,.17,.18],[.11,.20,-.05],.95),
     P(GEO.sph,c,[.15,.13,.14],[-.13,.17,.06],.95)];}
 };
+/* 哪些東西會發光。
+   規則從「稀有度」改成「它是不是一條線索」——
+   會發光的只有四種：不明肉品、機器人（部件與完整品）、鑰匙、電擊槍部件。
+
+   原本連一般稀有品（威士忌、和牛、魚子醬…）都在發光，結果整間店到處是光暈，
+   真正重要的那幾件反而被稀釋掉了。發光應該是稀有的，不然它就不是訊號，是壁紙。
+   金條、瑞士錶、收銀機抽屜那些純粹的錢也不發光 —— 它們的價值由價格標講就夠了。 */
+function isGlow(def){
+  return def.tier==='forbidden'||def.tier==='special'||
+         def.tier==='gear'||def.tier==='part'||def.id==='bot_full';
+}
+function glowColor(def){
+  return def.tier==='forbidden'?0xC77DFF:
+         (def.tier==='special'||def.tier==='gear')?0x7FE3F5:0xE87A2B;
+}
 function buildModel(def){
   var g=new THREE.Group();
   (SHAPES[def.shape]||SHAPES.pack)(def.color).forEach(function(m){g.add(m);});
-  if(def.tier==='rare') g.add(P(GEO.box,0xFFC93C,[.32,.012,.32],[0,.004,0],1.4));
-  if(def.tier==='vault')g.add(P(GEO.box,0xFFC93C,[.40,.014,.40],[0,.004,0],1.8));
-  if(def.tier==='special')g.add(P(GEO.box,0x7FE3F5,[.34,.012,.34],[0,.004,0],1.6));
-  if(def.tier==='part')g.add(P(GEO.box,0xE87A2B,[.34,.012,.34],[0,.004,0],1.5));
-  // 電擊槍部件用青色底光。它跟商品不同類 —— 那是裝備，不是貨
-  if(def.tier==='gear')g.add(P(GEO.box,0x7FE3F5,[.34,.012,.34],[0,.004,0],1.8));
+  if(isGlow(def)){
+    var big=(def.tier==='forbidden'||def.id==='bot_full');
+    g.add(P(GEO.box,glowColor(def),
+            big?[.40,.014,.40]:[.34,.012,.34],[0,.004,0],big?1.8:1.5));
+  }
   return g;
 }
 
@@ -1760,11 +1835,22 @@ function tagTex(text,css){
   g.textAlign='center'; g.textBaseline='middle'; g.fillText(text,80,33);
   var t=new THREE.CanvasTexture(c); tagCache[k]=t; return t;
 }
+/* 價格標的大小跟金額掛勾。
+
+   這是拿掉「貴的東西會發光」之後補上的視覺重量，但它的作用不只是好看：
+   發光是「從場的另一頭就知道那裡有寶」，價格標不是 —— 它只在你走近之後才讀得到。
+   所以貴重品的存在感回來了，可是「它到底值多少、要不要為它多走一趟」
+   這個判斷依然必須靠近才做得出來。那幾秒的停留就是這個遊戲的成本。
+
+   $50 以下維持原樣，越貴越大，$200 以上封頂（1.5 倍）——
+   不封頂的話金條那種會變成一塊擋住走道的招牌。 */
 function makeTag(val,tier){
   var css = tier==='forbidden'?'#C77DFF' : tier==='rare'?'#FFC93C' : '#B9C9B6';
+  var k = Math.min(1,Math.max(0,(val-50)/150));
+  var sc = 1 + k*0.5;
   var s=new THREE.Sprite(new THREE.SpriteMaterial({map:tagTex('$'+val,css),
     transparent:true,depthWrite:false,opacity:0}));
-  s.scale.set(0.56,0.224,1); return s;
+  s.scale.set(0.56*sc,0.224*sc,1); return s;
 }
 
 /* ---------- 區域招牌與警告標示 ---------- */
@@ -1781,11 +1867,31 @@ function textPlane(text,w,h,css,size,bg){
       transparent:true,side:THREE.DoubleSide}));
   return m;
 }
-[['零食',-14],['飲料',-8.4],['日用品',-2.8],['生鮮',2.8],['家用',8.4],['清潔',14]]
-.forEach(function(z){
-  var s=textPlane(z[0],1.85,0.46,'#B9C9B6',66);
-  s.position.set(z[1],2.48,8.1); scene.add(s);
+/* 區域招牌。建一次，每次貨架重組時重新掛位置（見 placeAisleSigns）。
+
+   舊版是寫死的六個 x 座標（-14, -8.4, -2.8, 2.8, 8.4, 14）——
+   那是「固定貨架」時代留下來的數字。貨架改成每局重組之後，
+   招牌就繼續掛在原來的空中：飄在走道正中間，或者標到隔壁那排去。
+   招牌的位置必須從貨架算出來，這樣就不可能對不上。 */
+var AISLE_NAMES=['零食','飲料','日用品','生鮮','家用','清潔'];
+var aisleSigns=AISLE_NAMES.map(function(n){
+  var s=textPlane(n,1.85,0.46,'#B9C9B6',66);
+  s.visible=false; scene.add(s); return s;
 });
+function placeAisleSigns(shelves){
+  var runs=shelves.map(function(s){
+    return {cx:(s[0]+s[2])/2, cz:(s[1]+s[3])/2,
+            len:Math.max(s[2]-s[0],s[3]-s[1])};
+  }).filter(function(r){ return r.len>=3.0; })     // 太短的不掛，那是端架不是走道
+    .sort(function(a,b){ return (a.cx-b.cx)||(a.cz-b.cz); });
+  aisleSigns.forEach(function(sg,i){
+    if(i<runs.length){
+      sg.visible=true;
+      // y=2.30：在貨架頂（1.9）之上，但低於天花板的監視器（2.45+），兩者不會打架
+      sg.position.set(runs[i].cx,2.30,runs[i].cz);
+    }else sg.visible=false;
+  });
+}
 // 出口：整面牆寬的大招牌，全店最顯眼的東西
 var signExit=textPlane('後門・出口',7.4,1.3,'#5DF39B',96,'rgba(6,30,16,.96)');
 signExit.position.set(0,3.05,15.3); scene.add(signExit);
@@ -2616,6 +2722,7 @@ function newRun(){
     spotted:0, maxHeat:0, usedItem:false     // 評分用
   };
   shrinkT=0; stopT=0; doorPingT=0;
+  document.body.classList.remove('shrunk','shrink-end');
   closeKeypad(); cancelHold(); dropDrag();
   clerk.visible=true;
   document.body.classList.remove('stopped');
@@ -2657,9 +2764,10 @@ function newRun(){
   updateHUD();
   setObjective(K('走到商品前面，按 E 塞進提袋','走到商品前面，按「拿」塞進提袋'),false,
     '需要 '+CFG.extractItems+' 件才能脫身。櫃檯上就有兩件。');
+  // 開場這行在手機上只有 400px 寬可用，寫太長會擠成三行還溢出去
   if(G.shift===1) showBeat('已從後門進入',
-    K('W A S D 走路，滑鼠轉頭，看到東西按 E。',
-      '左下拖曳走路，推到外圈衝刺；右半邊拖曳轉頭，按「拿」撿東西。'),
+    K('W A S D 走路 · 滑鼠轉頭 · E 撿東西',
+      '左下拖曳走路 · 右半邊轉頭 · 按「拿」撿'),
     '',4500);
 }
 
@@ -2831,20 +2939,28 @@ function buildItems(seed){
    門與收銀機都是「按住不放」的互動。灰盒裡最便宜的張力就是這個：
    不需要新的謎題系統，只需要讓玩家在一個固定的點站滿幾秒鐘。
    店員的威脅會自己把那幾秒變得難熬。 */
-var officeOpen=false, officeDoorObj=null, regObj=null, officeProps=[];
+var officeOpen=false, officeDoorObj=null, regObj=null, noteObj=null, officeProps=[];
 function buildOffice(){
   officeOpen=false;
   if(OFFICE_DOOR.mesh)OFFICE_DOOR.mesh.visible=true;
   /* 椅子沒有進 itemMeshes，所以 clearItems 不會收它 ——
      不自己清的話每局都會多疊一張椅子在同一個座標上。 */
   officeProps.forEach(function(m){scene.remove(m);}); officeProps=[];
-  // 門：用一塊薄板當互動目標，貼在門面上
+  /* 門的顏色用琥珀色，跟辦公室鑰匙同一個色（0xFFC93C 系）。
+     這是刻意的配色規則：鑰匙什麼顏色，它開的門就什麼顏色。
+     店裡其他東西各有各的色 —— 紫＝非賣品、青＝電擊槍與鑰匙、綠＝出口、
+     所以琥珀這一格空著給它剛好，從賣場另一頭就認得出來。 */
   var g=new THREE.Group();
-  g.add(P(GEO.box,0x6B5A32,[0.10,2.20,2.10],[0,1.10,0]));
-  g.add(P(GEO.box,0xC9CCC4,[0.07,0.16,0.06],[0.08,1.05,-0.72]));   // 把手
-  g.add(P(GEO.box,0xFF3B30,[0.06,0.06,0.04],[0.08,1.45,-0.72],1.5)); // 紅燈
+  g.add(P(GEO.box,0x2A2418,[0.12,2.20,2.10],[0,1.10,0]));            // 門板底色
+  g.add(P(GEO.box,0xE8A33D,[0.14,0.16,2.10],[0,2.08,0],0.9));        // 上緣亮條
+  g.add(P(GEO.box,0xE8A33D,[0.14,0.16,2.10],[0,0.12,0],0.9));        // 下緣亮條
+  g.add(P(GEO.box,0xE8A33D,[0.14,2.20,0.16],[0,1.10,1.00],0.9));     // 側邊亮條
+  g.add(P(GEO.box,0xE8A33D,[0.14,2.20,0.16],[0,1.10,-1.00],0.9));
+  g.add(P(GEO.box,0xFFC93C,[0.13,0.62,0.62],[0,1.32,0],0.55));       // 中央色塊
+  g.add(P(GEO.box,0xC9CCC4,[0.07,0.16,0.06],[0.09,1.05,-0.72]));     // 把手
+  g.add(P(GEO.box,0xFF3B30,[0.07,0.07,0.05],[0.09,1.62,-0.72],1.8)); // 上鎖紅燈
   g.position.set(OFFICE.door.x,0,OFFICE.door.z); scene.add(g);
-  officeDoorObj={mesh:g,officeDoor:true,taken:false,led:g.children[2],
+  officeDoorObj={mesh:g,officeDoor:true,taken:false,
     def:{name:'辦公室門',tier:'door',slots:0,v:0}};
   g.userData.item=officeDoorObj;
   g.traverse(function(c){c.userData.item=officeDoorObj;});
@@ -2861,6 +2977,21 @@ function buildOffice(){
   r.userData.item=regObj;
   r.traverse(function(c){c.userData.item=regObj;});
   itemMeshes.push(regObj);
+
+  /* 店長的字條。這是整個遊戲唯一一段劇情，而且它放在最難到的房間裡 ——
+     你必須先組好電擊槍、拿到鑰匙、在門口站滿五秒，才讀得到這一段。
+     它不給錢也不給能力，它只是回過頭去改寫你前面每一局的意思。 */
+  var nt=new THREE.Group();
+  nt.add(P(GEO.box,0xF2F0E8,[0.30,0.012,0.40],[0,0.79,0],0.45));
+  nt.add(P(GEO.box,0x8A8F86,[0.20,0.004,0.02],[0,0.80,-0.10]));
+  nt.add(P(GEO.box,0x8A8F86,[0.22,0.004,0.02],[0,0.80,-0.04]));
+  nt.add(P(GEO.box,0x8A8F86,[0.16,0.004,0.02],[0,0.80,0.02]));
+  nt.position.set(15.6,0,10.9); nt.rotation.y=-0.25; scene.add(nt);
+  noteObj={mesh:nt,note:true,taken:false,
+    def:{name:'一張字條',tier:'door',slots:0,v:0}};
+  nt.userData.item=noteObj;
+  nt.traverse(function(c){c.userData.item=noteObj;});
+  itemMeshes.push(noteObj);
 
   // 辦公椅（純裝飾，沒有碰撞）
   var ch=new THREE.Group();
@@ -2916,6 +3047,16 @@ function finishOfficeDoor(){
   ev('office_opened');
   showBeat('辦公室開了','收銀機在裡面。','門開著 —— 他現在也進得來。',3600);
   updateAim();
+}
+/* 讀字條。刻意不停止時間、不暫停 ——
+   你是站在一個剛剛才撬開的房間裡讀它，而外面那個東西還在走動。
+   那句話的重量有一半來自「你現在沒空慢慢看」。 */
+function readNote(){
+  if(!STATS.noteRead){ STATS.noteRead=1; save(); }
+  SFX.scan(); ev('note_read');
+  showBeat('店長留的字條',
+    '我是店長。最近附近有外星人入侵，所以午夜時刻我把這家店關了。',
+    '如果你看到店裡有人走動 —— 那一定不是我。',9000);
 }
 function finishRegister(){
   regObj.opened=true; regObj.taken=true;
@@ -3098,6 +3239,12 @@ function closeKeypad(){
   if(!keypadOpen)return;
   keypadOpen=false; keypadBuf=''; keypadBad=false;
   document.body.classList.remove('keypad-in');
+  /* 離開鍵盤時把指標鎖定要回來。
+     瀏覽器規定 Esc 一定會解除 pointer lock，preventDefault 攔不住 ——
+     所以用 Esc 關掉鍵盤之後，滑鼠轉頭那條路徑（需要 locked）就死了，
+     玩家的體感就是「開完保險櫃之後視角不能轉」。
+     這裡還在 keydown 這個使用者手勢裡，所以重新要求是會過的。 */
+  if(!IS_TOUCH&&!lockFailed&&!locked&&G.phase==='play')requestLock();
   updateAim();
 }
 function renderKeypad(){
@@ -3114,7 +3261,8 @@ function renderKeypad(){
       : '你還沒拿到密碼 —— 亂試會響警報';
   }
   // 桌機指標是鎖定的，看不到游標也點不到按鍵，所以要講清楚用打字
-  $('kpfoot').innerHTML = K('鍵盤打數字 · <b>Enter</b> 送出 · <b>倒退鍵</b> 清除 · <b>Esc</b> 離開',
+  // 桌機優先推薦 E 離開而不是 Esc —— Esc 會被瀏覽器拿去解除指標鎖定
+  $('kpfoot').innerHTML = K('鍵盤打數字 · <b>Enter</b> 送出 · <b>倒退鍵</b> 清除 · <b>E</b> 離開',
                             '輸完三位數要按<b>確認</b>才送出 · 右上 <b>✕</b> 離開');
 }
 function keypadPress(ch){
@@ -3148,12 +3296,11 @@ function spawnItem(def,x,y,z){
   scene.add(g);
   var val = def.tier==='forbidden'?forbiddenValueNow():def.v;
   var o={mesh:g,def:def,baseY:y,taken:false,halo:null,tag:null};
-  if(def.tier!=='common'){
-    var col=def.tier==='forbidden'?0xC77DFF:
-            (def.tier==='special'||def.tier==='gear')?0x7FE3F5:0xFFC93C;
-    var sc=def.tier==='forbidden'?2.8:(def.tier==='vault'?2.2:1.7);
-    var h=new THREE.Sprite(new THREE.SpriteMaterial({map:HALO,color:col,transparent:true,
-      blending:THREE.AdditiveBlending,depthWrite:false,opacity:def.tier==='common'?.4:.7}));
+  // 光暈只給線索類的東西（見 isGlow），一般商品與純粹的錢都不發光
+  if(isGlow(def)){
+    var sc=def.tier==='forbidden'?2.8:(def.id==='bot_full'?2.2:1.7);
+    var h=new THREE.Sprite(new THREE.SpriteMaterial({map:HALO,color:glowColor(def),
+      transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,opacity:.7}));
     h.scale.set(sc,sc,1); h.position.set(x,y+0.18,z); scene.add(h); o.halo=h;
   }
   // 鑰匙與電擊槍部件沒有價格，不掛價格標（不然會掛一個 $0 上去）
@@ -3500,8 +3647,11 @@ function pickTarget(){
   var best=null, bestA=CFG.aimAssist*Math.PI/180;
   for(var i=0;i<live.length;i++){
     var o=live[i], c=o.mesh.position;
+    /* 瞄準輔助的目標高度。門與收銀機的 Group 原點在地板上（y=0），
+       用預設的 0.20 會瞄到腳邊，15 度的容差就永遠輸給旁邊的商品。 */
+    var aimY = o.officeDoor?1.10 : o.register?1.17 : o.note?0.80 : o.safe?0.46 : 0.20;
     _to.set(c.x-camera.position.x,
-            (c.y+(o.safe?0.46:0.20))-camera.position.y,
+            (c.y+aimY)-camera.position.y,
             c.z-camera.position.z);
     var dist=_to.length();
     if(dist<0.05||dist>CFG.reachDist)continue;
@@ -3556,6 +3706,12 @@ function updateAim(){
         '<span class="s">'+(hk?('按住 '+CFG.officeUnlock+' 秒 · 中途被追就重來')
                                :'鑰匙在賣場某處')+'</span>';
       cross.className=hk?'hot':''; return;
+    }
+    if(aim.note){
+      pr.className='on';
+      pr.innerHTML='<kbd>'+(IS_TOUCH?'拿':'E')+'</kbd>讀那張字條'+
+        '<span class="s">'+(STATS.noteRead?'再看一次':'店長的字跡')+'</span>';
+      cross.className='hot'; return;
     }
     if(aim.register){
       if(aim.opened){ pr.className=''; cross.className=''; return; }
@@ -3650,6 +3806,7 @@ function tryInteract(){
     startHold('reg',aim,CFG.regOpen,'撬收銀機 —— 很吵');
     return;
   }
+  if(aim.note){ readNote(); return; }
   if(aim.hide){
     if(aim.stuffed){ toast('裡面塞著一個人'); return; }
     enterHide(aim); return;
@@ -3964,7 +4121,14 @@ function stepClerk(dt){
       if(AI.aware>=1){
         AI.state='CHASE'; AI.timer=0; AI.chaseT=0;
         r.spotted++;                        // 評分：這局被發現幾次
-        ev('chase_started'); droneOn();
+        /* 記下「他是在多遠的地方發現你的」。
+           這一欄是用來分辨兩種完全不同的死法的：
+           12m 外被看到然後逃失敗（你有時間，是你的判斷問題），
+           跟 2m 處轉角撞上（你沒有任何選項，是關卡的問題）。
+           沒有這個數字，兩者在 log 裡長得一模一樣。 */
+        r.lastSpotDist=+dP.toFixed(1);
+        ev('chase_started',{dist:r.lastSpotDist,
+                            crouch:!!crouchNow,sprint:!!sprintFlag}); droneOn();
         if(!r._seenClerk){r._seenClerk=true;ev('clerk_first_seen');}
       }
     }else{
@@ -4008,7 +4172,15 @@ function stepClerk(dt){
           ev('chase_lost'); droneOff();
         }else if(!AI.path.length&&AI.lastSeen){ setPathTo(AI.lastSeen.x,AI.lastSeen.z); }
       }
-      if(dP<CFG.catchDist){ caught(); return; }
+      /* 縮小期間抓不到 —— 他構得到的高度你已經不在了。
+         但他不會因此失去目標：照追、照跟、照站在你頭上等。
+         所以真正的張力在倒數的最後三秒 —— 藥效一退，
+         如果他還踩在你身上，那一幀你就被抓了。
+         這個道具賣的不是安全，是「你有十秒可以決定去哪裡」。 */
+      if(dP<CFG.catchDist){
+        if(shrinkT<=0){ caught(); return; }
+        if(!G.run._shrinkSave){ G.run._shrinkSave=true; ev('shrink_saved'); }
+      }
       break;
     case 'RETURN':
       speed=clerkPatrolNow();
@@ -4178,7 +4350,7 @@ function stuffClerk(hideObj){
   SFX.unlock(); makeNoise(CFG.hearWalk*0.8);
   ev('clerk_stuffed',{sec:CFG.stuffStun});
   showBeat('關進去了',CFG.stuffStun+' 秒',
-    '這個櫃子這局不能再躲了。',3200);
+    '他出來之前，這個櫃子你不能躲。',3200);
   updateHUD(); updateAim();
 }
 // 拖行中：店員跟在玩家後面一點的位置
@@ -4206,8 +4378,13 @@ function useShrink(){
   if(r.shrink<=0){toast('縮小劑用完了');return;}
   if(shrinkT>0)return;
   r.shrink--; shrinkT=CFG.shrinkTime;
+  document.body.classList.add('shrunk');
+  document.body.classList.remove('shrink-end');
+  $('shrinknum').textContent=shrinkT.toFixed(1);
   SFX.shrink(); ev('shrink_used');
-  toast('縮小 '+CFG.shrinkTime+' 秒 · 矮到幾乎看不見你');
+  showBeat('縮小 '+CFG.shrinkTime+' 秒',
+    '這段時間他抓不到你。',
+    '但他不會停 —— 藥效退的時候別站在他腳邊。',3600);
   updateHUD();
 }
 
@@ -4244,7 +4421,37 @@ function droneQuiet(on){
   try{droneGain.gain.linearRampToValueAtTime(on?0.02:DRONE_LVL,AC.currentTime+0.3);}catch(e){}
 }
 
+/* ---------- 轉頭 ----------
+   這段一定要在 stepPlayer 的所有 early return 之前跑。
+
+   之前它被寫在函式後半段，也就是在「按密碼」和「躲在櫃子裡」那兩個 return 之後 ——
+   結果是：指標鎖定失敗、走推移轉向的玩家，只要開了密碼鍵盤就完全不能轉頭，
+   因為滑鼠移動那條路徑只服務 delta 模式，而 steer 這條又被 return 跳過了。
+   我在那個 return 上面還寫著「視角還能轉」的註解，但程式做的是相反的事。 */
+function stepLook(dt){
+  // 推移轉向：游標離開中央圈多遠，就以多快的速度持續轉頭。
+  if(lookMode==='steer'&&pointerInside){
+    var dz=0.11;
+    var ax=Math.abs(cursorNX)>dz ? (Math.abs(cursorNX)-dz)/(1-dz)*(cursorNX<0?-1:1) : 0;
+    var ay=Math.abs(cursorNY)>dz ? (Math.abs(cursorNY)-dz)/(1-dz)*(cursorNY<0?-1:1) : 0;
+    yaw   -= ax*Math.abs(ax)*CFG.steerYaw*dt;
+    pitch -= ay*Math.abs(ay)*CFG.steerPitch*dt;
+    pitch = Math.max(-1.25,Math.min(1.25,pitch));
+  }
+  // 移動轉向模式下，把游標推到畫面左右邊緣可以繼續轉
+  else if(!locked&&lockFailed&&CFG.edgeTurn>0){
+    var edge=0.08;
+    if(cursorX<edge)      yaw += (1-cursorX/edge)*CFG.edgeTurn*dt;
+    else if(cursorX>1-edge) yaw -= (1-(1-cursorX)/edge)*CFG.edgeTurn*dt;
+  }
+  if(keys['arrowleft'])yaw+=dt*1.9;
+  if(keys['arrowright'])yaw-=dt*1.9;
+  if(keys['arrowup'])pitch=Math.min(1.25,pitch+dt*1.3);
+  if(keys['arrowdown'])pitch=Math.max(-1.25,pitch-dt*1.3);
+}
+
 function stepPlayer(dt){
+  stepLook(dt);        // 不管在做什麼，頭永遠轉得動
   /* 按密碼的時候人是站著不動的，但視角還能轉 ——
      你必須能一邊按一邊看他從哪條走道過來。
      例外：密碼已經送錯、警報已經響了，就立刻放開移動 —— 那時候還鎖著人是不公平的。 */
@@ -4273,27 +4480,6 @@ function stepPlayer(dt){
   var wantCrouch=!!(keys['c']||tDuck);
   var stickMag=(IS_TOUCH&&touchMove.mag>0)?touchMove.mag:0;
 
-  // 推移轉向：游標離開中央圈多遠，就以多快的速度持續轉頭。
-  // 游標只要待在中央附近就能操作，所以在雙螢幕上不會跑出視窗。
-  if(lookMode==='steer'&&pointerInside){
-    var dz=0.11;
-    var ax=Math.abs(cursorNX)>dz ? (Math.abs(cursorNX)-dz)/(1-dz)*(cursorNX<0?-1:1) : 0;
-    var ay=Math.abs(cursorNY)>dz ? (Math.abs(cursorNY)-dz)/(1-dz)*(cursorNY<0?-1:1) : 0;
-    yaw   -= ax*Math.abs(ax)*CFG.steerYaw*dt;
-    pitch -= ay*Math.abs(ay)*CFG.steerPitch*dt;
-    pitch = Math.max(-1.25,Math.min(1.25,pitch));
-  }
-  // 移動轉向模式下，把游標推到畫面左右邊緣可以繼續轉
-  else if(!locked&&lockFailed&&CFG.edgeTurn>0){
-    var edge=0.08;
-    if(cursorX<edge)      yaw += (1-cursorX/edge)*CFG.edgeTurn*dt;
-    else if(cursorX>1-edge) yaw -= (1-(1-cursorX)/edge)*CFG.edgeTurn*dt;
-  }
-  if(keys['arrowleft'])yaw+=dt*1.9;
-  if(keys['arrowright'])yaw-=dt*1.9;
-  if(keys['arrowup'])pitch=Math.min(1.25,pitch+dt*1.3);
-  if(keys['arrowdown'])pitch=Math.max(-1.25,pitch-dt*1.3);
-
   var f=(keys['w']?1:0)-(keys['s']?1:0), s=(keys['d']?1:0)-(keys['a']?1:0);
   var analog=1;
   if(IS_TOUCH&&touchMove.mag>0){ f=touchMove.f; s=touchMove.s; analog=touchMove.mag; }
@@ -4310,7 +4496,18 @@ function stepPlayer(dt){
   crouchNow = wantCrouch;
   var sp, eye=1.65, sprintingNow=false;
 
-  if(shrinkT>0){ shrinkT-=dt; if(shrinkT<=0){shrinkT=0;toast('恢復原本大小');} }
+  if(shrinkT>0){
+    shrinkT-=dt;
+    if(shrinkT<=0){
+      shrinkT=0;
+      document.body.classList.remove('shrunk','shrink-end');
+      toast('恢復原本大小 —— 現在抓得到你了');
+    }else{
+      $('shrinknum').textContent=shrinkT.toFixed(1);
+      // 最後三秒轉紅閃動：這是唯一一個「時間到就會死」的倒數
+      document.body.classList.toggle('shrink-end',shrinkT<=3);
+    }
+  }
   if(shrinkT>0){
     sp=base*0.8*loadMul; eye=0.52;
     if(stickMag)sp*=Math.min(1,stickMag/SPRINT_AT);
@@ -4493,7 +4690,7 @@ function pushHistory(r,result){
 }
 function endRun(){
   G.phase='result';
-  closeKeypad();
+  closeKeypad(); cancelHold(); dropDrag();
   if(stopT>0){ stopT=0; document.body.classList.remove('stopped'); droneQuiet(false); }
   /* 午夜鐘按「回合」而不是「次數」過期：
      不管你這局有沒有按下去，它都少一回合。
@@ -5360,8 +5557,11 @@ function frame(now){
        它們沒有 baseY（那是 spawnItem 才會設的），
        漏掉的話 undefined + sin() = NaN，物件的矩陣整個爛掉：
        畫面上消失、射線也打不到，整個辦公室等於不存在。 */
-    if(o.taken||o.safe||o.hide||o.officeDoor||o.register)continue;
-    if(o.def.tier!=='common'){
+    if(o.taken||o.safe||o.hide||o.officeDoor||o.register||o.note)continue;
+    /* 浮動與旋轉跟發光綁在一起用同一條規則。
+       分開的話會出現「不發光但在空中轉」的東西，那個訊號更混亂 ——
+       一般商品現在就老老實實躺在架上，價格標自己去講它值多少。 */
+    if(isGlow(o.def)){
       o.mesh.position.y=o.baseY+Math.sin(t*1.7+i)*0.045;
       o.mesh.rotation.y+=0.005;
       if(o.halo){ o.halo.position.y=o.baseY+0.18+Math.sin(t*1.7+i)*0.045;
