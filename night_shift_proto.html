@@ -1040,7 +1040,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v7.5';
+var BUILD='v7.7';
 
 /* ================================================================
    目錄與凍結狀態
@@ -1126,7 +1126,9 @@ var DEF = {
      中間只有一秒。也就是說「你現在就可以乾淨脫身了，還要不要回頭」
      這個整個原型要測的那一刻，根本沒有發生的空間。
      拉長單局的工作現在交給鑰匙／密碼／三件組那幾條目標鏈，
-     解鎖要早一點回到局中，那個抉擇才會是抉擇。 */
+     解鎖要早一點回到局中，那個抉擇才會是抉擇。
+     （v7.7 提到 5 —— 見下方。上面這段講的是「解鎖要早」這個原則，
+       原則沒變，變的是同一段時間現在要幾件才走得完。） */
   /* 非賣品的價值。從 120 拉到 300 —— 這是一個純算術的修正。
 
      120 是「店裡最貴的東西只有 $70」那個時代訂的。之後陸續加進來的
@@ -1138,7 +1140,17 @@ var DEF = {
 
      riskBonus 也改成跟數量掛勾（見 extract）：拿越多件，整袋加成越高。
      所以「再進去一次」在最後一刻永遠還有一個具體的數字在拉你。 */
-  capacity:12, riskBonus:0.25, forbiddenValue:300, extractItems:4,
+  /* extractItems 從 4 提到 5（v7.7）。
+     它衡量的其實不是件數，是「最短的一趟要走多久」——
+     v7.6 把架上的貨加了四成之後，湊滿 4 件變成一件不用動腦的事，
+     提到 5 只是把那段時間補回原本的長度。 */
+  capacity:12, riskBonus:0.25, forbiddenValue:300, extractItems:5,
+  /* 稀有品的前後場落差（v7.7）。
+     貨變多之後如果兩邊同比例上升，前場自己就湊得出一袋好貨，
+     「要不要往深處走」這個決定會直接消失 ——
+     所以前場的稀有機率往下壓，總量的增加全部留給深處。
+     結果是前場的稀有品件數跟 v7.5 幾乎一樣，深處多了四成。 */
+  rareFront:0.10, rareDeep:0.38,
   // 負重：只有超過門檻才罰，且是固定一級，不是連續遞減
   loadThreshold:0.80, loadPenalty:0.10,
   // 店員：以基礎值的百分比表示，每三次下手各加 growthPer3
@@ -1166,6 +1178,10 @@ var DEF = {
      所以四關左右一定湊得完，不會卡在「一直重複掉同一個」。
      ammoChance 是槍已經組好、但沒子彈時，店內出現彈藥的機率。 */
   tzPartChance:0.70, tzAmmoChance:0.20, tzAmmoCost:300, tzAmmoPer:3,
+  /* 貨架填充率：每個候選層板位有多少機率真的擺一件商品。
+     候選位＝每個貨架位置的上下兩層都算，所以 0.44 已經是「相當滿」。
+     調高會讓店裡更像營業中的超商，也會讓玩家在同一條走道待更久。 */
+  shelfFill:0.44,
   /* 密碼要不要留在畫面上。
      開著（1）＝ 這條鏈的代價是「橫跨整個後場的距離與風險」。
      關掉（0）＝ 再加一層記憶負擔。
@@ -1265,6 +1281,9 @@ var KNOBS = [
   ['k-econ','tzAmmoChance','店內彈藥出現機率',0,1,.05,''],
   ['k-econ','tzAmmoCost','彈藥價格',50,800,10,''],
   ['k-econ','tzAmmoPer','一次補幾發',1,10,1,' 發'],
+  ['k-econ','shelfFill','貨架填充率',.15,1,.02,''],
+  ['k-econ','rareFront','稀有機率（前場）',0,1,.02,''],
+  ['k-econ','rareDeep','稀有機率（深處）',0,1,.02,''],
   ['k-econ','tagRange','價格標可視距離',4,30,1,' m'],
   ['k-econ','setChance','三件組出現機率',0,1,.05,''],
   ['k-econ','safeChance','保險箱中獎機率',0,1,.05,''],
@@ -1299,6 +1318,16 @@ var ITEMS = [
   {id:'candy',   name:'綜合糖果包',      v:16, slots:1, tier:'common', noise:3, shape:'bag',     color:0xE05A9A},
   {id:'chips',   name:'洋芋片家庭號',    v:11, slots:2, tier:'common', noise:7, shape:'bag',     color:0xF0C23A},
   {id:'water',   name:'礦泉水六瓶裝',    v:12, slots:2, tier:'common', noise:5, shape:'sixpack', color:0x7FC4E8},
+  /* v7.6 新增的八樣一般品。加品項不是為了加錢，是為了讓「掃一眼貨架」
+     這個動作本身有資訊量 —— 只有十二種的時候，玩家第三局就開始無視貨架了。 */
+  {id:'onigiri', name:'鮪魚飯糰',        v:9,  slots:1, tier:'common', noise:2, shape:'onigiri', color:0x1E2A33},
+  {id:'tooth',   name:'亮白牙膏',        v:12, slots:1, tier:'common', noise:3, shape:'tube',    color:0x3AA8D8},
+  {id:'mask',    name:'醫療口罩五十入',  v:13, slots:1, tier:'common', noise:2, shape:'boxflat', color:0x6FD0E8},
+  {id:'energy',  name:'提神能量飲',      v:14, slots:1, tier:'common', noise:5, shape:'can',     color:0xD9B32C},
+  {id:'sauce',   name:'甘醇醬油膏',      v:11, slots:1, tier:'common', noise:5, shape:'bottle',  color:0x4A3226},
+  {id:'dumpling',name:'冷凍手工水餃',    v:16, slots:2, tier:'common', noise:4, shape:'tray',    color:0xE6DCC4},
+  {id:'umbrella',name:'自動折疊傘',      v:17, slots:1, tier:'common', noise:4, shape:'umbrella',color:0x2E5FA3},
+  {id:'icecream',name:'桶裝香草冰淇淋',  v:18, slots:2, tier:'common', noise:3, shape:'tub',     color:0xE8CFA8},
   {id:'coffee',  name:'進口咖啡豆',      v:38, slots:1, tier:'rare',   noise:4, shape:'pack',    color:0x6B4630},
   {id:'steak',   name:'和牛肋眼',        v:62, slots:2, tier:'rare',   noise:4, shape:'tray',    color:0xC0392B},
   {id:'whisky',  name:'單一麥芽威士忌',  v:70, slots:2, tier:'rare',   noise:8, shape:'bottle',  color:0xB5762A},
@@ -1306,6 +1335,14 @@ var ITEMS = [
   {id:'vitamin', name:'綜合維他命禮盒',  v:34, slots:1, tier:'rare',   noise:3, shape:'pack',    color:0xE87A2B},
   {id:'cheese',  name:'進口熟成乳酪',    v:36, slots:1, tier:'rare',   noise:3, shape:'cheese',  color:0xE8C25A},
   {id:'cake',    name:'鮮奶油生日蛋糕',  v:42, slots:3, tier:'rare',   noise:2, shape:'cake',    color:0xF6E3E8},
+  /* v7.6 新增的六樣稀有品。刻意橫跨 37～68，讓「值不值得繞進這條走道」
+     不再只有兩三個答案 —— 價格標要能分辨，差距就得夠密。 */
+  {id:'choco',   name:'松露巧克力禮盒',  v:37, slots:1, tier:'rare',   noise:2, shape:'giftbox', color:0x5A3426},
+  {id:'tea',     name:'高山烏龍茶禮盒',  v:40, slots:1, tier:'rare',   noise:3, shape:'giftbox', color:0x2E6B4E},
+  {id:'perfume', name:'進口香水',        v:48, slots:1, tier:'rare',   noise:4, shape:'perfume', color:0xE8B8C8},
+  {id:'wine',    name:'波爾多紅酒',      v:54, slots:2, tier:'rare',   noise:8, shape:'bottle',  color:0x5E1A2B},
+  {id:'tuna',    name:'黑鮪魚大腹',      v:66, slots:2, tier:'rare',   noise:3, shape:'tray',    color:0xB03A4A},
+  {id:'earbuds', name:'無線藍牙耳機',    v:68, slots:1, tier:'rare',   noise:2, shape:'earbuds', color:0xF0F0EC},
   {id:'unknown', name:'午夜限定・不明肉品', v:120, slots:2, tier:'forbidden', noise:34, shape:'blob', color:0x8E4BC4},
   // 特殊物件：鑰匙不佔格子也沒價值，它的價值在保險箱裡
   {id:'safekey', name:'保險箱鑰匙',   v:0,  slots:0, tier:'special',  noise:3, shape:'key',  color:0x7FE3F5},
@@ -1628,21 +1665,42 @@ var COL_STATIC=COL.slice();      // 外殼：牆、櫃檯、冷凍室、倉庫 �
    ============================================================ */
 var AISLE={z0:-7.4,z1:7.4,x0:-14.9,x1:14.9};
 function shelfRun(out,x0,z0,x1,z1){ out.shelves.push([x0,z0,x1,z1]); }
-// 沿著一塊貨架的長邊，在兩側層板上撒商品位
+/* 沿著一塊貨架的長邊，在兩側層板上撒商品位。
+
+   v7.6：原本每個位置只在「上層或下層」二選一（(k+pi)%2），
+   所以候選位置天生就只有一半，密度上限被鎖死。
+   現在兩層都當成候選位，實際要放幾件交給 CFG.shelfFill 決定 ——
+   位置變兩倍、填充率降到約一半，總量淨增約 40%，
+   但「哪一層有東西」變成每局重抽，掃貨架的視線才需要上下移動。
+
+   上層位置沿著貨架方向往同一邊平移，不跟下層垂直對齊 ——
+   對齊的話上下兩件會擠在同一條視線上，價格標也會互相遮。
+   平移量取 min(0.38, 柱距×0.30)：固定 0.38 在島型貨架（柱距 1.1m）上
+   會讓上層兩件只差 0.34m 而直接穿模。方向必須一致，
+   一正一負的交錯會讓相鄰的上層位互相靠攏，短貨架上就是撞在一起。 */
 function spotsAlong(out,x0,z0,x1,z1){
   var vertical=(z1-z0)>(x1-x0);
-  var n=Math.max(2,Math.round((vertical?(z1-z0):(x1-x0))/2.3));
+  var lo=vertical?z0:x0, hi=vertical?z1:x1;
+  var n=Math.max(2,Math.round((hi-lo)/2.3));
+  /* 位移量一次算好，整排上層用同一個值。
+     如果改成逐點夾（Math.min(base+0.38, hi-0.30)），最後一個上層位會被推回來
+     貼齊最後一個下層位 —— 那正是要避免的情況，而且只發生在最短的貨架上。 */
+  var step=(hi-lo)/n;
+  var off=Math.max(0,Math.min(0.38,step*0.30,(hi-0.30)-(lo+step*(n-0.5))));
   for(var k=0;k<n;k++){
-    var t=(k+0.5)/n;
+    var base=lo+step*(k+0.5);
+    var up=base+off;
     if(vertical){
-      var z=z0+(z1-z0)*t;
-      [[x0-0.16,0],[x1+0.16,1]].forEach(function(p,pi){
-        out.spots.push({x:p[0],z:z,y:((k+pi)%2===0)?0.73:1.29,deep:z<-0.5});
+      [x0-0.16,x1+0.16].forEach(function(px){
+        out.spots.push({x:px,z:base,y:0.73,deep:base<-0.5});
+        out.spots.push({x:px,z:up,  y:1.29,deep:up<-0.5});
       });
     }else{
-      var x=x0+(x1-x0)*t;
-      [[z0-0.16,0],[z1+0.16,1]].forEach(function(p,pi){
-        out.spots.push({x:x,z:p[0],y:((k+pi)%2===0)?0.73:1.29,deep:(z0+z1)/2<-0.5});
+      [z0-0.16,z1+0.16].forEach(function(pz){
+        // deep 用這個位置自己的 z，不是整塊貨架的中心 ——
+        // 東西向長排的兩側可能一側在後場、一側在前場
+        out.spots.push({x:base,z:pz,y:0.73,deep:pz<-0.5});
+        out.spots.push({x:up,  z:pz,y:1.29,deep:pz<-0.5});
       });
     }
   }
@@ -1951,6 +2009,32 @@ var SHAPES={
   sixpack:function(c){var a=[];
     for(var i=0;i<6;i++)a.push(P(GEO.cyl,c,[.07,.17,.07],[(i%3-1)*.082,.085,i<3?-.045:.045]));
     a.push(P(GEO.box,0x9CC2DE,[.27,.015,.19],[0,.172,0])); return a;},
+  /* ---- v7.6 新增外型。一律不給 emissive：
+         會發光的只有線索物（不明肉品／機器人／鑰匙／電擊槍部件）。 ---- */
+  onigiri:function(c){return [P(GEO.box,0xF4F1E6,[.20,.17,.13],[0,.085,0]),
+    P(GEO.box,c,[.205,.07,.135],[0,.035,0]),
+    P(GEO.box,0xF4F1E6,[.13,.08,.11],[0,.20,0])];},
+  tube:function(c){return [P(GEO.box,c,[.075,.03,.055],[0,.015,0]),
+    P(GEO.box,c,[.07,.24,.05],[0,.14,0]),
+    P(GEO.cyl,0xF0F0EA,[.035,.05,.035],[0,.28,0])];},
+  boxflat:function(c){return [P(GEO.box,c,[.26,.10,.16],[0,.05,0]),
+    P(GEO.box,0xF4F2E6,[.14,.045,.09],[0,.078,0])];},
+  // 高度上限 0.335（×1.32 後 0.44）：再高就會穿過上層層板的底面
+  umbrella:function(c){return [P(GEO.box,0xC8CCD2,[.06,.025,.06],[0,.012,0]),
+    P(GEO.cyl,c,[.06,.24,.06],[0,.145,0]),
+    P(GEO.cyl,0x2A2E33,[.035,.065,.035],[0,.30,0])];},
+  tub:function(c){return [P(GEO.cyl,c,[.20,.20,.20],[0,.10,0]),
+    P(GEO.cyl,0xE8E4D8,[.215,.03,.215],[0,.215,0]),
+    P(GEO.box,0xE8E4D8,[.035,.02,.23],[0,.245,0])];},
+  perfume:function(c){return [P(GEO.box,c,[.13,.15,.09],[0,.075,0]),
+    P(GEO.cyl,c,[.04,.06,.04],[0,.18,0]),
+    P(GEO.cyl,0xC9A24B,[.055,.05,.055],[0,.235,0])];},
+  giftbox:function(c){return [P(GEO.box,c,[.24,.12,.17],[0,.06,0]),
+    P(GEO.box,0xE0C36A,[.245,.028,.05],[0,.078,0]),
+    P(GEO.box,0xE0C36A,[.06,.028,.175],[0,.078,0])];},
+  earbuds:function(c){return [P(GEO.box,c,[.14,.07,.13],[0,.035,0]),
+    P(GEO.box,c,[.14,.045,.13],[0,.092,0]),
+    P(GEO.box,0x2A2E33,[.09,.012,.02],[0,.066,.066])];},
   key:function(c){return [P(GEO.box,c,[.05,.05,.30],[0,.16,0],1.5),
     P(GEO.box,c,[.14,.05,.05],[0,.16,-.11],1.5),
     P(GEO.box,c,[.05,.05,.10],[.05,.16,.11],1.5),
@@ -1963,9 +2047,9 @@ var SHAPES={
     P(GEO.box,0xE87A2B,[.05,.05,.05],[0,.28,0],1.1)];},
   botbody:function(c){return [P(GEO.box,c,[.30,.34,.20],[0,.19,0],0.35),
     P(GEO.box,0xE87A2B,[.10,.10,.03],[0,.24,-.11],1.1),
-    P(GEO.box,c,[.36,.06,.22],[0,.36,0],0.35)];},
-  botarm:function(c){return [P(GEO.box,c,[.11,.30,.11],[0,.16,0],0.35),
-    P(GEO.box,c,[.15,.10,.15],[0,.34,0],0.35),
+    P(GEO.box,c,[.36,.06,.22],[0,.345,0],0.35)];},
+  botarm:function(c){return [P(GEO.box,c,[.11,.30,.11],[0,.155,0],0.35),
+    P(GEO.box,c,[.15,.10,.15],[0,.325,0],0.35),
     P(GEO.box,0xE87A2B,[.12,.04,.12],[0,.05,0],1.1)];},
   /* 電擊槍部件：四個都用青色 + 一小塊黑色機殼，
      形狀刻意做得很不一樣，遠遠一眼就知道還缺哪一個。 */
@@ -3115,11 +3199,15 @@ function buildItems(seed){
     if(as)spawnItem(BY_ID.tz_ammo,as.x,rand()<0.5?0:as.y,as.z);
   }
 
-  // 剩下的位置才填一般商品
+  /* 剩下的位置才填一般商品。
+     shelfFill 是「每個候選層板位有多少機率真的擺東西」。
+     v7.6 起候選位是兩層都算（見 spotsAlong），所以 0.44 左右
+     ≈ 舊版 0.73 的 1.4 倍實際件數。留 ±0.14 的浮動，
+     是為了讓「這局貨比較滿」本身變成一個可感覺到的變數。 */
   var freeS=spots.filter(function(s,i){return !claimed['s'+i];});
-  var useCount=Math.round(freeS.length*(0.62+rand()*0.22));
+  var useCount=Math.round(freeS.length*Math.min(1,CFG.shelfFill+rand()*0.14));
   freeS.slice(0,useCount).forEach(function(s){
-    var rareChance=(s.deep?0.38:0.14);
+    var rareChance=(s.deep?CFG.rareDeep:CFG.rareFront);
     var def = rand()<rareChance ? rares[Math.floor(rand()*rares.length)]
                                 : commons[Math.floor(rand()*commons.length)];
     spawnItem(def,s.x,s.y,s.z);
@@ -3603,7 +3691,14 @@ function spawnItem(def,x,y,z){
   // 鑰匙與電擊槍部件沒有價格，不掛價格標（不然會掛一個 $0 上去）
   if(def.tier!=='special'&&def.tier!=='gear'){
     o.tag=makeTag(val,def.tier);
-    o.tag.position.set(x,y+0.56,z); scene.add(o.tag);
+    /* v7.6：下層層板（y 剛好 0.73）的價格標改掛到層板下方。
+       兩層層板相差 0.56，而預設標籤高度也是 +0.56 ——
+       掛在上面剛好貼上層層板的板面（1.2325～1.2875），
+       數字有一半被板子擋住，還會插進上層那件商品裡。
+       0.40 在下層層板底面（0.6725）之下、地板之上：
+       站在 1.5m 外（正常判價的距離）整張標籤都看得到，
+       貼到 1.2m 以內時層板前緣會切到標籤上緣 —— 但那時你已經決定好了。 */
+    o.tag.position.set(x,(y===0.73?0.40:y+0.56),z); scene.add(o.tag);
   }
   g.userData.item=o;
   g.traverse(function(c){c.userData.item=o;});
@@ -3948,7 +4043,21 @@ var _to=new THREE.Vector3();
 /* 選取目標：先精準射線，射不到才用瞄準輔助挑「角度最小」的那個。
    商品體積很小，硬要玩家瞄中央很折騰；但還是要擋住隔著貨架亂抓。 */
 function pickTarget(){
-  var live=itemMeshes.filter(function(o){return !o.taken;});
+  /* v7.6：先用距離篩一次再丟進 intersectObjects。
+     貨架改成上下兩層之後，場上的商品件數多了四成，而這個函式每一幀都跑；
+     原本會把全場每一件商品的整棵子樹都拿去做射線測試。
+     店裡幾十件、身邊只有兩三件 —— 先篩再測，比 v7.5 還便宜。 */
+  var near2=(CFG.reachDist+1.2)*(CFG.reachDist+1.2);
+  // 辦公室門那種 Group 原點在地板、燈條卻往兩側伸出一公尺的東西要放寬，
+  // 不然斜著看走廊時會有一小段距離剛好被篩掉
+  var wide2=(CFG.reachDist+2.5)*(CFG.reachDist+2.5);
+  var live=[], cp=camera.position;
+  for(var q=0;q<itemMeshes.length;q++){
+    var it=itemMeshes[q]; if(it.taken)continue;
+    var p=it.mesh.position;
+    var dx=p.x-cp.x, dy=p.y-cp.y, dz=p.z-cp.z;
+    if(dx*dx+dy*dy+dz*dz<=(it.officeDoor?wide2:near2))live.push(it);
+  }
   if(!live.length)return null;
   camera.getWorldDirection(fwd);
   ray.set(camera.position,fwd);
@@ -3956,7 +4065,11 @@ function pickTarget(){
   var hit=ray.intersectObjects(live.map(function(o){return o.mesh;}),true);
   if(hit.length&&hit[0].object.userData.item)return hit[0].object.userData.item;
 
-  var best=null, bestA=CFG.aimAssist*Math.PI/180;
+  /* 準心沒直接打到東西時的輔助瞄準。
+     角度仍然是門檻（aimAssist 度），但排名改用「離視線的垂直距離」dist·sin(a)。
+     上下兩層的商品現在只差 0.68m，在 3m 外兩件會同時落在 15 度錐裡，
+     單看角度等於在比小數點後兩位的雜訊；比垂直距離才是「我到底在看哪一件」。 */
+  var best=null, gate=CFG.aimAssist*Math.PI/180, bestP=Infinity;
   for(var i=0;i<live.length;i++){
     var o=live[i], c=o.mesh.position;
     /* 瞄準輔助的目標高度。門與收銀機的 Group 原點在地板上（y=0），
@@ -3970,8 +4083,10 @@ function pickTarget(){
     if(dist<0.05||dist>CFG.reachDist)continue;
     _to.divideScalar(dist);
     var a=Math.acos(Math.max(-1,Math.min(1,_to.dot(fwd))));
-    if(a<bestA&&!blocked(camera.position.x,camera.position.z,c.x,c.z,1.0)){
-      bestA=a; best=o;
+    if(a>=gate)continue;
+    var perp=dist*Math.sin(a);
+    if(perp<bestP&&!blocked(camera.position.x,camera.position.z,c.x,c.z,1.0)){
+      bestP=perp; best=o;
     }
   }
   return best;
