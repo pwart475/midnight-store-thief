@@ -324,6 +324,15 @@
     margin-top:20px;padding:16px 0 22px;
     background:linear-gradient(to bottom,rgba(17,21,15,0),var(--ink-2) 45%)}
   .cardfoot .btn{margin-top:0}
+  /* 「再幹一次」釘在卡片頂端。
+     它本來在商店格下面、用 sticky bottom —— 但 sticky bottom 只在「你還沒捲到它」
+     的時候黏著，一旦捲過去它就跟著往上跑掉了。而裝備欄、犯案紀錄、歷次犯案
+     全在它下面，所以看紀錄的時候按鈕永遠不在畫面上。
+     改成 sticky top 並移到最前面：一進商店就看得到，往下捲也不會走。 */
+  .cardtop{position:sticky;top:0;z-index:6;display:flex;gap:12px;flex-wrap:wrap;
+    align-items:center;padding:14px 0 12px;margin-bottom:6px;
+    background:var(--ink-2);border-bottom:1px solid var(--line)}
+  .cardtop .btn{margin-top:0}
   .eyebrow{font-family:var(--f-mono);font-size:11px;letter-spacing:.26em;color:var(--dimmer);
     text-transform:uppercase;margin-bottom:12px}
   h1{font-family:var(--f-num);font-size:clamp(36px,7vw,60px);line-height:.94;margin:0 0 4px;
@@ -957,11 +966,11 @@
       <div style="text-align:right"><div class="eyebrow" style="margin:0 0 2px">變賣所得</div>
         <div class="cash" id="shopcash">$0</div></div>
     </div>
-    <div class="shopgoal" id="shopgoal"></div>
-    <div class="shopgrid" id="shopgrid"></div>
-    <div class="cardfoot" style="margin-top:18px">
+    <div class="cardtop">
       <button class="btn" id="btn-shift">再幹一次 <kbd>Enter</kbd></button>
     </div>
+    <div class="shopgoal" id="shopgoal"></div>
+    <div class="shopgrid" id="shopgrid"></div>
     <h4 class="sh">現有裝備</h4>
     <div id="gearlist"></div>
     <h4 class="sh">下一次會變這樣</h4>
@@ -1040,7 +1049,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v8.2';
+var BUILD='v8.5';
 
 /* ================================================================
    目錄與凍結狀態
@@ -1200,6 +1209,10 @@ var DEF = {
      spritePreview 開起來會讓「所有」品項都改用程式畫的佔位圖 ——
      那是用來在畫圖之前先確認平面 sprite 在這個光線與距離下看不看得清楚的。 */
   spriteSize:0.265, spritePreview:0,
+  /* 亮度。環境光壓低、燈管本身調高 = 「燈下很亮、走道很黑」，
+     而不是「整間店一樣灰」。黑暗在這個遊戲裡是有功能的
+     （停電、手電筒升級、躲櫃子、視線距離全部靠它），所以整體不能拉亮。 */
+  lightAmb:0.40, lightLamp:1.15,
   /* 密碼要不要留在畫面上。
      開著（1）＝ 這條鏈的代價是「橫跨整個後場的距離與風險」。
      關掉（0）＝ 再加一層記憶負擔。
@@ -1303,6 +1316,8 @@ var KNOBS = [
   ['k-econ','tzAmmoCost','彈藥價格',50,800,10,''],
   ['k-econ','tzAmmoPer','一次補幾發',1,10,1,' 發'],
   ['k-econ','shelfFill','貨架填充率',.15,1,.02,''],
+  ['k-econ','lightAmb','環境光（整體亮度）',0.05,1.2,.02,''],
+  ['k-econ','lightLamp','燈管亮度（局部）',0.2,3,.05,''],
   ['k-econ','spritePreview','平面圖預覽（佔位）',0,1,1,''],
   ['k-econ','spriteSize','平面圖大小',.12,.6,.005,' m'],
   ['k-econ','rareFront','稀有機率（前場）',0,1,.02,''],
@@ -1816,14 +1831,88 @@ var renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-perfo
 renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,IS_TOUCH?1.4:2));
 document.getElementById('stage').appendChild(renderer.domElement);
 
-var ambient=new THREE.AmbientLight(0x556256,0.74); scene.add(ambient);
-var sky=new THREE.DirectionalLight(0xC8D8C4,0.40); sky.position.set(-4,12,6); scene.add(sky);
+/* 光的三個基準值集中在這裡 —— setDanger 與閃爍都從這裡讀，
+   不然調一次亮度要改三個地方，而且一定會漏掉一個。
 
+   v8.4 把環境光砍掉將近一半、燈管本身反而調亮並縮短照射距離。
+   淨效果是「燈下很亮、走道很黑」而不是「整間店一樣灰」——
+   這樣貨架之間的陰影才有深度，而且玩家會開始選擇走哪一條道。 */
+var LIGHT={
+  get amb(){ return CFG.lightAmb; },
+  get sky(){ return CFG.lightAmb*0.5; },
+  get lamp(){ return CFG.lightLamp; }
+};
+var ambient=new THREE.AmbientLight(0x556256,LIGHT.amb); scene.add(ambient);
+var sky=new THREE.DirectionalLight(0xC8D8C4,LIGHT.sky); sky.position.set(-4,12,6); scene.add(sky);
+
+/* ---------- 程序化材質貼圖 ----------
+   目標是「超商感」，不是照片寫實。真正撐起超商感的其實只有三樣東西：
+   地上的方形磁磚、成排的層板、天花板的燈盤。所以只做這三個。
+
+   刻意「不」跟著參考圖變亮：那些圖是白天開滿燈的店，
+   而這裡是半夜、要靠黑暗做壓力的店 —— 停電、手電筒升級、躲櫃子
+   全都建立在看不清楚上面。所以換的是材質與結構，不是亮度。 */
+function cvs(n){
+  var c=document.createElement('canvas'); c.width=c.height=n;
+  return c;
+}
+function mkTex(c,rep){
+  var t=new THREE.CanvasTexture(c);
+  t.wrapS=t.wrapT=THREE.RepeatWrapping;
+  if(rep)t.repeat.set(rep,rep);
+  return t;
+}
+// 磁磚：2×2 一組，每塊亮度微調，免得整片地板是同一個圖案在跳
+function texTile(tones,grout){
+  var c=cvs(128), g=c.getContext('2d');
+  g.fillStyle=grout; g.fillRect(0,0,128,128);
+  for(var i=0;i<2;i++)for(var j=0;j<2;j++){
+    g.fillStyle=tones[(i*2+j)%tones.length];
+    g.fillRect(i*64+2,j*64+2,60,60);
+    // 一道很淡的斜向反光，讓平面不要死板
+    g.fillStyle='rgba(255,255,255,.028)';
+    g.fillRect(i*64+2,j*64+2,60,14);
+  }
+  return c;
+}
+// 牆與貨架：很輕的顆粒。箱體的 UV 會被拉伸，所以不能用有方向性的圖案
+function texGrain(base,amp){
+  var c=cvs(64), g=c.getContext('2d');
+  g.fillStyle=base; g.fillRect(0,0,64,64);
+  for(var i=0;i<900;i++){
+    var v=(Math.random()<0.5?0:255);
+    g.fillStyle='rgba('+v+','+v+','+v+','+(Math.random()*amp).toFixed(3)+')';
+    g.fillRect((Math.random()*64)|0,(Math.random()*64)|0,1,1);
+  }
+  return c;
+}
+// 天花板：輕鋼架的方格，每隔幾格換一塊淺色的當燈盤
+function texCeil(){
+  var c=cvs(128), g=c.getContext('2d');
+  g.fillStyle='#232722'; g.fillRect(0,0,128,128);      // 骨架
+  var p=['#3d423b','#3a3f38','#40453e','#383d36'];
+  for(var i=0;i<2;i++)for(var j=0;j<2;j++){
+    g.fillStyle=p[(i*2+j)%4];
+    g.fillRect(i*64+3,j*64+3,58,58);
+  }
+  g.fillStyle='#575c50';                                // 一塊燈盤
+  g.fillRect(3,3,58,58);
+  return c;
+}
+/* 地板材質要按尺寸各做一份：貼圖是共用的，但 repeat 不是 ——
+   同一個 material 給 40m 和 4m 的地板用，小的那塊磁磚會被拉成長方形。 */
+var TILE_M=1.8;                                   // 一組 2×2 磁磚等於幾公尺
+var TILE_C=texTile(['#565b52','#51564d','#5a5f56','#4d5249'],'#31352e');
+var COLD_C=texTile(['#414e56','#3d4a52','#45525a','#39464e'],'#262f35');
+function floorMat(cv,w,d){
+  var t=mkTex(cv); t.repeat.set(w/TILE_M,d/TILE_M);
+  return new THREE.MeshLambertMaterial({map:t});
+}
 var MAT={
-  floor:new THREE.MeshLambertMaterial({color:0x2B322C}),
-  cold :new THREE.MeshLambertMaterial({color:0x28353A}),
-  wall :new THREE.MeshLambertMaterial({color:0x38423A}),
-  shelf:new THREE.MeshLambertMaterial({color:0x4A5A4E}),
+  floor:floorMat(TILE_C,40,39),
+  cold :floorMat(COLD_C,13.2,10.8),
+  wall :new THREE.MeshLambertMaterial({map:mkTex(texGrain('#464b42',0.10),3)}),
+  shelf:new THREE.MeshLambertMaterial({map:mkTex(texGrain('#5b5040',0.12),2)}),
   common:new THREE.MeshLambertMaterial({color:0x8C8A72}),
   rare :new THREE.MeshStandardMaterial({color:0x6B5A1E,emissive:0xFFC93C,emissiveIntensity:0.55,roughness:.6,metalness:.1}),
   forbid:new THREE.MeshStandardMaterial({color:0x3A1E52,emissive:0xC77DFF,emissiveIntensity:0.85,roughness:.5,metalness:.1}),
@@ -1840,9 +1929,8 @@ var floor=new THREE.Mesh(new THREE.PlaneGeometry(40,39),MAT.floor);
 floor.rotation.x=-Math.PI/2; floor.position.set(0,0,-3.3); scene.add(floor);
 var coldFloor=new THREE.Mesh(new THREE.PlaneGeometry(13.2,10.8),MAT.cold);
 coldFloor.rotation.x=-Math.PI/2; coldFloor.position.set(-13,0.02,-15.6); scene.add(coldFloor);
-var grid=new THREE.GridHelper(44,22,0x333D34,0x2C352D);
-grid.material.transparent=true; grid.material.opacity=0.55;
-grid.position.set(0,0.04,-3.0); scene.add(grid);
+/* GridHelper 拿掉了 —— 它本來是拿線框假裝磁磚縫，現在地板貼圖自己有縫。
+   兩個疊在一起會出現雙重格線，而且它的格距（2m）跟磁磚（1.8m）對不上。 */
 /* 西翼（走廊＋辦公室）自己鋪地板，不要把主地板整個拉寬 ——
    拉寬的話 x-40~-20 的空曠處也會長出地板，從賣場往西看會看到一片
    飄在建築外面的地。 */
@@ -1850,10 +1938,30 @@ grid.position.set(0,0.04,-3.0); scene.add(grid);
    短了的話門口會留一條 0.1m 的縫，門打開的瞬間就看得到底下的虛空。
    y 抬到 0.005 是為了不跟主地板共面 —— 兩塊 y=0 的地板重疊在門口
    會 z-fighting，出現一條閃爍的條紋。 */
-var corrFloor=new THREE.Mesh(new THREE.PlaneGeometry(13.4,4.0),MAT.floor);
+var corrFloor=new THREE.Mesh(new THREE.PlaneGeometry(13.4,4.0),floorMat(TILE_C,13.4,4.0));
 corrFloor.rotation.x=-Math.PI/2; corrFloor.position.set(-26.3,0.005,0); scene.add(corrFloor);
-var offFloor=new THREE.Mesh(new THREE.PlaneGeometry(7.6,10.0),MAT.cold);
+var offFloor=new THREE.Mesh(new THREE.PlaneGeometry(7.6,10.0),floorMat(COLD_C,7.6,10.0));
 offFloor.rotation.x=-Math.PI/2; offFloor.position.set(-36.3,0.01,0); scene.add(offFloor);
+
+/* ---------- 天花板 ----------
+   牆高 3.2、燈管在 3.15，所以 3.21 剛好蓋在牆頂上方一公分：
+   從裡面看是完整的天花板，那一公分的縫是側面朝上的，看不到。
+   放 3.2 會跟牆頂共面而 z-fighting。
+
+   為什麼值得加：參考圖裡「室內感」有一半來自看得到天花板。
+   原本抬頭是一片黑霧，空間感像在戶外的黑夜裡擺了幾排貨架。 */
+var CEIL_Y=3.21;
+var CEIL_C=texCeil();
+function ceilMat(w,d){
+  var t=mkTex(CEIL_C); t.repeat.set(w/2.4,d/2.4);
+  return new THREE.MeshLambertMaterial({map:t});
+}
+[[40,39,0,-3.3],[13.4,4.0,-26.3,0],[7.6,10.0,-36.3,0]].forEach(function(c){
+  var m=new THREE.Mesh(new THREE.PlaneGeometry(c[0],c[1]),ceilMat(c[0],c[1]));
+  m.rotation.x=Math.PI/2;           // 面朝下
+  m.position.set(c[2],CEIL_Y,c[3]);
+  scene.add(m);
+});
 
 // 外殼（牆、櫃檯、冷凍室、倉庫）—— 建一次就好
 var boxGeo=new THREE.BoxGeometry(1,1,1);
@@ -1937,9 +2045,42 @@ var tubeGeo=new THREE.BoxGeometry(3.4,0.12,0.34);
 TUBES.forEach(function(p){
   var t=new THREE.Mesh(tubeGeo,MAT.tube.clone());
   t.position.set(p[0],3.15,p[1]); scene.add(t); tubeMeshes.push(t);
-  var L=new THREE.PointLight(0xD6E6D0,0.62,21,1.4);
+  // 距離 21→13、衰減 1.4→1.8：光圈收小，燈與燈之間才會真的有暗帶
+  var L=new THREE.PointLight(0xD6E6D0,LIGHT.lamp,13,1.8);
   L.position.set(p[0],3.0,p[1]); scene.add(L); lamps.push(L);
 });
+/* ---------- 日光燈的詭異閃爍 ----------
+   每一支燈自己一個計時器、自己一個相位，所以不會整店一起眨眼
+   （那看起來像遊戲在卡頓，不像燈管快壞了）。
+
+   平常是很慢的呼吸（±5%），偶爾某一支「抽」個 0.1～0.5 秒 ——
+   抽的時候在 0.22 與 0.85 之間高速跳動，那是日光燈鎮流器快掛掉的樣子。
+   一次只會有一兩支在抽，因為每支的下一次都是各自隨機 3～19 秒後。 */
+var flick=lamps.map(function(){
+  return {next:2+Math.random()*14, burst:0, lvl:1, ph:Math.random()*6.283};
+});
+var TUBE_ON=0xE4F0DE, TUBE_OFF=0x6A7A68;
+function stepLights(dt,t){
+  // 從 CFG 讀，所以調參面板拉滑桿當下就看得到 —— 亮度這種東西用猜的很浪費
+  ambient.intensity=LIGHT.amb; sky.intensity=LIGHT.sky;
+  for(var i=0;i<lamps.length;i++){
+    var f=flick[i];
+    if(f.burst>0){
+      f.burst-=dt;
+      f.lvl=(Math.sin(t*47+f.ph)>0)?0.22:0.85;
+      if(f.burst<=0){ f.lvl=1; f.next=3+Math.random()*16; }
+    }else{
+      f.next-=dt;
+      if(f.next<=0)f.burst=0.10+Math.random()*0.40;
+      f.lvl=0.95+Math.sin(t*0.7+f.ph)*0.05;
+    }
+    lamps[i].intensity=LIGHT.lamp*f.lvl;
+    // 燈管本體要跟著暗，不然光滅了管子還亮著，一眼就穿幫
+    var want=f.lvl<0.5?TUBE_OFF:TUBE_ON;
+    if(tubeMeshes[i]&&tubeMeshes[i].material.color.getHex()!==want)
+      tubeMeshes[i].material.color.setHex(want);
+  }
+}
 
 // 出口門與標示
 var exitPad=new THREE.Mesh(new THREE.PlaneGeometry(7,1.7),
@@ -2142,18 +2283,17 @@ var TEX_DIR='tex/';
 /* 已經有圖的品項。沒列在這裡的自動沿用程序化積木，所以可以分批補。
    填之前務必確認 tex\ 裡真的有對應的 <id>.png ——
    列了卻沒檔案的話那一件會變成空白的 sprite，不會退回積木。 */
+/* v8.5：47 個全到齊了，所以這裡列的就是 ITEMS 的全部（cashbox 除外，它已停用）。
+   程序化積木那條路留著沒刪 —— 之後加新商品時它還是預設值。 */
 var HAS_TEX={
-  // pack（還缺 noodle）
-  cereal:1, coffee:1, vitamin:1,
-  // can —— 四個到齊
-  soup:1, energy:1, caviar:1, watch:1,
-  // bottle —— 四個到齊
-  soap:1, sauce:1, whisky:1, wine:1,
-  // bag —— 三個到齊
-  candy:1, chips:1, coins:1,
-  // tray —— 三個到齊
-  dumpling:1, steak:1, tuna:1
-  // giftbox（還缺 choco / tea）
+  noodle:1, soup:1, cereal:1, paper:1, soap:1, bread:1, milk:1, battery:1,
+  bulb:1, candy:1, chips:1, water:1, onigiri:1, tooth:1, mask:1, energy:1,
+  sauce:1, dumpling:1, umbrella:1, icecream:1,
+  coffee:1, steak:1, whisky:1, caviar:1, vitamin:1, cheese:1, cake:1,
+  choco:1, tea:1, perfume:1, wine:1, tuna:1, earbuds:1, coins:1,
+  unknown:1, safekey:1, offkey:1, watch:1, goldbar:1,
+  tz_grip:1, tz_cell:1, tz_probe:1, tz_ammo:1,
+  bot_head:1, bot_body:1, bot_arm:1, bot_full:1
 };
 var texCache={};
 /* 白底自動去背。
@@ -3978,10 +4118,10 @@ function setDanger(on){
   document.getElementById('objective').classList.toggle('alarm',on);
   // 停電後的亮度全部由 alarmLight 一個係數決定，方便一次調整
   var k = on?CFG.alarmLight:1;
-  ambient.intensity = 0.74*k;
-  sky.intensity = 0.40*k;
-  lamps.forEach(function(L){L.intensity=0.62*k;});
-  tubeMeshes.forEach(function(t){t.material.color.setHex(on?0x2A3028:0xE4F0DE);});
+  ambient.intensity = LIGHT.amb*k;
+  sky.intensity = LIGHT.sky*k;
+  lamps.forEach(function(L){L.intensity=LIGHT.lamp*k;});
+  tubeMeshes.forEach(function(t){t.material.color.setHex(on?0x2A3028:TUBE_ON);});
   signs.forEach(function(s){s.material.color.setHex(on?0xFF3B30:0x4ADE80);});
   guides.forEach(function(m){
     m.material.color.setHex(on?0xFF3B30:0x3FBF6A);
@@ -6528,8 +6668,8 @@ function frame(now){
         if(flickerT<=0){ flickerT=0.1+Math.random()*0.45;
           var on=Math.random()<0.38;
           var k=CFG.alarmLight;
-          lamps.forEach(function(L){L.intensity=0.62*k*(on?1.75:0.72);});
-          ambient.intensity=0.74*k*(on?1.35:0.94);
+          lamps.forEach(function(L){L.intensity=LIGHT.lamp*k*(on?1.75:0.72);});
+          ambient.intensity=LIGHT.amb*k*(on?1.35:0.94);
         }
         // 疏散導引燈帶在停電時閃動 —— 黑掉之後這是最明確的一條路
         var gp=0.62+Math.abs(Math.sin(now/230))*0.38;
@@ -6541,6 +6681,9 @@ function frame(now){
   // 動畫用自己的累積時鐘，午夜鐘期間不推進 —— 不然「全店靜止」時商品還在轉
   if(stopT<=0)animT+=dt;
   var t=animT;
+  /* 日光燈閃爍。停電期間讓給上面那段警報閃爍，兩套同時跑會互相覆蓋。
+     午夜鐘期間傳 dt=0，燈也跟著凍住 —— 那八秒的賣點就是「一切都停了」。 */
+  if(!(G.run&&G.run.danger))stepLights(stopT>0?0:dt,t);
   for(var i=0;i<itemMeshes.length;i++){
     var o=itemMeshes[i];
     /* 固定物件不參加浮動。門與收銀機一定要在這條名單裡 ——
