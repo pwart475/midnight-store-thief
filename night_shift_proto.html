@@ -1040,7 +1040,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v7.9';
+var BUILD='v8.1';
 
 /* ================================================================
    目錄與凍結狀態
@@ -1195,6 +1195,11 @@ var DEF = {
      候選位＝每個貨架位置的上下兩層都算，所以 0.44 已經是「相當滿」。
      調高會讓店裡更像營業中的超商，也會讓玩家在同一條走道待更久。 */
   shelfFill:0.44,
+  /* 物品 sprite。spriteSize 是平面圖的邊長（公尺，還會再乘 spawnItem 的 1.32），
+     0.265 × 1.32 ≈ 0.35m，跟目前積木的高度同一個級距。
+     spritePreview 開起來會讓「所有」品項都改用程式畫的佔位圖 ——
+     那是用來在畫圖之前先確認平面 sprite 在這個光線與距離下看不看得清楚的。 */
+  spriteSize:0.265, spritePreview:0,
   /* 密碼要不要留在畫面上。
      開著（1）＝ 這條鏈的代價是「橫跨整個後場的距離與風險」。
      關掉（0）＝ 再加一層記憶負擔。
@@ -1298,6 +1303,8 @@ var KNOBS = [
   ['k-econ','tzAmmoCost','彈藥價格',50,800,10,''],
   ['k-econ','tzAmmoPer','一次補幾發',1,10,1,' 發'],
   ['k-econ','shelfFill','貨架填充率',.15,1,.02,''],
+  ['k-econ','spritePreview','平面圖預覽（佔位）',0,1,1,''],
+  ['k-econ','spriteSize','平面圖大小',.12,.6,.005,' m'],
   ['k-econ','rareFront','稀有機率（前場）',0,1,.02,''],
   ['k-econ','rareDeep','稀有機率（深處）',0,1,.02,''],
   ['k-econ','tagRange','價格標可視距離',4,30,1,' m'],
@@ -2124,9 +2131,145 @@ function glowColor(def){
   return def.tier==='forbidden'?0xC77DFF:
          (def.tier==='special'||def.tier==='gear')?0x7FE3F5:0xE87A2B;
 }
+/* ---------- 物品外觀：平面 sprite ／ 程序化積木 ----------
+   有 PNG 的品項改用一張永遠正對鏡頭的平面圖（舊版麥塊掉落物的做法），
+   沒有的沿用現在的積木。所以圖可以分批交，不會半路壞掉。
+
+   HAS_TEX 是白名單，不是「試載載看、404 就算了」——
+   後者每一局會對不存在的檔案發四十幾個請求，console 也會被紅字灌爆。
+   交圖之後把 id 填進來就好：{noodle:1, cereal:1, ...} */
+var TEX_DIR='tex/';
+/* 已經有圖的品項。沒列在這裡的自動沿用程序化積木，所以可以分批補。
+   填之前務必確認 tex\ 裡真的有對應的 <id>.png ——
+   列了卻沒檔案的話那一件會變成空白的 sprite，不會退回積木。 */
+var HAS_TEX={
+  // pack（還缺 noodle）
+  cereal:1, coffee:1, vitamin:1,
+  // can —— 四個到齊
+  soup:1, energy:1, caviar:1, watch:1,
+  // bottle —— 四個到齊
+  soap:1, sauce:1, whisky:1, wine:1,
+  // bag —— 三個到齊
+  candy:1, chips:1, coins:1,
+  // tray —— 三個到齊
+  dumpling:1, steak:1, tuna:1
+  // giftbox（還缺 choco / tea）
+};
+var texCache={};
+/* 白底自動去背。
+   從四個邊界往內做 flood fill，只清掉「接得到畫布邊緣」的白 ——
+   所以物件內部的白色（錶面、穀片碗、泡麵袋的米白）不會被吃掉。
+   單純判斷「像素夠白就透明」的話，那隻手錶會被挖一個洞。
+
+   已經有 alpha 的圖走這裡也不會壞：邊界本來就是透明，不是白，fill 直接停住。
+
+   file:// 開啟時 getImageData 會因為畫布被污染而丟 SecurityError，
+   這時就原圖照用（白底），所以本機雙擊還是能跑，只是會看到白框。 */
+var TEX_MAX=128;          // 貼圖進 GPU 之前的上限邊長
+function keyWhite(img){
+  /* 順序很重要：先在原尺寸去背，再縮小。
+     反過來做的話，縮圖會把白底跟物件邊緣混成一片淺色 ——
+     那些像素既不夠白（過不了下面的門檻、fill 停住），alpha 又是滿的
+     （alphaTest 也切不掉），結果每個物件都鑲一圈白邊。
+     先去背的話，縮圖混的是「顏色與透明」，得到的是乾淨的半透明邊。 */
+  var c=document.createElement('canvas');
+  c.width=img.width; c.height=img.height;
+  var g=c.getContext('2d');
+  g.drawImage(img,0,0);
+  var d;
+  try{ d=g.getImageData(0,0,c.width,c.height); }
+  catch(e){ d=null; }                 // file:// 畫布被污染 —— 放棄去背，原圖照用
+  if(d){
+    var p=d.data, W=c.width, H=c.height;
+    var seen=new Uint8Array(W*H), st=[];
+    var push=function(x,y){
+      if(x<0||y<0||x>=W||y>=H)return;
+      var i=y*W+x; if(seen[i])return;
+      var o=i*4;
+      if(p[o+3]<8){ seen[i]=1; return; }              // 本來就透明
+      if(p[o]<236||p[o+1]<236||p[o+2]<236)return;     // 不夠白，邊界到此為止
+      seen[i]=1; st.push(i);
+    };
+    for(var x=0;x<W;x++){ push(x,0); push(x,H-1); }
+    for(var y=0;y<H;y++){ push(0,y); push(W-1,y); }
+    while(st.length){
+      var i=st.pop(), ix=i%W, iy=(i/W)|0;
+      p[i*4+3]=0;
+      push(ix+1,iy); push(ix-1,iy); push(ix,iy+1); push(ix,iy-1);
+    }
+    g.putImageData(d,0,0);
+  }
+  /* 縮到上限以內。這是保險，不是正式做法 ——
+     圖本來就該輸出成 128 以內（見 tex\_貼圖規格.md）。
+     沒有這一道的話，一張 1242×1242 解壓進 GPU 是 6MB VRAM，41 件就 250MB，
+     手機直接掛掉；而且拿 1242px 的圖去取樣畫面上的 100px，
+     配上 NearestFilter 又沒有 mipmap，結果是閃爍鋸齒，比正確尺寸還醜。 */
+  if(c.width<=TEX_MAX&&c.height<=TEX_MAX)return c;
+  var k=TEX_MAX/Math.max(c.width,c.height);
+  var o2=document.createElement('canvas');
+  o2.width=Math.max(1,Math.round(c.width*k));
+  o2.height=Math.max(1,Math.round(c.height*k));
+  var g2=o2.getContext('2d');
+  // 平滑縮放比最近鄰乾淨：非整數倍的最近鄰會整排整排地吃掉像素
+  g2.imageSmoothingEnabled=true;
+  g2.drawImage(c,0,0,o2.width,o2.height);
+  return o2;
+}
+function itemTex(id){
+  if(texCache[id])return texCache[id];
+  // 先給一張 1×1 的空畫布，圖載完再換掉 —— 不然載入期間會是黑色方塊
+  var ph=document.createElement('canvas'); ph.width=ph.height=1;
+  var t=new THREE.CanvasTexture(ph);
+  // 像素圖一定要 Nearest，不然放大到 0.35m 會糊成一團
+  t.magFilter=THREE.NearestFilter; t.minFilter=THREE.NearestFilter;
+  t.generateMipmaps=false;
+  var img=new Image();
+  img.onload=function(){ t.image=keyWhite(img); t.needsUpdate=true; };
+  img.onerror=function(){ console.warn('[tex] 找不到 '+TEX_DIR+id+'.png'); };
+  img.src=TEX_DIR+id+'.png';
+  texCache[id]=t; return t;
+}
+/* 佔位圖：還沒有任何 PNG 之前，先用程式畫一張同樣尺度的圖，
+   用來確認「平面 sprite 在這個光線與距離下看不看得清楚」——
+   也就是先驗證管線，再讓人去畫四十一張。
+   它驗不了美術品質，那部分本來就不歸這裡管。 */
+function placeholderTex(def){
+  var k='ph_'+def.id; if(texCache[k])return texCache[k];
+  var c=document.createElement('canvas'); c.width=c.height=32;
+  var g=c.getContext('2d');
+  var hex='#'+('000000'+def.color.toString(16)).slice(-6);
+  function shade(f){
+    var r=(def.color>>16)&255,gg=(def.color>>8)&255,b=def.color&255;
+    return 'rgb('+Math.round(r*f)+','+Math.round(gg*f)+','+Math.round(b*f)+')';
+  }
+  g.fillStyle=hex;      g.fillRect(5,7,22,20);     // 主體
+  g.fillStyle=shade(1.25); g.fillRect(7,9,8,6);    // 亮部
+  g.fillStyle=shade(0.45);                          // 深色描邊
+  g.fillRect(4,6,24,1); g.fillRect(4,27,24,1);
+  g.fillRect(4,6,1,22);  g.fillRect(27,6,1,22);
+  g.fillStyle=shade(0.35);
+  g.font='900 9px ui-monospace,monospace'; g.textAlign='center';
+  g.fillText(def.id.slice(0,3).toUpperCase(),16,24);
+  var t=new THREE.CanvasTexture(c);
+  t.magFilter=THREE.NearestFilter; t.minFilter=THREE.NearestFilter;
+  t.generateMipmaps=false;
+  texCache[k]=t; return t;
+}
+function spriteMode(def){ return !!HAS_TEX[def.id]||CFG.spritePreview>0; }
 function buildModel(def){
   var g=new THREE.Group();
-  (SHAPES[def.shape]||SHAPES.pack)(def.color).forEach(function(m){g.add(m);});
+  if(spriteMode(def)){
+    var s=new THREE.Sprite(new THREE.SpriteMaterial({
+      map:HAS_TEX[def.id]?itemTex(def.id):placeholderTex(def),
+      transparent:true, alphaTest:0.35, depthWrite:true}));
+    /* 錨點移到底部中央。積木的原點在腳下（幾何往上長），
+       sprite 預設卻是以中心對齊 —— 不改的話東西會有一半陷進層板裡。 */
+    s.center.set(0.5,0);
+    s.scale.set(CFG.spriteSize,CFG.spriteSize,1);
+    g.add(s); g.userData.sprite=s;
+  }else{
+    (SHAPES[def.shape]||SHAPES.pack)(def.color).forEach(function(m){g.add(m);});
+  }
   if(isGlow(def)){
     var big=(def.tier==='forbidden'||def.id==='bot_full');
     g.add(P(GEO.box,glowColor(def),
@@ -3796,11 +3939,14 @@ function keypadPress(ch){
 function spawnItem(def,x,y,z){
   var g=buildModel(def);
   g.position.set(x,y,z);
-  g.scale.setScalar(def.tier==='forbidden'?1.15:1.32);   // 放大，遠處才看得出是什麼
-  g.rotation.y=(Math.random()-0.5)*0.9;
+  var sc=(def.tier==='forbidden'?1.15:1.32);   // 放大，遠處才看得出是什麼
+  g.scale.setScalar(sc);
+  // 平面 sprite 永遠正對鏡頭，隨機轉向對它沒有意義
+  if(!g.userData.sprite)g.rotation.y=(Math.random()-0.5)*0.9;
   scene.add(g);
   var val = def.tier==='forbidden'?forbiddenValueNow():def.v;
-  var o={mesh:g,def:def,baseY:y,taken:false,halo:null,tag:null};
+  var o={mesh:g,def:def,baseY:y,taken:false,halo:null,tag:null,
+         sprite:g.userData.sprite||null,baseScale:sc};
   // 光暈只給線索類的東西（見 isGlow），一般商品與純粹的錢都不發光
   if(isGlow(def)){
     var sc=def.tier==='forbidden'?2.8:(def.id==='bot_full'?2.2:1.7);
@@ -6401,7 +6547,10 @@ function frame(now){
        一般商品現在就老老實實躺在架上，價格標自己去講它值多少。 */
     if(isGlow(o.def)){
       o.mesh.position.y=o.baseY+Math.sin(t*1.7+i)*0.045;
-      o.mesh.rotation.y+=0.005;
+      /* 平面 sprite 永遠正對鏡頭，轉了也看不出來 ——
+         所以旋轉換成輕微的縮放脈動，一樣會動、一樣搶眼。 */
+      if(o.sprite)o.mesh.scale.setScalar(o.baseScale*(1+Math.sin(t*2.2+i)*0.055));
+      else o.mesh.rotation.y+=0.005;
       if(o.halo){ o.halo.position.y=o.baseY+0.18+Math.sin(t*1.7+i)*0.045;
         o.halo.material.opacity=(o.def.tier==='forbidden'?0.62:0.42)+Math.sin(t*2.6+i)*0.16; }
     }
