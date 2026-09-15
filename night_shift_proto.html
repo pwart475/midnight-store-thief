@@ -1040,7 +1040,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v7.7';
+var BUILD='v7.9';
 
 /* ================================================================
    目錄與凍結狀態
@@ -1155,6 +1155,19 @@ var DEF = {
   loadThreshold:0.80, loadPenalty:0.10,
   // 店員：以基礎值的百分比表示，每三次下手各加 growthPer3
   clerkSense:0.60, clerkSpeedMul:0.90, growthPer3:0.06,
+  /* 幾個店員。
+     ★ 預設關閉（99 = 永遠不會到），所以這個 build 全程都是單店員，
+       行為與 v7.7 相同。多店員的程式碼整套都在，只是沒有被叫醒。
+
+     要打開：把 clerk2Shift 設 5、clerk3Shift 設 15
+     （調參面板 → 店員 → 「第幾班變 2 人 / 3 人」，或直接改這兩個數字）。
+
+     預設關掉的理由是量測，不是程式碼沒好：
+     現在要收的是 v7.6/v7.7 貨架密度與稀有度分布的數據，
+     同時開多店員的話，難度變化分不出是哪一邊造成的。 */
+  clerk2Shift:99, clerk3Shift:99,
+  clerkSep:0.9,          // 店員之間的最小間距，避免三個人疊在同一格
+  hideNear:2.5,          // 他要走到多近，躲櫃子的放棄倒數才開始跑
   heatFullValue:520,     // 提袋金額到這個數字，店員的注意度就滿了
   heatVision:0.45, heatHearing:0.35,
   taserRange:24, taserSpread:8, taserStun:5, shrinkTime:10,
@@ -1265,12 +1278,15 @@ var KNOBS = [
   ['k-clerk','chaseGiveUp','追多久就放棄',3,30,1,' s'],
   ['k-clerk','calmTime','放棄後不理你',0,20,1,' s'],
   ['k-clerk','hideGiveUp','躲櫃子時多久放棄',2,20,.5,' s'],
+  ['k-clerk','hideNear','倒數起算距離',1,10,.5,' m'],
   ['k-clerk','alarmPatrolMul','警報時非追擊速度 ×',1,3,.1,'x'],
   ['k-clerk','stuffStun','塞進立櫃昏多久',5,90,5,' s'],
   ['k-player','dragSpeed','拖行速度倍率',0.2,1,.05,'x'],
   ['k-econ','officeUnlock','辦公室開鎖秒數',1,15,.5,' s'],
   ['k-econ','regOpen','收銀機開啟秒數',1,12,.5,' s'],
   ['k-econ','alarmLight','警報時亮度（平常的幾成）',0.1,1,.05,''],
+  ['k-clerk','clerk2Shift','第幾班變 2 人',1,99,1,' 班'],
+  ['k-clerk','clerk3Shift','第幾班變 3 人',1,99,1,' 班'],
   ['k-clerk','catchDist','抓到距離',.8,3,.05,' m'],
   ['k-clerk','hearSprint','衝刺聲響半徑',4,34,1,' m'],
   ['k-econ','capacity','提袋格數（基礎）',4,30,1,' 格'],
@@ -1653,7 +1669,20 @@ var OFFICE={x0:-39.6,z0:-4.4,x1:-33.0,z1:4.4,
 
 var EXIT={x0:-3.5,z0:13.8,x1:3.5,z1:15.4};
 var SPAWN={x:0,z:13.4,yaw:0};
-var CLERK_HOME={x:17.6,z:-11.2};
+/* 店員的出生點／回崗位點，一人一個。
+   刻意分散在店的三個角落：三個人從同一點出發的話，
+   前二十秒會擠成一團走同一條路，等於只有一個店員但體積大三倍。
+   實際位置會 snap 到最近的 waypoint（見 clerkHome），
+   所以貨架重組之後也不會有人卡在架子裡。 */
+/* ry 是出生時的朝向（forward = (-sin ry, -cos ry)）。
+   一定要一個一個指定，不能全部給同一個值：
+   第三個崗位在前場，而玩家的出生點是 (0,13.4) —— 全部面向 +z 的話
+   第 15 班一開局就有一個人隔著 3 公尺正對著你，
+   0.6 秒的 spotTime 還沒跑完你連動都還沒動就進追逐了。
+   第三個崗位也因此挪到 x=9.6：離出生點 11m，超過視線距離。 */
+var CLERK_HOMES=[{x:17.6,z:-11.2,ry:Math.PI},     // 倉庫右側（原本的單人出生點）
+                 {x:-17.4,z:-11.6,ry:Math.PI},    // 冷凍庫外側
+                 {x:12.2,z:7.4,ry:-Math.PI/2}];   // 前場東側，面向東牆、背對入口
 var COL_STATIC=COL.slice();      // 外殼：牆、櫃檯、冷凍室、倉庫 —— 永遠不動
 
 /* ============================================================
@@ -2229,27 +2258,33 @@ function drawFeed(){
   g.fillRect(mx(EXIT.x0),mz(EXIT.z0),(EXIT.x1-EXIT.x0)*MAP_S,(EXIT.z1-EXIT.z0)*MAP_S);
   g.fillStyle='rgba(127,227,245,.22)';
   g.fillRect(mx(-19.6),mz(-15.6),13.2*MAP_S,5.6*MAP_S);
-  // 店員（只有他真的在場才會出現在畫面上）
-  if(typeof clerk!=='undefined'&&clerk&&clerk.visible){
-    var cx=mx(clerk.position.x), cz=mz(clerk.position.z);
+  /* 店員（只有真的在場的才畫）。
+     這是玩家唯一的全局情報來源，所以多店員時一定要全部畫出來 ——
+     只畫一個的話，監視器會變成一個會騙人的工具。
+     兩人以上就把「店員」換成編號，不然 256×192 的畫布上
+     兩個標籤靠近時會疊成一團看不懂的字。 */
+  if(typeof CLERKS!=='undefined')for(var ci=0;ci<CLERKS.length;ci++){
+    var C=CLERKS[ci]; if(!C||!C.visible)continue;
+    var cx=mx(C.position.x), cz=mz(C.position.z);
+    var cst=C.ai.state, isChase=(cst==='CHASE');
     // 視線扇形：把「警戒距離」畫出來。它會隨注意度變大，玩家看得到自己讓他變敏銳了。
-    if(typeof AI!=='undefined'&&AI.state!=='STUNNED'){
-      var fx=-Math.sin(clerk.rotation.y), fz=-Math.cos(clerk.rotation.y);
+    if(cst!=='STUNNED'){
+      var fx=-Math.sin(C.rotation.y), fz=-Math.cos(C.rotation.y);
       var mid=Math.atan2(fz,fx);
       var half=CFG.visionAngle*Math.PI/180;
       var rad=visionNow()*MAP_S;
-      g.fillStyle=(AI.state==='CHASE')?'rgba(255,59,48,.20)':'rgba(255,201,60,.13)';
+      g.fillStyle=isChase?'rgba(255,59,48,.20)':'rgba(255,201,60,.13)';
       g.beginPath(); g.moveTo(cx,cz);
       g.arc(cx,cz,rad,mid-half,mid+half); g.closePath(); g.fill();
-      g.strokeStyle=(AI.state==='CHASE')?'rgba(255,59,48,.5)':'rgba(255,201,60,.32)';
+      g.strokeStyle=isChase?'rgba(255,59,48,.5)':'rgba(255,201,60,.32)';
       g.lineWidth=1; g.stroke();
     }
     g.fillStyle='rgba(255,59,48,.28)';
     g.beginPath(); g.arc(cx,cz,9,0,7); g.fill();
-    g.fillStyle='#FF3B30';
+    g.fillStyle=(cst==='STUNNED')?'#7FE3F5':'#FF3B30';
     g.beginPath(); g.arc(cx,cz,3.6,0,7); g.fill();
     g.font='700 9px ui-monospace,monospace'; g.textAlign='center';
-    g.fillText('店員',cx,cz-11);
+    g.fillText(CLERKS.length>1?String(ci+1):'店員',cx,cz-11);
   }
   // 玩家與視線方向
   var px=mx(camera.position.x), pz=mz(camera.position.z);
@@ -2362,30 +2397,7 @@ function mcFace(alert){
 }
 var faceCalm=mcFace(false), faceAlert=mcFace(true);
 var skinMat=itemMat(SKIN);
-var faceMat=new THREE.MeshLambertMaterial({map:faceCalm});
-var clerk=new THREE.Group();
 function blk(color,w,h,d,x,y,z){ return P(GEO.box,color,[w,h,d],[x,y,z]); }
-// 軀幹（0.062m = 麥塊 1 像素）
-clerk.add(blk(SHIRT,0.50,0.744,0.248,0,1.116,0));
-clerk.add(blk(APRONC,0.44,0.56,0.03,0,1.02,-0.14));        // 圍裙
-clerk.add(blk(0xF4F4EE,0.10,0.07,0.03,0.15,1.34,-0.142));  // 名牌
-// 頭
-var head=new THREE.Mesh(GEO.box,[skinMat,skinMat,skinMat,skinMat,skinMat,faceMat]);
-head.scale.set(0.50,0.50,0.50); head.position.y=1.736; clerk.add(head);
-// 制服帽
-var cap=blk(CAPC,0.53,0.13,0.53,0,2.05,0); clerk.add(cap);
-clerk.add(blk(CAPC,0.50,0.05,0.26,0,1.99,-0.36));          // 帽簷
-// 四肢：用 Group 讓旋轉軸在肩／髖
-function limb(color,x,pivotY){
-  var g=new THREE.Group(); g.position.set(x,pivotY,0);
-  g.add(blk(color,0.248,0.744,0.248,0,-0.372,0));
-  clerk.add(g); return g;
-}
-var armL=limb(SHIRT,-0.372,1.488), armR=limb(SHIRT,0.372,1.488);
-var legL=limb(PANTS,-0.124,0.744), legR=limb(PANTS,0.124,0.744);
-var alertHalo=new THREE.Sprite(new THREE.SpriteMaterial({map:HALO,color:0xFF3B30,
-  transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,opacity:0}));
-alertHalo.scale.set(3.4,3.4,1); alertHalo.position.y=1.75; clerk.add(alertHalo);
 
 /* 頭上的狀態符號：? = 聽到了正在過來，! = 已經發現你。
    店員的內部狀態原本完全看不見，玩家沒辦法從行為學到任何東西。 */
@@ -2399,31 +2411,109 @@ function markTex(ch,css){
   var t=new THREE.CanvasTexture(c); return t;
 }
 var markQ=markTex('?','#FFC93C'), markX=markTex('!','#FF3B30');
-var mark=new THREE.Sprite(new THREE.SpriteMaterial({map:markQ,
-  transparent:true,depthTest:false,opacity:0}));
-mark.scale.set(0.7,0.7,1); mark.position.y=2.62; mark.renderOrder=10;
-clerk.add(mark);
-function setMark(kind){          // 'q' | 'x' | null
-  var m=mark.material;
+
+/* ---------- 一隻店員 = 一個 Group，零件與 AI 狀態全掛在它身上 ----------
+   v7.8 以前這些是模組層的單一變數（clerk / head / faceMat / walkT / AI）。
+   多店員最危險的不是會噴錯，是「不會噴錯」：
+   共用一份 faceMat 的話，一隻發現你，三隻同時換上驚訝臉；
+   共用一份 walkT 的話，三個人的位移會累加進同一個步態相位。
+   所以會被改寫的材質（臉、紅光、頭頂符號）一律每隻一份。 */
+function newClerkAI(){
+  return {state:'DORMANT',path:[],timer:0,lastSeen:null,stuck:0,
+          stepT:0,searchT:0,chaseT:0,calm:0,stunT:0,aware:0,
+          hideT:0,noiseAt:null,pathFail:0,pathFailAt:null};
+}
+function makeClerk(){
+  var c=new THREE.Group();
+  // 四肢：用 Group 讓旋轉軸在肩／髖
+  function limb(color,x,pivotY){
+    var g=new THREE.Group(); g.position.set(x,pivotY,0);
+    g.add(blk(color,0.248,0.744,0.248,0,-0.372,0));
+    c.add(g); return g;
+  }
+  // 軀幹（0.062m = 麥塊 1 像素）
+  c.add(blk(SHIRT,0.50,0.744,0.248,0,1.116,0));
+  c.add(blk(APRONC,0.44,0.56,0.03,0,1.02,-0.14));        // 圍裙
+  c.add(blk(0xF4F4EE,0.10,0.07,0.03,0.15,1.34,-0.142));  // 名牌
+  // 頭。faceMat 必須每隻一份 —— 見上面那段
+  c.faceMat=new THREE.MeshLambertMaterial({map:faceCalm});
+  c.head=new THREE.Mesh(GEO.box,
+    [skinMat,skinMat,skinMat,skinMat,skinMat,c.faceMat]);
+  c.head.scale.set(0.50,0.50,0.50); c.head.position.y=1.736; c.add(c.head);
+  // 制服帽
+  c.cap=blk(CAPC,0.53,0.13,0.53,0,2.05,0); c.add(c.cap);
+  c.add(blk(CAPC,0.50,0.05,0.26,0,1.99,-0.36));          // 帽簷
+  c.armL=limb(SHIRT,-0.372,1.488); c.armR=limb(SHIRT,0.372,1.488);
+  c.legL=limb(PANTS,-0.124,0.744); c.legR=limb(PANTS,0.124,0.744);
+  c.halo=new THREE.Sprite(new THREE.SpriteMaterial({map:HALO,color:0xFF3B30,
+    transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,opacity:0}));
+  c.halo.scale.set(3.4,3.4,1); c.halo.position.y=1.75; c.add(c.halo);
+  c.mark=new THREE.Sprite(new THREE.SpriteMaterial({map:markQ,
+    transparent:true,depthTest:false,opacity:0}));
+  c.mark.scale.set(0.7,0.7,1); c.mark.position.y=2.62; c.mark.renderOrder=10;
+  c.add(c.mark);
+  c.walkT=0; c.armLift=0;
+  c.stuffedIn=null;                  // 被塞進哪個立櫃（不是「有沒有人被塞」）
+  c.home=CLERK_HOMES[0];
+  c.ai=newClerkAI();
+  c.visible=false; scene.add(c);
+  return c;
+}
+/* 建好的 model 收在 pool 裡跨局重用。
+   每局 new 一隻的話，舊的 Group 還留在 scene 裡 —— 一局漏一隻。 */
+var CLERK_POOL=[], CLERKS=[];
+function setClerkCount(n){
+  while(CLERK_POOL.length<n)CLERK_POOL.push(makeClerk());
+  CLERK_POOL.forEach(function(c){
+    c.visible=false; c.ai.state='DORMANT'; c.stuffedIn=null;
+  });
+  CLERKS=CLERK_POOL.slice(0,n);
+}
+// 這一班有幾個店員。門檻是旋鈕，設成 99 就能跑乾淨的單店員數據
+function clerkCountFor(sh){
+  return sh>=CFG.clerk3Shift?3:(sh>=CFG.clerk2Shift?2:1);
+}
+/* 全場聚合查詢。HUD、音樂、白噪音、暗角都是單例，
+   所以每一個都要明確回答「多隻的時候算誰的」—— 預設一律是「最危險的那隻」。 */
+function anyChasing(){
+  for(var i=0;i<CLERKS.length;i++)if(CLERKS[i].ai.state==='CHASE')return true;
+  return false;
+}
+function maxAware(){
+  var m=0;
+  for(var i=0;i<CLERKS.length;i++)m=Math.max(m,CLERKS[i].ai.aware||0);
+  return m;
+}
+// 離玩家最近的追擊者 —— 低頻嗡鳴的音源就掛在他身上
+function nearestChaser(){
+  var best=null,bd=1e9;
+  for(var i=0;i<CLERKS.length;i++){
+    var c=CLERKS[i]; if(c.ai.state!=='CHASE')continue;
+    var d=(c.position.x-camera.position.x)*(c.position.x-camera.position.x)+
+          (c.position.z-camera.position.z)*(c.position.z-camera.position.z);
+    if(d<bd){bd=d;best=c;}
+  }
+  return best;
+}
+function setMark(c,kind){          // 'q' | 'x' | null
+  var m=c.mark.material;
   if(!kind){ m.opacity=0; return; }
   var want=(kind==='x')?markX:markQ;
   if(m.map!==want){ m.map=want; m.needsUpdate=true; }
   m.opacity=1;
 }
-clerk.position.set(CLERK_HOME.x,0,CLERK_HOME.z); clerk.visible=false; scene.add(clerk);
-var walkT=0, armLift=0;
-function animClerk(dt,moved,chasing){
-  walkT += moved*5.4;
-  var sw=Math.sin(walkT)*0.62;
-  legL.rotation.x=sw;  legR.rotation.x=-sw;
-  armLift += ((chasing?-1.35:0)-armLift)*Math.min(1,dt*5);
-  armL.rotation.x=armLift-sw*0.75; armR.rotation.x=armLift+sw*0.75;
-  armL.rotation.z=chasing? 0.12:0;  armR.rotation.z=chasing?-0.12:0;
-  head.rotation.x=chasing?0.12:Math.sin(walkT*0.5)*0.04;
-  if(faceMat.map!==(chasing?faceAlert:faceCalm)){
-    faceMat.map=chasing?faceAlert:faceCalm; faceMat.needsUpdate=true;
+function animClerk(c,dt,moved,chasing){
+  c.walkT += moved*5.4;
+  var sw=Math.sin(c.walkT)*0.62;
+  c.legL.rotation.x=sw;  c.legR.rotation.x=-sw;
+  c.armLift += ((chasing?-1.35:0)-c.armLift)*Math.min(1,dt*5);
+  c.armL.rotation.x=c.armLift-sw*0.75; c.armR.rotation.x=c.armLift+sw*0.75;
+  c.armL.rotation.z=chasing? 0.12:0;  c.armR.rotation.z=chasing?-0.12:0;
+  c.head.rotation.x=chasing?0.12:Math.sin(c.walkT*0.5)*0.04;
+  if(c.faceMat.map!==(chasing?faceAlert:faceCalm)){
+    c.faceMat.map=chasing?faceAlert:faceCalm; c.faceMat.needsUpdate=true;
   }
-  cap.material=itemMat(chasing?0xFF3B30:CAPC);
+  c.cap.material=itemMat(chasing?0xFF3B30:CAPC);
 }
 
 /* ============================================================
@@ -2721,7 +2811,7 @@ function ambienceHum(on){          // 停電時把日光燈的嗡嗡拿掉
 var noiseCur=1;
 function noiseStep(dt){
   if(!amb||!amb.noise)return;
-  var chasing = G.phase==='play' && AI.state==='CHASE';
+  var chasing = G.phase==='play' && anyChasing();
   var want = CFG.noiseVol*(chasing?0.04:1);
   noiseCur += (want-noiseCur)*Math.min(1,dt*3);
   try{ amb.noise.gain.value=noiseCur; }catch(e){}
@@ -2818,7 +2908,10 @@ var DRONE_LVL=0.24;
 function droneOn(){
   if(!AC||drone)return;
   droneGain=AC.createGain(); droneGain.gain.value=0;
-  dronePan=panAt(clerk.position.x,1.2,clerk.position.z,master,6,0.55);
+  // 音源掛在最近的追擊者身上；還沒有人在追就先放在玩家腳下，
+  // 下一幀 syncDrone 會把它移到正確的位置
+  var src=nearestChaser()||{position:camera.position};
+  dronePan=panAt(src.position.x,1.2,src.position.z,master,6,0.55);
   droneGain.connect(dronePan||master);
   drone=[];
   [58,87.5,116].forEach(function(f){
@@ -2826,13 +2919,24 @@ function droneOn(){
     var g=AC.createGain(); g.gain.value=0.05; o.connect(g); g.connect(droneGain); o.start();
     drone.push(o);
   });
-  droneGain.gain.linearRampToValueAtTime(DRONE_LVL,AC.currentTime+1.2);
+  /* 午夜鐘期間開始的追逐要生在「被壓低」的音量上。
+     droneQuiet 只會壓已經在響的那一個（它的 guard 是 !drone 就 return），
+     所以在停止時間內按錯密碼觸發全店警戒的話，
+     那八秒安靜會被一個全音量的嗡鳴整個破壞掉。 */
+  droneGain.gain.linearRampToValueAtTime(
+    stopT>0?0.02:DRONE_LVL, AC.currentTime+1.2);
 }
 function droneOff(){
   if(!drone)return;
-  var ds=drone,dg=droneGain; drone=null; dronePan=null;
+  var ds=drone,dg=droneGain,dp=dronePan; drone=null; dronePan=null;
   try{dg.gain.linearRampToValueAtTime(0,AC.currentTime+0.5);}catch(e){}
-  setTimeout(function(){ds.forEach(function(o){try{o.stop();}catch(e){}});},700);
+  setTimeout(function(){
+    ds.forEach(function(o){try{o.stop();}catch(e){}});
+    // panner 與 gain 也要斷開。不斷的話每一次追逐都會在音訊圖上
+    // 留下一個接在 master 上、永遠不會被回收的 HRTF PannerNode。
+    try{dg.disconnect();}catch(e){}
+    try{if(dp)dp.disconnect();}catch(e){}
+  },700);
 }
 
 /* ============================================================
@@ -2939,9 +3043,10 @@ var CLANKS=[[-14,-13],[3,-13.5],[15,-13],[-18,6]];
 function musicStep(dt){
   if(!MUS||!AC)return;
   var h=heat();
-  var alert = AI.state==='CHASE' ? 1 : (AI.aware||0);
+  // 配樂跟著「最危險的那一隻」走：三個人裡只要有一個在追，就是滿張力
+  var alert = anyChasing() ? 1 : maxAware();
   var tension=Math.min(1, h*0.75 + alert*0.6);
-  var chasing = AI.state==='CHASE';
+  var chasing = anyChasing();
   // 音量在 JS 端平滑，不用 setTargetAtTime —— 每幀排事件會把事件表塞爆
   var want=CFG.musicVol*(0.42+0.58*tension);
   MUS.cur += (want-MUS.cur)*Math.min(1,dt*2.5);
@@ -3040,9 +3145,7 @@ function newRun(){
      而且 regObj.opened 已經重置，你還可以再拉一次。免費的雙倍。 */
   slot=null; document.body.classList.remove('slotting');
   closeKeypad(); cancelHold(); dropDrag();
-  clerk.visible=true;
   document.body.classList.remove('stopped');
-  clerk.rotation.z=0;
   G.run=r; G.shift++;
   camera.position.set(SPAWN.x,1.65,SPAWN.z);
   yaw=SPAWN.yaw; pitch=0; vel.set(0,0,0); crouchNow=false;
@@ -3064,18 +3167,34 @@ function newRun(){
   buildAisles(G.runSalt);        // 先重組貨架與 waypoint，再依新佈局擺商品
   buildItems(G.runSalt);
   setDanger(false);
-  clerk.position.set(CLERK_HOME.x,0,CLERK_HOME.z);
-  clerk.rotation.y=Math.PI;
   /* 店員一開始就在場巡邏。
      原本第一次下手是休眠的（交接包的教學腳本），但進度不跨工作階段之後，
      「第 1 次」變成每次開啟都會遇到，那個一次性橋段就不成立了。
-     更重要的是：他必須全程都在地圖上，路線才有可能被精通。 */
-  AI.state='PATROL';
-  AI.path=[]; AI.target=null; AI.timer=0; AI.lastSeen=null; AI.stuck=0; AI.stepT=0;
-  AI.chaseT=0; AI.calm=0; AI.aware=0; AI.stunT=0; AI.hideT=0; AI.noiseAt=null;
-  setMark(null);
-  clerk.visible=true;
-  ev('game_start',{shift:G.shift});
+     更重要的是：他必須全程都在地圖上，路線才有可能被精通。
+
+     人數在這裡決定。注意順序：buildAisles 已經跑完（上面幾行），
+     所以 NODES 是這一局的新圖 —— clerkHome 的 snap 才有意義。 */
+  setClerkCount(clerkCountFor(G.shift));
+  CLERKS.forEach(function(c,i){
+    c.home=CLERK_HOMES[i%CLERK_HOMES.length];
+    var hm=clerkHome(c);
+    c.position.set(hm.x,0,hm.z);
+    c.rotation.y=(c.home.ry===undefined?Math.PI:c.home.ry); c.rotation.z=0;
+    c.walkT=0; c.armLift=0;          // 步態相位也要歸零，不然新局第一步是接續的
+    c.halo.material.opacity=0;
+    c.stuffedIn=null;
+    c.ai=newClerkAI(); c.ai.state='PATROL';
+    setMark(c,null);
+    /* 把四肢、帽子與臉復位。被抓特寫把它們擺成「舉手、紅帽、驚訝臉」，
+       而 animClerk 只有在真的走動時才跑（if(dist>0.001)）——
+       所以新的一局如果他第一幀剛好原地不動，你會看到一個
+       舉著雙手、戴紅帽的店員站在那裡，卻什麼事都還沒發生。 */
+    animClerk(c,1,0,false);
+    c.visible=true;
+  });
+  ev('game_start',{shift:G.shift,clerks:CLERKS.length});
+  if(CLERKS.length>1)
+    toast('這一班有 '+CLERKS.length+' 個店員 —— 監視器上的編號是他們');
   STATS.runs++;
   updateHUD();
   setObjective(K('走到商品前面，按 E 塞進提袋','走到商品前面，按「拿」塞進提袋'),false,
@@ -3360,7 +3479,7 @@ function cancelHold(msg){
 function stepHold(dt){
   if(!holding)return;
   // 離開、看向別處、或被追 —— 三種情況都中斷
-  if(AI.state==='CHASE'){ cancelHold('他來了 —— 中斷'); return; }
+  if(anyChasing()){ cancelHold('他來了 —— 中斷'); return; }
   var o=holding.obj;
   var d=Math.hypot(o.mesh.position.x-camera.position.x,o.mesh.position.z-camera.position.z);
   if(d>CFG.reachDist+0.6){ cancelHold('走太遠了'); return; }
@@ -3584,10 +3703,11 @@ function wrongCode(got){
      上一版只記了次數，所以「我明明輸對了卻說錯」這件事完全無從查證 ——
      現在下次再發生，log 會直接告訴我們送進去的到底是什麼。 */
   ev('code_wrong',{tries:r.codeFails,got:got,want:r.code});
-  // 無條件轉追逐，而且他直接知道你在櫃子這裡
-  AI.state='CHASE'; AI.lastSeen={x:camera.position.x,z:camera.position.z};
-  AI.timer=0; AI.chaseT=0; AI.calm=0; AI.path=[]; AI.aware=1; clerk.visible=true;
-  droneOn();
+  /* 無條件轉追逐，而且他們直接知道你在櫃子這裡。全店都聽得到 = 全部的人。
+     這裡不再自己開嗡鳴：v7.8 起「嗡鳴 = 有人正在追你」是一條由
+     syncDrone 每幀維持的不變式，下一幀它就會自己打開。
+     手動開的話反而會在所有人都放棄之後留下一個沒人關的音源。 */
+  alertAllClerks();
   /* 鍵盤留著不關 —— 錯的那組數字要留在畫面上讓你看到自己送了什麼。
      但玩家一定要能立刻跑，所以移動的鎖在 keypadBad 期間解開（見 stepPlayer）。 */
   renderKeypad();
@@ -3724,7 +3844,9 @@ function setDanger(on){
   // 霧也放淡一點。0.045 疊在低亮度上會讓五公尺外整片糊掉
   scene.fog.density = on?0.030:0.019;
   ambienceHum(!on);              // 停電，日光燈的嗡嗡跟著消失
-  if(on){droneOn();}else{droneOff();}
+  // 停電本身不再開嗡鳴 —— 它現在專門代表「有人正在追你」，由 syncDrone 維持。
+  // 警報的氛圍交給紅燈、紅暈與 alarmPatrolMul 的快步腳步聲。
+  if(!on)droneOff();
   updateExitChip();
 }
 function pa(text){
@@ -4105,7 +4227,7 @@ function updateAim(){
   }
   /* 拖著人的時候提示只有兩種：塞進去、或放手。
      這時候其他互動全部不該出現，不然畫面會建議你去撿東西 —— 你手上有個人。 */
-  if(dragging){
+  if(draggedClerk){
     aim=pickTarget();
     var canStuff=aim&&aim.hide&&!aim.stuffed;
     pr.className='on'+(canStuff?'':' forbid');
@@ -4115,13 +4237,13 @@ function updateAim(){
     cross.className=canStuff?'hot':'';
     return;
   }
-  // 昏迷的店員就在腳邊：這個提示要蓋過所有物品提示
-  if(AI.state==='STUNNED'&&clerk.visible&&
-     Math.hypot(clerk.position.x-camera.position.x,clerk.position.z-camera.position.z)<2.0){
+  // 昏迷的店員就在腳邊：這個提示要蓋過所有物品提示。倒數是「那一個」的
+  var stn=nearestStunned(2.0);
+  if(stn){
     pr.className='on';
     pr.innerHTML='<kbd>'+(IS_TOUCH?'拿':'E')+'</kbd>抓住他'+
       '<span class="s">拖到立櫃裡可以關他 '+CFG.stuffStun+' 秒 · 剩 '+
-      Math.ceil(AI.stunT)+' 秒醒</span>';
+      Math.ceil(stn.ai.stunT)+' 秒醒</span>';
     cross.className='hot'; return;
   }
   aim=pickTarget();
@@ -4216,13 +4338,14 @@ function tryInteract(){
   if(hiding){ exitHide(); return; }         // 躲著的時候 E 一律是「出來」
   /* 拖行中：對著立櫃按 E 就是塞進去，對著別的地方按就是放手。
      順序要在 aim 判斷之前，因為拖著人的時候 E 只有這兩種意思。 */
-  if(dragging){
+  if(draggedClerk){
     if(aim&&aim.hide&&!aim.stuffed){ stuffClerk(aim); return; }
     dropDrag('放開他了');
     return;
   }
-  // 站在昏迷的店員旁邊：E 是「抓住他」，優先於任何其他互動
-  if(AI.state==='STUNNED'&&tryDrag())return;
+  // 站在昏迷的店員旁邊：E 是「抓住他」，優先於任何其他互動。
+  // 要不要抓得到由 tryDrag 自己找最近的那一個，這裡不再先問狀態
+  if(tryDrag())return;
   if(!aim)return;
   if(aim.officeDoor){
     if(!G.run.hasOffKey){ SFX.deny(); toast('鎖著 · 需要辦公室鑰匙'); return; }
@@ -4359,19 +4482,33 @@ function handleSetPickup(r,d){
     toast(SET_NAME[key]+' '+have+'/'+parts.length+' · 單件不值錢，湊齊才有價值');
     updateHUD(); return;
   }
-  // 湊齊：把三件從提袋裡換成完整品
+  /* 湊齊：把三件從提袋裡換成完整品。
+
+     r.count 刻意「不」跟著變。
+     它算的是「你從架上拿走了幾件東西」，不是「提袋裡現在有幾個格子被佔用」——
+     而你確實拿走了三件。組裝只是把它們疊成一個更好帶的包裹。
+
+     舊寫法是 count -3 再 +1，淨掉 2 件，那造成兩個問題：
+     1. 脫身門檻是用 count 算的，而且解鎖判定（見 pickup 尾端）
+        跑在這個函式「之後」—— 所以撿起第三個部件讓你從 4 件變成 5 件、
+        剛好該解鎖的那一刻，會被這裡打回 3 件，後門不開。
+        你完成了這一局最難的支線，結果是離脫身更遠了。
+     2. HUD 上的件數會當場從 5 件掉到 3 件，看起來像東西不見了。
+
+     格子（r.used）反過來是該退的：3 格變 2 格。
+     那是組裝真正的好處之一 —— 一整隻比三個零件好帶。 */
   var res=BY_ID[SET_RESULT[key]];
   parts.forEach(function(id){
     var it=r.loot[id];
-    r.value-=it.val*it.n; r.used-=it.def.slots*it.n; r.count-=it.n;
+    r.value-=it.val*it.n; r.used-=it.def.slots*it.n;
     delete r.loot[id];
   });
   r.loot[res.id]={def:res,n:1,val:res.v};
-  r.value+=res.v; r.used+=res.slots; r.count+=1;
+  r.value+=res.v; r.used+=res.slots;
   r.setDone=true;
   SFX.register();
   showBeat('組裝完成',SET_NAME[key]+' —— $'+res.v,
-    '三件分開只值 $'+(20*parts.length)+'。',4000);
+    '三件分開只值 $'+(20*parts.length)+'，而且它還是算三件。',4000);
   ev('set_completed',{set:key,v:res.v});
   updateHUD();
 }
@@ -4404,10 +4541,24 @@ function triggerForbidden(){
      而且畫面同時變暗。現在只留頂端一行「衝回後門」，其餘靠紅暈與導引燈帶講。 */
   setObjective('衝回後門',true);
   setTimeout(function(){ if(G.phase==='play')pa('偵測到非賣品離架。保全程序已啟動，請留在原地不要移動。'); },1600);
-  AI.state='CHASE'; AI.lastSeen={x:camera.position.x,z:camera.position.z};
-  AI.timer=0; AI.chaseT=0; AI.calm=0; AI.path=[]; clerk.visible=true;
-  // 首次出現：在冷凍室裡但不堵死唯一的門，玩家要從他旁邊擠過去
-  ev('chase_started');
+  alertAllClerks();
+  ev('chase_started',{src:'forbidden'});
+}
+/* 全店警戒：警報或密碼錯誤時，每一個店員都直接知道你在哪。
+   被塞在立櫃裡的人不叫醒 —— 你花了電擊槍與一段拖行才把他關進去，
+   一個全域事件就把那份投資清掉的話，那個機制等於沒有。 */
+function alertAllClerks(){
+  // 這也算「被發現」。不算的話，觸發警報被全店追著跑然後逃掉，
+  // spotted 還是 0，照樣拿得到「零被發現」的最佳紀錄。
+  if(G.run)G.run.spotted++;
+  for(var i=0;i<CLERKS.length;i++){
+    var c=CLERKS[i], a=c.ai;
+    if(a.state==='STUNNED')continue;
+    a.state='CHASE'; a.lastSeen={x:camera.position.x,z:camera.position.z};
+    a.timer=0; a.chaseT=0; a.calm=0; a.path=[]; a.aware=1; a.hideT=0;
+    // 尋路冷卻也要清掉，不然剛好失敗過的那個人會在警報響起後呆站半秒
+    a.pathFail=0; a.pathFailAt=null;
+  }
 }
 function flashScreen(){
   var f=document.getElementById('flash');
@@ -4425,84 +4576,123 @@ function makeNoise(radius){
 /* ============================================================
    10. 店員 AI —— 顯式 FSM
    ============================================================ */
-var AI={state:'DORMANT',path:[],target:null,timer:0,lastSeen:null,stuck:0,
-        prev:new THREE.Vector2(),stepT:0,searchT:0,chaseT:0,calm:0,stunT:0,aware:0,
-        hideT:0,noiseAt:null};
 function now2(){ return performance.now()/1000; }
+
+/* 每隻店員的崗位點。snap 到最近的 waypoint —— 貨架每局重組，
+   寫死的座標有可能剛好落在新的貨架裡面。 */
+function clerkHome(c){
+  var h=c.home||CLERK_HOMES[0];
+  if(!NODES.length)return h;
+  var i=nearestNode(h.x,h.z);
+  return (i>=0&&NODES[i])?{x:NODES[i].x,z:NODES[i].z}:h;
+}
 
 /* 追不到就放棄：追滿 chaseGiveUp 秒還沒抓到，就往離玩家最遠的地方走開，
    並且有 calmTime 秒完全不理你 —— 否則他一轉身又看到你，等於沒放棄。 */
-function giveUpChase(msg){
-  AI.state='RETURN'; AI.chaseT=0; AI.calm=CFG.calmTime; AI.path=[]; AI.hideT=0;
+function giveUpChase(c,msg){
+  var a=c.ai;
+  a.state='RETURN'; a.chaseT=0; a.calm=CFG.calmTime; a.path=[]; a.hideT=0;
   var best=-1,bd=-1;
   for(var i=0;i<NODES.length;i++){
     var d=Math.hypot(NODES[i].x-camera.position.x,NODES[i].z-camera.position.z);
     if(d>bd){bd=d;best=i;}
   }
-  if(best>=0)setPathTo(NODES[best].x,NODES[best].z);
-  droneOff(); ev('chase_giveup');
-  toast(msg||'他停下來了，往別的方向走了');
+  if(best>=0)setPathTo(c,NODES[best].x,NODES[best].z);
+  ev('chase_giveup',{c:CLERKS.indexOf(c)});
+  /* 只有在「最後一個追你的人」放棄時才報訊息。
+     三個人各報一次的話，你會在還被兩個人追的時候
+     收到「他停下來了」—— 那是一條會害死你的提示。 */
+  if(!anyChasing())toast(msg||'他停下來了，往別的方向走了');
 }
-function canSee(){
+function canSee(c){
   if(hiding)return false;      // 躲在櫃子裡就是看不到，這是它唯一的價值
-  if(!clerk.visible)return false;   // 被塞在櫃子裡的人看不到任何東西
-  var cx=clerk.position.x,cz=clerk.position.z,px=camera.position.x,pz=camera.position.z;
+  if(!c.visible)return false;  // 被塞在櫃子裡的人看不到任何東西
+  var cx=c.position.x,cz=c.position.z,px=camera.position.x,pz=camera.position.z;
   var d=Math.hypot(px-cx,pz-cz);
   if(d>visionNow())return false;
   if(blocked(cx,cz,px,pz,poseHeight()))return false;   // 潛行蹲低時，矮掩體才擋得住視線
   if(d<3.2)return true;
-  var f=new THREE.Vector2(-Math.sin(clerk.rotation.y),-Math.cos(clerk.rotation.y));
+  var f=new THREE.Vector2(-Math.sin(c.rotation.y),-Math.cos(c.rotation.y));
   var to=new THREE.Vector2(px-cx,pz-cz).normalize();
   var ang=Math.acos(Math.max(-1,Math.min(1,f.dot(to))))*180/Math.PI;
   return ang<CFG.visionAngle;
 }
-function setPathTo(x,z){
-  var si=nearestNode(clerk.position.x,clerk.position.z), ti=nearestNode(x,z);
+function setPathTo(c,x,z){
+  /* 剛剛才找不到路就先別再找。
+     一次 setPathTo 是兩次 nearestNode（各 O(節點數) 而且每個節點都跑 blocked()）
+     加一次 O(V²) 的 Dijkstra —— 大約 100～200 微秒。
+     而 CHASE 分支的重試條件正好是「沒有路徑」，
+     所以目標走不到的時候（辦公室還鎖著、鐵捲門把圖切斷了）
+     它會每一幀重算一次。三個店員就是每幀 0.5 毫秒，手機上看得出來。
+
+     但擋的必須是「同一個走不到的目標」，不能擋全部：
+     無差別擋 0.5 秒的話，剛失敗過的店員接到一個完全走得到的新目標
+     （聽到聲音、或警報全店警戒）時會直接被拒絕，
+     而呼叫端已經把 state 改成 INVESTIGATE 了 —— 他會頂著新的狀態
+     沿著舊的巡邏路徑走，最久 16 秒。 */
+  var pf=c.ai;
+  if(pf.pathFail>0&&pf.pathFailAt&&
+     Math.hypot(x-pf.pathFailAt.x,z-pf.pathFailAt.z)<3)return false;
+  var si=nearestNode(c.position.x,c.position.z), ti=nearestNode(x,z);
   var p=findPath(si,ti);
   /* 目標在圖上根本走不到（例如辦公室還鎖著）就直接放棄。
      舊寫法不管有沒有路都會把終點 push 進去，於是店員會朝著那道鎖著的門
      一路直線走過去撞牆，直到卡住偵測 1.2 秒後才清掉，然後再抽一次、再撞一次。 */
-  if(!p.length&&si!==ti){ AI.path=[]; return; }
-  AI.path=p.map(function(i){return {x:NODES[i].x,z:NODES[i].z};});
-  AI.path.push({x:x,z:z});
-}
-function stepClerk(dt){
-  if(AI.state==='DORMANT'||!G.run)return;
-  // 客串：只是個在遠處補貨的員工，不會發現玩家
-  if(AI.state==='CAMEO'){
-    AI.timer+=dt;
-    var ct=AI.path[0], cdx=ct.x-clerk.position.x, cdz=ct.z-clerk.position.z,
-        cd=Math.hypot(cdx,cdz);
-    if(cd>0.25){
-      var cstep=clerkPatrolNow()*dt;
-      clerk.position.x+=cdx/cd*cstep;
-      clerk.position.z+=cdz/cd*cstep;
-      clerk.rotation.y=Math.atan2(-cdx,-cdz);
-      animClerk(dt,cstep,false);
-    }
-    if(cd<=0.5||AI.timer>22){ clerk.visible=false; AI.state='DORMANT'; AI.path=[]; }
-    return;
+  if(!p.length&&si!==ti){
+    c.ai.path=[]; c.ai.pathFail=0.5; c.ai.pathFailAt={x:x,z:z}; return false;
   }
+  c.ai.path=p.map(function(i){return {x:NODES[i].x,z:NODES[i].z};});
+  c.ai.path.push({x:x,z:z});
+  return true;     // 呼叫端要能判斷「這次到底有沒有排到路」
+}
+/* 外觀更新（紅光、頭頂符號）獨立出來，因為 FSM 本體有七個 early return。
+   以前這段掛在函式尾巴，只要走到任何一個 return 就整段跳過 ——
+   單店員時只是偶爾殘留一個問號，多店員時會變成
+   「一個卡在無路可走分支的店員，頭上永遠掛著驚嘆號」。 */
+function clerkTail(c,dt){
+  var a=c.ai, chasing=a.state==='CHASE';
+  c.halo.material.opacity +=
+    ((chasing?0.55:0)-c.halo.material.opacity)*Math.min(1,dt*4);
+  if(a.state==='STUNNED'||!c.visible)setMark(c,null);
+  else if(chasing||a.aware>=1)setMark(c,'x');
+  else if(a.aware>0.05||a.state==='INVESTIGATE'||a.state==='SEARCH')setMark(c,'q');
+  else setMark(c,null);
+}
+function stepClerk(c,dt){
+  if(c.ai.state==='DORMANT'||!G.run)return;
+  clerkFSM(c,dt);
+  // caught() 會在迴圈中途結束這一局；之後就不要再動任何店員的外觀
+  if(G.phase==='play')clerkTail(c,dt);
+}
+function clerkFSM(c,dt){
+  var a=c.ai;
+  // 這一行要在所有 early return 之前：STUNNED 分支會 return，
+  // 昏迷五秒回來還帶著一個沒走完的尋路冷卻，醒來第一步就會呆站著
+  if(a.pathFail>0)a.pathFail-=dt;
   // 被電擊：整個人癱住，什麼都不做
-  if(AI.state==='STUNNED'){
-    AI.stunT-=dt;
-    if(dragging){ stepDrag(dt); return; }        // 拖行中由 stepDrag 接管位置
-    clerk.rotation.z=clerk.visible?Math.sin(now2()*22)*0.06:0;   // 抽動
-    if(AI.stunT<=0){
-      clerk.rotation.z=0; AI.state='SEARCH'; AI.searchT=0; AI.path=[];
-      AI.calm=1.5; ev('taser_recovered');
-      if(!clerk.visible){
+  if(a.state==='STUNNED'){
+    a.stunT-=dt;
+    if(draggedClerk===c){ stepDrag(c,dt); return; }  // 拖行中由 stepDrag 接管位置
+    c.rotation.z=c.visible?Math.sin(now2()*22)*0.06:0;   // 抽動
+    if(a.stunT<=0){
+      c.rotation.z=0; a.state='SEARCH'; a.searchT=0; a.path=[];
+      a.calm=1.5; ev('taser_recovered',{c:CLERKS.indexOf(c)});
+      if(!c.visible){
         /* 從立櫃裡爬出來。推到門前 0.95m，跟玩家離開立櫃的處理一樣 ——
-           不然他會生成在櫃體內部然後被碰撞推到牆外面去。 */
-        clerk.visible=true;
-        var hs=hideObjs.filter(function(h){return h.stuffed;})[0];
+           不然他會生成在櫃體內部然後被碰撞推到牆外面去。
+           一定要用「他自己被塞進哪一個」（c.stuffedIn）——
+           以前這裡抓的是「全場第一個 stuffed 的櫃子」，
+           兩個人被塞起來的時候，A 醒來會從 B 的櫃子爬出來、
+           還順手把 B 的 stuffed 清掉，B 就永遠隱形卡在原地。 */
+        c.visible=true;
+        var hs=c.stuffedIn;
         if(hs){
           /* 門朝 (sin ry, cos ry)，所以要往「＋」的方向推出來。
              寫成負號的話他會被塞到櫃體後面 —— 那三個貼牆的立櫃後面就是牆，
              他會在牆與櫃子之間被碰撞解算來回彈，永遠出不來。 */
-          clerk.position.set(hs.spot.x+Math.sin(hs.spot.ry)*0.95,0,
-                             hs.spot.z+Math.cos(hs.spot.ry)*0.95);
-          hs.stuffed=false;
+          c.position.set(hs.spot.x+Math.sin(hs.spot.ry)*0.95,0,
+                         hs.spot.z+Math.cos(hs.spot.ry)*0.95);
+          hs.stuffed=false; c.stuffedIn=null;
         }
         SFX.deny(); toast('他從櫃子裡出來了');
       }
@@ -4510,53 +4700,69 @@ function stepClerk(dt){
     return;
   }
   var r=G.run;
-  AI.calm-=dt;
-  var calmNow=AI.calm>0;                      // 放棄後的冷靜期：完全不理玩家
-  var sees=calmNow?false:canSee();
+  a.calm-=dt;
+  var calmNow=a.calm>0;                       // 放棄後的冷靜期：完全不理玩家
+  var sees=calmNow?false:canSee(c);
   var px=camera.position.x,pz=camera.position.z;
-  var dP=Math.hypot(px-clerk.position.x,pz-clerk.position.z);
+  var dP=Math.hypot(px-c.position.x,pz-c.position.z);
 
   /* 躲在櫃子裡：他走到櫃子附近之後，hideGiveUp 秒就放棄。
      沒有這條規則的話，走的是一般流程 —— loseSight 3.5 秒轉 SEARCH，
      SEARCH 再繞 10 秒，總共十三秒多。
      而你在一個不能動、只看得到一條橫縫的箱子裡等十三秒，
      那不是緊張，那是無事可做。六秒剛好是「他真的來了」還在心跳的長度。 */
-  if(hiding && dP<CFG.hearWalk &&
-     AI.state!=='PATROL' && AI.state!=='RETURN' && AI.state!=='DORMANT'){
-    AI.hideT+=dt;
-    if(AI.hideT>=CFG.hideGiveUp){
-      giveUpChase('他在櫃子外面站了一下，然後走開了');
+  /* 距離門檻用 hideNear，不是 hearWalk。
+     hearWalk 是「走路聲傳多遠」（8m）—— 拿它當這裡的門檻等於
+     他站在八公尺外都在替你倒數，而 v7.8 起躲著不會被抓，
+     所以進櫃子就是穩定、零風險、六秒解除追擊的按鈕。
+     這條規則的原意是「他走到櫃子前面站了一會兒」，那就該是走到門口的距離。 */
+  if(hiding && dP<CFG.hideNear &&
+     a.state!=='PATROL' && a.state!=='RETURN' && a.state!=='DORMANT'){
+    a.hideT+=dt;
+    if(a.hideT>=CFG.hideGiveUp){
+      giveUpChase(c,'他在櫃子外面站了一下，然後走開了');
       return;
     }
-  }else AI.hideT=0;
+  }else a.hideT=0;
 
-  // 聽覺
-  if(!calmNow&&r.lastNoise&&AI.state!=='CHASE'){
+  /* 聽覺。
+     以前聽到之後會把 r.lastNoise 清掉 —— 多店員時那等於
+     「離聲音最近的人聽到了，其他人就永遠聽不到這個聲音」，
+     而迴圈順序是任意的，所以是誰聽到還是隨機的。
+     改成讓聲音自己在 0.6 秒後過期（下面那個時間窗本來就在做這件事），
+     範圍內的每個人都會各自反應一次。
+     不會每幀重新規劃路徑，是因為下面的 same 判定會擋掉。 */
+  if(!calmNow&&r.lastNoise&&a.state!=='CHASE'){
     var n=r.lastNoise;
-    if(r.t-n.t<0.6&&Math.hypot(n.x-clerk.position.x,n.z-clerk.position.z)<n.r){
+    if(r.t-n.t<0.6&&Math.hypot(n.x-c.position.x,n.z-c.position.z)<n.r){
       /* 已經在調查、而且新的聲音就在原目標附近（2.5m 內）就不要重來。
          沒有這個門檻的話，你在他附近走路每 0.56 秒一個腳步聲，
          他就每 0.56 秒重新規劃一次路徑、AI.timer 每次歸零 ——
          INVESTIGATE 永遠不會逾時轉 SEARCH，而且 log 會被灌滿
          一秒五筆的 clerk_investigate，之後根本沒辦法讀。 */
-      var same = AI.state==='INVESTIGATE' && AI.noiseAt &&
-                 Math.hypot(n.x-AI.noiseAt.x,n.z-AI.noiseAt.z)<2.5;
-      if(!same){
-        AI.state='INVESTIGATE'; AI.timer=0; setPathTo(n.x,n.z);
-        AI.noiseAt={x:n.x,z:n.z};
-        ev('clerk_investigate');
+      /* 2.5m 太小：走路一步就跑掉 2.35m，所以每走兩步就會突破這個半徑、
+         重跑一次 Dijkstra 並多寫一筆 log。放寬到 4m。 */
+      var same = a.state==='INVESTIGATE' && a.noiseAt &&
+                 Math.hypot(n.x-a.noiseAt.x,n.z-a.noiseAt.z)<4.0;
+      /* 一定要等排到路了才改狀態。
+         先改 state 再排路的話，排路失敗時他會頂著 INVESTIGATE 的身分
+         沿著舊的巡邏路線走，而 noiseAt 已經寫進去了 ——
+         接下來 4m 內的每一個聲音都會被 same 擋掉，最久 16 秒。 */
+      if(!same&&setPathTo(c,n.x,n.z)){
+        a.state='INVESTIGATE'; a.timer=0;
+        a.noiseAt={x:n.x,z:n.z};
+        ev('clerk_investigate',{c:CLERKS.indexOf(c)});
       }
-      r.lastNoise=null;
     }
   }
   /* 發現不再是瞬間的：看到你之後要累積 spotTime 秒才轉成追逐。
      這段時間就是玩家的反應窗口 —— 切斷視線就會退回去。
      沒有這個窗口，「警戒距離」是學不會的，因為越線的瞬間就已經結束了。 */
-  if(AI.state!=='CHASE'){
+  if(a.state!=='CHASE'){
     if(sees){
-      AI.aware=Math.min(1,AI.aware+dt/Math.max(0.05,CFG.spotTime));
-      if(AI.aware>=1){
-        AI.state='CHASE'; AI.timer=0; AI.chaseT=0;
+      a.aware=Math.min(1,a.aware+dt/Math.max(0.05,CFG.spotTime));
+      if(a.aware>=1){
+        a.state='CHASE'; a.timer=0; a.chaseT=0;
         r.spotted++;                        // 評分：這局被發現幾次
         /* 記下「他是在多遠的地方發現你的」。
            這一欄是用來分辨兩種完全不同的死法的：
@@ -4564,64 +4770,75 @@ function stepClerk(dt){
            跟 2m 處轉角撞上（你沒有任何選項，是關卡的問題）。
            沒有這個數字，兩者在 log 裡長得一模一樣。 */
         r.lastSpotDist=+dP.toFixed(1);
-        ev('chase_started',{dist:r.lastSpotDist,
-                            crouch:!!crouchNow,sprint:!!sprintFlag}); droneOn();
+        ev('chase_started',{dist:r.lastSpotDist,c:CLERKS.indexOf(c),
+                            crouch:!!crouchNow,sprint:!!sprintFlag});
         if(!r._seenClerk){r._seenClerk=true;ev('clerk_first_seen');}
       }
     }else{
-      AI.aware=Math.max(0,AI.aware-dt/(Math.max(0.05,CFG.spotTime)*1.6));
+      a.aware=Math.max(0,a.aware-dt/(Math.max(0.05,CFG.spotTime)*1.6));
     }
-  }else AI.aware=1;
+  }else a.aware=1;
 
   var speed=clerkPatrolNow();
-  switch(AI.state){
+  switch(a.state){
     case 'PATROL':
       speed=clerkPatrolNow();
-      if(!AI.path.length){
+      // pathFail 期間不要再抽新目標：隨機點每次都離上次 >3m，
+      // 冷卻永遠擋不到，等於每幀跑一次完整的 Dijkstra
+      if(!a.path.length&&NODES.length&&a.pathFail<=0){
         var t=NODES[Math.floor(Math.random()*NODES.length)];
-        setPathTo(t.x,t.z);
+        setPathTo(c,t.x,t.z);
       }
       break;
     case 'INVESTIGATE':
-      speed=clerkPatrolNow()*1.5; AI.timer+=dt;
-      if(!AI.path.length||AI.timer>16){AI.state='SEARCH';AI.searchT=0;}
+      speed=clerkPatrolNow()*1.5; a.timer+=dt;
+      if(!a.path.length||a.timer>16){a.state='SEARCH';a.searchT=0;}
       break;
     case 'SEARCH':
-      speed=clerkPatrolNow()*1.25; AI.searchT+=dt;
-      if(!AI.path.length){
-        var near=NODES.filter(function(n){
-          return Math.hypot(n.x-clerk.position.x,n.z-clerk.position.z)<13;});
+      speed=clerkPatrolNow()*1.25; a.searchT+=dt;
+      if(!a.path.length&&a.pathFail<=0){
+        var near=NODES.filter(function(nd){
+          return Math.hypot(nd.x-c.position.x,nd.z-c.position.z)<13;});
         var pick=near[Math.floor(Math.random()*near.length)]||NODES[0];
-        setPathTo(pick.x,pick.z);
+        if(pick)setPathTo(c,pick.x,pick.z);
       }
-      if(AI.searchT>10){AI.state='RETURN';AI.path=[];setPathTo(CLERK_HOME.x,CLERK_HOME.z);}
+      if(a.searchT>10){
+        a.state='RETURN'; a.path=[];
+        var hm=clerkHome(c); setPathTo(c,hm.x,hm.z);
+      }
       break;
     case 'CHASE':
       speed=clerkChaseNow();
-      AI.chaseT+=dt;
-      if(AI.chaseT>CFG.chaseGiveUp){ giveUpChase(); return; }
-      if(sees){AI.lastSeen={x:px,z:pz};AI.timer=0;AI.path=[];}
+      a.chaseT+=dt;
+      if(a.chaseT>CFG.chaseGiveUp){ giveUpChase(c); return; }
+      if(sees){a.lastSeen={x:px,z:pz};a.timer=0;a.path=[];}
       else{
-        AI.timer+=dt;
-        if(AI.timer>CFG.loseSight){
-          AI.state='SEARCH'; AI.searchT=0; AI.path=[];
-          if(AI.lastSeen)setPathTo(AI.lastSeen.x,AI.lastSeen.z);
-          ev('chase_lost'); droneOff();
-        }else if(!AI.path.length&&AI.lastSeen){ setPathTo(AI.lastSeen.x,AI.lastSeen.z); }
+        a.timer+=dt;
+        if(a.timer>CFG.loseSight){
+          a.state='SEARCH'; a.searchT=0; a.path=[];
+          if(a.lastSeen)setPathTo(c,a.lastSeen.x,a.lastSeen.z);
+          ev('chase_lost',{c:CLERKS.indexOf(c)});
+        }else if(!a.path.length&&a.lastSeen){ setPathTo(c,a.lastSeen.x,a.lastSeen.z); }
       }
       /* 縮小期間抓不到 —— 他構得到的高度你已經不在了。
          但他不會因此失去目標：照追、照跟、照站在你頭上等。
          所以真正的張力在倒數的最後三秒 —— 藥效一退，
          如果他還踩在你身上，那一幀你就被抓了。
          這個道具賣的不是安全，是「你有十秒可以決定去哪裡」。 */
-      if(dP<CFG.catchDist){
-        if(shrinkT<=0){ caught(); return; }
+      /* !hiding 這道關卡是舊的漏洞（不是多店員造成的，但趁這次補掉）。
+         立櫃的 AABB 淺邊是 ±0.40，店員解算半徑 0.5，
+         所以他走到櫃門前時離你（相機在櫃體中心）大約 0.90m ——
+         比 catchDist 的 1.0 還近。也就是說只要他是在 CHASE 走過來的，
+         你根本撐不到 hideGiveUp 那六秒，躲櫃子在被追時等於無效。
+         而說明與註解都寫著「躲著他看不到你」。 */
+      if(!hiding&&dP<CFG.catchDist){
+        if(shrinkT<=0){ caught(c); return; }
         if(!G.run._shrinkSave){ G.run._shrinkSave=true; ev('shrink_saved'); }
       }
       break;
     case 'RETURN':
       speed=clerkPatrolNow();
-      if(!AI.path.length)AI.state='PATROL';
+      if(!a.path.length)a.state='PATROL';
       break;
   }
 
@@ -4629,46 +4846,83 @@ function stepClerk(dt){
      這條規則補掉一個以前很怪的空窗 —— 停電之後如果他跟丟了，
      他會用平常那個 2 m/s 悠悠地晃，而你正拿著非賣品在跑。
      現在他是在快步搜店，追逐速度不受影響（那本來就已經比你快）。 */
-  if(r.danger&&AI.state!=='CHASE')speed*=CFG.alarmPatrolMul;
+  if(r.danger&&a.state!=='CHASE')speed*=CFG.alarmPatrolMul;
 
   // 移動：追逐且視線通暢 → 直接衝；否則沿 waypoint 路徑
   var tx,tz;
-  if(AI.state==='CHASE'&&sees){ tx=px; tz=pz; }
-  else if(AI.path.length){ tx=AI.path[0].x; tz=AI.path[0].z; }
+  if(a.state==='CHASE'&&sees){ tx=px; tz=pz; }
+  else if(a.path.length){ tx=a.path[0].x; tz=a.path[0].z; }
   else { return; }
 
-  var dx=tx-clerk.position.x, dz=tz-clerk.position.z, dist=Math.hypot(dx,dz);
-  if(dist<0.55&&AI.path.length){AI.path.shift();}
+  var dx=tx-c.position.x, dz=tz-c.position.z, dist=Math.hypot(dx,dz);
+  if(dist<0.55&&a.path.length){a.path.shift();}
   if(dist>0.001){
-    var p={x:clerk.position.x+dx/dist*speed*dt, z:clerk.position.z+dz/dist*speed*dt};
+    var p={x:c.position.x+dx/dist*speed*dt, z:c.position.z+dz/dist*speed*dt};
     resolve(p,0.5);
-    var moved=Math.hypot(p.x-clerk.position.x,p.z-clerk.position.z);
-    clerk.position.x=p.x; clerk.position.z=p.z;
-    animClerk(dt,moved,AI.state==='CHASE');
+    var moved=Math.hypot(p.x-c.position.x,p.z-c.position.z);
+    c.position.x=p.x; c.position.z=p.z;
+    animClerk(c,dt,moved,a.state==='CHASE');
     var want=Math.atan2(-dx,-dz);
-    var diff=((want-clerk.rotation.y+Math.PI*3)%(Math.PI*2))-Math.PI;
-    clerk.rotation.y+=diff*Math.min(1,dt*7);
+    var diff=((want-c.rotation.y+Math.PI*3)%(Math.PI*2))-Math.PI;
+    c.rotation.y+=diff*Math.min(1,dt*7);
     // 卡住偵測
-    AI.stuck = moved<speed*dt*0.25 ? AI.stuck+dt : 0;
-    if(AI.stuck>1.2){ AI.path=[]; AI.stuck=0;
-      if(AI.state==='CHASE'&&AI.lastSeen)setPathTo(AI.lastSeen.x,AI.lastSeen.z); }
+    a.stuck = moved<speed*dt*0.25 ? a.stuck+dt : 0;
+    if(a.stuck>1.2){ a.path=[]; a.stuck=0;
+      if(a.state==='CHASE'&&a.lastSeen)setPathTo(c,a.lastSeen.x,a.lastSeen.z); }
     /* 腳步聲：音量與方向都交給 panner，這裡只決定「聽不聽得到」。
        牆或高貨架擋住就不發聲（7m 內例外 —— 太近了還是會透過來），
        這個遮蔽判定跟視線用的是同一個 blocked()，所以聽覺和視覺的規則一致。 */
-    AI.stepT+=dt*speed;
-    if(AI.stepT>2.6){AI.stepT=0;
-      if(dP<20&&!blocked(clerk.position.x,clerk.position.z,px,pz,2.6)||dP<7)
-        SFX.step(CFG.clerkStepVol,clerk.position.x,clerk.position.z);
+    a.stepT+=dt*speed;
+    if(a.stepT>2.6){a.stepT=0;
+      if(dP<20&&!blocked(c.position.x,c.position.z,px,pz,2.6)||dP<7)
+        SFX.step(CFG.clerkStepVol,c.position.x,c.position.z);
     }
   }
-  var chasing=AI.state==='CHASE';
-  // 追逐低頻跟著他跑
-  if(dronePan)panMove(dronePan,clerk.position.x,1.2,clerk.position.z);
-  alertHalo.material.opacity += ((chasing?0.55:0)-alertHalo.material.opacity)*Math.min(1,dt*4);
-  // 頭上符號：追逐或已鎖定 → !；正在被看／調查／搜尋 → ?
-  if(chasing||AI.aware>=1)setMark('x');
-  else if(AI.aware>0.05||AI.state==='INVESTIGATE'||AI.state==='SEARCH')setMark('q');
-  else setMark(null);
+}
+/* 店員之間互相推開。
+   resolve() 只處理場景碰撞，店員彼此是穿模的 —— 單人時看不出來，
+   三個人同時追你的時候會疊成一個人形，視覺上像只有一個店員，
+   但實際上有三個判定。這裡做一次很輕的分離，不動 resolve。 */
+function separateClerks(){
+  var s=CFG.clerkSep; if(CLERKS.length<2||s<=0)return;
+  for(var i=0;i<CLERKS.length;i++)for(var j=i+1;j<CLERKS.length;j++){
+    var A=CLERKS[i],B=CLERKS[j];
+    if(!A.visible||!B.visible)continue;
+    if(A.ai.state==='DORMANT'||B.ai.state==='DORMANT')continue;
+    // 昏迷的人不推。躺在地上的身體（尤其是你正拖著的那具）
+    // 被路過的人撞得滿地跑，看起來只會像 bug
+    if(A.ai.state==='STUNNED'||B.ai.state==='STUNNED')continue;
+    var dx=B.position.x-A.position.x, dz=B.position.z-A.position.z;
+    var d=Math.hypot(dx,dz);
+    if(d>=s)continue;
+    // 完全重疊時給一個固定方向，不然 0/0 會變 NaN
+    if(d<1e-4){ dx=1; dz=0; d=1; }
+    var push=(s-d)/2, ux=dx/d*push, uz=dz/d*push;
+    var pa={x:A.position.x-ux,z:A.position.z-uz}; resolve(pa,0.5);
+    var pb={x:B.position.x+ux,z:B.position.z+uz}; resolve(pb,0.5);
+    A.position.x=pa.x; A.position.z=pa.z;
+    B.position.x=pb.x; B.position.z=pb.z;
+  }
+}
+/* 追逐低頻嗡鳴：全場只有一個音源，掛在「離你最近的追擊者」身上。
+   每隻各開一個的話，三個疊加的鋸齒三和弦會蓋掉腳步聲 ——
+   而腳步聲才是你判斷他在哪的主要依據。
+   集中在這裡處理，也順便修掉舊寫法的一個 silent bug：
+   以前 giveUpChase 會無條件 droneOff()，
+   所以三個人在追、第一個放棄時，另外兩個的追逐音就消失了。 */
+function syncDrone(){
+  /* 不在遊玩中就一律關掉。少了這一行會出現一個很難查的 bug：
+     extract() / caught() 都會先 droneOff() 再換 phase，
+     但那一幀回到主迴圈時 syncDrone 還會再跑一次 ——
+     而抓到你的那個人當然還在 CHASE，於是嗡鳴又被打開，
+     然後 phase 已經不是 play 了，再也沒有人關掉它。
+     結果是結算畫面、商店、下一次開場全程都在響。
+     暫停也一樣 —— 暫停中沒有人會再呼叫這個函式，
+     所以嗡鳴會一直掛在那裡直到你回來。 */
+  if(G.phase!=='play'||isPaused()){ droneOff(); return; }
+  var n=nearestChaser();
+  if(n){ droneOn(); if(dronePan)panMove(dronePan,n.position.x,1.2,n.position.z); }
+  else droneOff();
 }
 
 /* ============================================================
@@ -4685,6 +4939,19 @@ function enterHide(o){
   camera.fov=CFG.hideFov; camera.updateProjectionMatrix();
   document.body.classList.add('hidden-in');
   vel.set(0,0,0);
+  /* 正在追你的人，最後看到的位置改成這個櫃子。
+     不改的話會有一個很難發現的破洞：canSee 在 hiding 的當下就回 false，
+     所以 lastSeen 凍結在你按下 E 那一刻的座標 ——
+     而互動距離是 3.4m，你可以從離櫃子三公尺外跳進去。
+     他於是走向那個三公尺外的點、停在那裡，
+     永遠進不到 hideNear 的 2.5m，六秒放棄規則一次都不會觸發。
+     （這也比較合理：他看著你鑽進去的。） */
+  for(var i=0;i<CLERKS.length;i++){
+    var a=CLERKS[i].ai;
+    if(a.state==='CHASE'||a.state==='SEARCH'||a.state==='INVESTIGATE'){
+      a.lastSeen={x:o.spot.x,z:o.spot.z}; a.path=[];
+    }
+  }
   SFX.deny(); ev('hide_enter');
   toast('躲進櫃子 · 再按一次出來');
 }
@@ -4723,25 +4990,42 @@ function useTaser(){
   G.tzAmmo--;
   SFX.taser();
   makeNoise(CFG.hearWalk*0.8);
-  // 從準心射出去：算店員到視線的垂直距離，夠近就算命中
+  /* 從準心射出去：算店員到視線的垂直距離，夠近就算命中。
+     多店員時只打中角錐內「最近的那一個」—— 一發一個。
+     角錐會隨距離變寬，遠距離時很容易同時框進兩個人，
+     一發放倒兩個的話 3 發彈藥的經濟就整個沒有意義了。 */
   camera.getWorldDirection(fwd);
-  var to=new THREE.Vector3(clerk.position.x-camera.position.x,
-                           1.2-camera.position.y,
-                           clerk.position.z-camera.position.z);
-  var along=to.dot(fwd);
-  var hit=false;
-  if(clerk.visible&&along>0&&along<CFG.taserRange){
+  var hit=null, hitAlong=1e9;
+  for(var i=0;i<CLERKS.length;i++){
+    var c=CLERKS[i]; if(!c.visible)continue;
+    var to=new THREE.Vector3(c.position.x-camera.position.x,
+                             1.2-camera.position.y,
+                             c.position.z-camera.position.z);
+    var along=to.dot(fwd);
+    if(along<=0||along>=CFG.taserRange||along>=hitAlong)continue;
     var perp=to.clone().sub(fwd.clone().multiplyScalar(along)).length();
     // 判定改成角錐而不是固定半徑：距離越遠，容許的橫向誤差越大，
     // 不然遠距離時 1m 的誤差在畫面上只有幾個像素，根本瞄不到
     var allow=Math.max(1.3, along*Math.tan(CFG.taserSpread*Math.PI/180));
     if(perp<allow&&!blocked(camera.position.x,camera.position.z,
-                          clerk.position.x,clerk.position.z,1.0))hit=true;
+                            c.position.x,c.position.z,1.0)){
+      hit=c; hitAlong=along;
+    }
   }
   if(hit){
-    AI.state='STUNNED'; AI.stunT=CFG.taserStun; AI.path=[]; AI.chaseT=0;
-    droneOff(); ev('taser_hit');
-    toast('命中 · 他癱了 '+CFG.taserStun+' 秒 · 剩 '+G.tzAmmo+' 發');
+    var ha=hit.ai;
+    ha.state='STUNNED'; ha.stunT=CFG.taserStun; ha.path=[]; ha.chaseT=0;
+    /* aware 與 hideT 一定要一起清掉。
+       STUNNED 分支在衰減那段之前就 return，所以不清的話它們會整段昏迷期凍在原值：
+       被追到一半電昏 → aware 卡在 1 → 被發現進度條整整五秒滿格加紅框，
+       而他明明躺在地上。躲櫃子時電昏他更糟：hideT 停住，
+       「幾秒後他會走開」的倒數就永遠不會走完。
+       stuffClerk 本來就有清 aware，這裡漏掉純粹是不一致。 */
+    ha.aware=0; ha.hideT=0;
+    ev('taser_hit',{c:CLERKS.indexOf(hit)});
+    var others=CLERKS.filter(function(c){return c!==hit&&c.ai.state==='CHASE';}).length;
+    toast('命中 · 他癱了 '+CFG.taserStun+' 秒 · 剩 '+G.tzAmmo+' 發'+
+          (others?' · 還有 '+others+' 個在追你':''));
   }else{
     toast('打空了 · 剩 '+G.tzAmmo+' 發'); ev('taser_miss');
   }
@@ -4756,56 +5040,74 @@ function useTaser(){
    三個代價讓它不會變成無腦強勢：
    走得慢（0.55x）、不能衝刺、而且一路都在發出聲音。
    還有一個時間壓力：昏迷時間到了他就地掙脫，而你正好站在他旁邊。 */
-var dragging=false;
+/* 「有沒有人在被拖」和「被拖的是誰」是兩個不同的問題，
+   所以這裡存的是店員本身，不是一個布林值。一次只能拖一個。 */
+var draggedClerk=null;
+// 附近昏迷、而且還看得見（沒被塞進櫃子）的店員，最近的那一個
+function nearestStunned(maxD){
+  var best=null,bd=maxD;
+  for(var i=0;i<CLERKS.length;i++){
+    var c=CLERKS[i];
+    /* c.visible 這個條件不能少：已經塞進櫃子的他也是 STUNNED 而且就在櫃子的座標上，
+       沒有這道關卡的話你站在櫃子前面按 E 會「再抓一次」一個看不見的人，
+       然後他在拖行中醒來 —— 變成一個隱形但抓得到你的店員。 */
+    if(c.ai.state!=='STUNNED'||!c.visible)continue;
+    var d=Math.hypot(c.position.x-camera.position.x,c.position.z-camera.position.z);
+    if(d<bd){bd=d;best=c;}
+  }
+  return best;
+}
 function tryDrag(){
   var r=G.run; if(!r||G.phase!=='play')return false;
-  /* clerk.visible 這個條件不能少：已經塞進櫃子的他也是 STUNNED 而且就在櫃子的座標上，
-     沒有這道關卡的話你站在櫃子前面按 E 會「再抓一次」一個看不見的人，
-     然後他在拖行中醒來 —— 變成一個隱形但抓得到你的店員。 */
-  if(AI.state!=='STUNNED'||!clerk.visible)return false;
-  var d=Math.hypot(clerk.position.x-camera.position.x,clerk.position.z-camera.position.z);
-  if(d>2.0)return false;
-  dragging=true;
+  if(draggedClerk)return false;
+  var c=nearestStunned(2.0);
+  if(!c)return false;
+  draggedClerk=c;
   document.body.classList.add('dragging');
-  SFX.deny(); ev('drag_start');
+  SFX.deny(); ev('drag_start',{c:CLERKS.indexOf(c)});
   toast('抓住他了 · 拖到立櫃前再按一次');
   return true;
 }
 function dropDrag(msg){
-  if(!dragging)return;
-  dragging=false;
+  if(!draggedClerk)return;
+  draggedClerk=null;
   document.body.classList.remove('dragging');
   if(msg)toast(msg);
 }
 function stuffClerk(hideObj){
-  dragging=false;
+  var c=draggedClerk; if(!c)return;
+  draggedClerk=null;
   document.body.classList.remove('dragging');
-  AI.stunT=CFG.stuffStun; AI.state='STUNNED'; AI.path=[]; AI.chaseT=0; AI.aware=0;
-  clerk.visible=false;                       // 他在櫃子裡
-  clerk.position.set(hideObj.spot.x,0,hideObj.spot.z);
+  var a=c.ai;
+  a.stunT=CFG.stuffStun; a.state='STUNNED'; a.path=[]; a.chaseT=0;
+  a.aware=0; a.hideT=0;      // 跟 useTaser 一致：STUNNED 分支之後不會再衰減它們
+  c.visible=false;                           // 他在櫃子裡
+  c.position.set(hideObj.spot.x,0,hideObj.spot.z);
   hideObj.stuffed=true;                      // 這個櫃子這局不能再躲人
+  c.stuffedIn=hideObj;                       // 他自己記得是哪一個 —— 甦醒時要用
   SFX.unlock(); makeNoise(CFG.hearWalk*0.8);
-  ev('clerk_stuffed',{sec:CFG.stuffStun});
+  ev('clerk_stuffed',{sec:CFG.stuffStun,c:CLERKS.indexOf(c)});
   toast('關進去了 · '+CFG.stuffStun+' 秒 · 他出來前這個櫃子不能躲');
   updateHUD(); updateAim();
 }
 // 拖行中：店員跟在玩家後面一點的位置
-function stepDrag(dt){
-  if(!dragging)return;
-  if(AI.state!=='STUNNED'||AI.stunT<=0){
+function stepDrag(c,dt){
+  if(!c||draggedClerk!==c)return;
+  var a=c.ai;
+  if(a.state!=='STUNNED'||a.stunT<=0){
     // 拖到一半醒了 —— 而你就站在他旁邊
     dropDrag('他醒了！');
-    clerk.visible=true; clerk.rotation.z=0;   // 這條路徑繞過了正常的甦醒處理
-    AI.state='CHASE'; AI.aware=1; AI.chaseT=0; AI.timer=0;
-    AI.lastSeen={x:camera.position.x,z:camera.position.z}; AI.path=[];
-    droneOn(); ev('drag_broke');
+    c.visible=true; c.rotation.z=0;          // 這條路徑繞過了正常的甦醒處理
+    a.state='CHASE'; a.aware=1; a.chaseT=0; a.timer=0;
+    a.lastSeen={x:camera.position.x,z:camera.position.z}; a.path=[];
+    ev('drag_broke',{c:CLERKS.indexOf(c)});
     return;
   }
   camera.getWorldDirection(fwd);
   var tx=camera.position.x-fwd.x*0.95, tz=camera.position.z-fwd.z*0.95;
-  clerk.position.x+=(tx-clerk.position.x)*Math.min(1,dt*9);
-  clerk.position.z+=(tz-clerk.position.z)*Math.min(1,dt*9);
-  clerk.rotation.y=Math.atan2(-fwd.x,-fwd.z);
+  c.position.x+=(tx-c.position.x)*Math.min(1,dt*9);
+  c.position.z+=(tz-c.position.z)*Math.min(1,dt*9);
+  c.rotation.y=Math.atan2(-fwd.x,-fwd.z);
   makeNoise(CFG.hearWalk*0.5);               // 拖著一個人不可能安靜
 }
 function useShrink(){
@@ -4910,8 +5212,8 @@ function stepPlayer(dt){
   var loadMul=(load>=CFG.loadThreshold)?(1-pen):1;
   if(shrinkT>0)loadMul*=0.8;
   // 拖著一個人：慢一截，而且衝不起來
-  if(dragging)loadMul*=CFG.dragSpeed;
-  var wantSprint=!!(keys['shift']||keys['shiftleft'])&&!dragging;
+  if(draggedClerk)loadMul*=CFG.dragSpeed;
+  var wantSprint=!!(keys['shift']||keys['shiftleft'])&&!draggedClerk;
   var wantCrouch=!!(keys['c']||tDuck);
   var stickMag=(IS_TOUCH&&touchMove.mag>0)?touchMove.mag:0;
 
@@ -5041,7 +5343,7 @@ function extract(){
   droneOff(); setDanger(false); SFX.register();
   save(); endRun();
 }
-function caught(){
+function caught(by){
   var r=G.run; if(r.extracted||r.caught)return;
   // 備用鑰匙：掙脫一次，提袋保住，但被丟到離後門最遠的地方
   if(r.revive>0){
@@ -5053,14 +5355,30 @@ function caught(){
     }
     if(best>=0){ camera.position.x=NODES[best].x; camera.position.z=NODES[best].z; }
     vel.set(0,0,0);
-    AI.state='SEARCH'; AI.searchT=0; AI.calm=8; AI.chaseT=0; AI.path=[];
+    /* 手上拖著的人要放掉。stepDrag 是用 lerp 把他拉到你背後、而且不走碰撞解算，
+       不放的話你被傳送到店的另一頭時，那具昏迷的身體會穿過整間店的牆
+       在 0.3 秒內飛過來黏在你身上。 */
+    dropDrag();
+    /* 全部的人都要退出追擊，不能只處理抓到你的那一個。
+       漏掉的話：A 抓到你 → 你被傳送走 → 但 B 還在 CHASE，
+       而且他的 lastSeen 是舊座標，他會用追逐速度直奔過來，
+       你那張「備用鑰匙」等於只買到兩秒。 */
+    CLERKS.forEach(function(c){
+      if(c.ai.state==='STUNNED')return;
+      c.ai.state='SEARCH'; c.ai.searchT=0; c.ai.calm=8;
+      c.ai.chaseT=0; c.ai.path=[]; c.ai.aware=0; c.ai.lastSeen=null;
+      // 傳送之後所有「上一個位置」的殘留都沒有意義了
+      c.ai.pathFail=0; c.ai.pathFailAt=null; c.ai.stuck=0;
+      c.ai.timer=0; c.ai.noiseAt=null;
+    });
     droneOff(); SFX.deny(); flashScreen();
     showBeat('你掙脫了','提袋還在手上，但你被丟到離後門最遠的地方。','',3500);
     updateHUD();
     return;
   }
   r.caught=true; r.gross=r.value; r.bonus=0; r.net=0;
-  ev('caught',{value:r.value,at:+r.t.toFixed(1)});
+  ev('caught',{value:r.value,at:+r.t.toFixed(1),
+               c:by?CLERKS.indexOf(by):-1,clerks:CLERKS.length});
   STATS.caught++; STATS.times.push(r.t);
   r.streakBroken=STATS.streak; STATS.streak=0;
   pushHistory(r,'caught');
@@ -5071,28 +5389,38 @@ function caught(){
   G.lastLost=r.lostList.slice();     // 留給裝備欄顯示「上次被沒收什麼」
   ev('progress_wiped',{gearSaved:r.gearSaved,cash:r.lostCash,lost:r.lostList});
   droneOff(); SFX.caught();
-  save(); startCatchCam();
+  save(); startCatchCam(by);
 }
 
 /* 被抓：鏡頭轉向店員做特寫定格 —— 不管玩家原本面朝哪邊 */
 var catchCam=null;
-function startCatchCam(){
+function startCatchCam(by){
   G.phase='catchcam';
   if(document.pointerLockElement)document.exitPointerLock();
   hidePause();
   document.body.classList.add('catchcam');
+  // 特寫的是抓到你的那一個。沒傳進來（理論上不會）就退回最近的追擊者
+  // 一定要 visible：退回 CLERKS[0] 時他有可能正被鎖在立櫃裡，
+  // 把他設成 visible 會讓他的甦醒流程（gate 在 !c.visible）永遠不觸發
+  var c=by||nearestChaser()||CLERKS[0];
+  if(!c||!c.visible){
+    // catchcam 這個 class 會藏掉準心與所有提示，而清掉它的是 stepCatchCam，
+    // 走這條 return 的話它永遠不會跑 —— 下一局你會沒有準心
+    document.body.classList.remove('catchcam');
+    catchCam=null; setTimeout(function(){endRun();},900); return;
+  }
   // 店員轉過來直視玩家，換上發現玩家的那張臉
-  var dxc=camera.position.x-clerk.position.x, dzc=camera.position.z-clerk.position.z;
-  clerk.rotation.y=Math.atan2(-dxc,-dzc);
-  clerk.visible=true;
-  armLift=-1.35; armL.rotation.x=-1.35; armR.rotation.x=-1.35;
-  armL.rotation.z=0.12; armR.rotation.z=-0.12;
-  legL.rotation.x=0; legR.rotation.x=0; head.rotation.x=0.1;
-  faceMat.map=faceAlert; faceMat.needsUpdate=true;
-  cap.material=itemMat(0xFF3B30);
-  alertHalo.material.opacity=0.72;
+  var dxc=camera.position.x-c.position.x, dzc=camera.position.z-c.position.z;
+  c.rotation.y=Math.atan2(-dxc,-dzc);
+  c.visible=true;
+  c.armLift=-1.35; c.armL.rotation.x=-1.35; c.armR.rotation.x=-1.35;
+  c.armL.rotation.z=0.12; c.armR.rotation.z=-0.12;
+  c.legL.rotation.x=0; c.legR.rotation.x=0; c.head.rotation.x=0.1;
+  c.faceMat.map=faceAlert; c.faceMat.needsUpdate=true;
+  c.cap.material=itemMat(0xFF3B30);
+  c.halo.material.opacity=0.72;
   // 目標：對準他的頭
-  var tx=clerk.position.x, tz=clerk.position.z, ty=1.74;
+  var tx=c.position.x, tz=c.position.z, ty=1.74;
   var hd=Math.max(0.3,Math.hypot(tx-camera.position.x,tz-camera.position.z));
   var y1=Math.atan2(-(tx-camera.position.x),-(tz-camera.position.z));
   var diff=((y1-yaw+Math.PI*3)%(Math.PI*2))-Math.PI;   // 走最短路徑轉過去
@@ -5940,15 +6268,19 @@ function frame(now){
   updateFeed(dt,now);
   syncPause();
   // 被追的紅框：狀態直接驅動，不用等 stepClerk 有移動才更新
+  var chasingNow=anyChasing();
   document.body.classList.toggle('chased',
-    G.phase==='play'&&!isPaused()&&AI.state==='CHASE'&&stopT<=0);
-  // 被發現進度條：只在「正在被看但還沒變成追逐」的窗口顯示
+    G.phase==='play'&&!isPaused()&&chasingNow&&stopT<=0);
+  /* 被發現進度條：只在「正在被看但還沒變成追逐」的窗口顯示。
+     多店員時取最大值 —— 這條的用途是「我還有多久可以退回掩體」，
+     那個時間由最快發現你的那一個決定，平均或總和都會給你錯的答案。 */
   var sp=$('spot');
-  var showSpot=G.phase==='play'&&AI.aware>0.02&&AI.state!=='CHASE';
+  var aw=maxAware();
+  var showSpot=G.phase==='play'&&aw>0.02&&!chasingNow;
   sp.classList.toggle('on',showSpot);
   if(showSpot){
-    sp.querySelector('.fill').style.width=Math.round(AI.aware*100)+'%';
-    sp.classList.toggle('hot',AI.aware>0.6);
+    sp.querySelector('.fill').style.width=Math.round(aw*100)+'%';
+    sp.classList.toggle('hot',aw>0.6);
   }
   if(G.phase==='catchcam'&&catchCam)stepCatchCam(dt);
   /* 配樂只在真正在玩的時候響。
@@ -5956,6 +6288,8 @@ function frame(now){
   if(G.phase==='play'&&G.run&&!isPaused()&&stopT<=0)musicStep(dt);
   else musicDuck(dt);
   noiseStep(dt);
+  // 追逐嗡鳴：擺在暫停判斷之外，暫停與結算時才有人負責把它關掉
+  syncDrone();
   if(G.phase==='play'&&G.run){
     if(!isPaused()){
       G.run.t+=dt;
@@ -5972,9 +6306,17 @@ function frame(now){
         /* stepDrag 平常掛在 stepClerk 的 STUNNED 分支裡，而這裡整個跳過 stepClerk。
            不補這一行的話，午夜鐘期間你拖著人走，人留在原地，
            時間恢復的瞬間他會橫越整個賣場瞬移到你背後。 */
-        if(dragging)stepDrag(dt);
+        if(draggedClerk)stepDrag(draggedClerk,dt);
       }else{
-        stepClerk(dt);
+        /* 每隻各跑一次。中途有人抓到你的話 caught() 會把 phase 換掉 ——
+           一定要在這裡跳出去：後面幾隻的 canSee / 抓到判定
+           讀的是已經被傳送過（備用鑰匙）或已經結束的這一局。 */
+        for(var ci=0;ci<CLERKS.length;ci++){
+          if(G.phase!=='play')break;
+          stepClerk(CLERKS[ci],dt);
+        }
+        // 被抓特寫已經鎖定某一個人的頭了，這時候不要再推他
+        if(G.phase==='play')separateClerks();
       }
       stepHold(dt); stepSlot(dt);
       // 聽者跟著相機 —— 位置與朝向都要更新，不然轉頭時左右不會跟著換
@@ -5984,9 +6326,29 @@ function frame(now){
          規則被看見才會變成決策。 */
       if(hiding){
         var ht=$('hidetag');
-        if(AI.hideT>0){
-          ht.innerHTML='他就在外面 · <b style="color:var(--danger)">'+
-            Math.max(0,CFG.hideGiveUp-AI.hideT).toFixed(1)+'</b> 秒後他會走開';
+        /* 倒數取「累積最少的那一個」。
+           取最大值是最直覺的寫法，也是會害死人的寫法：
+           A 站了 5.9 秒、B 剛到，顯示 0.1 秒 → 你跳出來 → 撞上 B。
+           這個數字的意思必須是「全部的人都走了還要多久」。 */
+        /* 「附近有誰」要用距離算，不能用 hideT>0 算。
+           倒數只在 2.5m 內才開始跑，所以一個在 3m 外還在找你的人
+           hideT 是 0、會被濾掉 —— 倒數走完你跳出來，正好撞上他。
+           所以：附近（8m 內）還在找你的人只要有一個還沒開始倒數，
+           就不給承諾，只說「還有人在附近」。 */
+        var near=CLERKS.filter(function(c){
+          if(c.ai.state!=='CHASE'&&c.ai.state!=='SEARCH'&&
+             c.ai.state!=='INVESTIGATE')return false;
+          return Math.hypot(c.position.x-camera.position.x,
+                            c.position.z-camera.position.z)<CFG.hearWalk;
+        });
+        var counting=near.filter(function(c){return c.ai.hideT>0;});
+        if(near.length&&counting.length===near.length){
+          var slow=Math.min.apply(null,near.map(function(c){return c.ai.hideT;}));
+          ht.innerHTML=(near.length>1?near.length+' 個人就在外面 · ':'他就在外面 · ')+
+            '<b style="color:var(--danger)">'+
+            Math.max(0,CFG.hideGiveUp-slow).toFixed(1)+'</b> 秒後會走開';
+        }else if(near.length){
+          ht.innerHTML='還有人在附近 —— 先別出去';
         }else{
           ht.textContent='躲在櫃子裡 · 從洞口看得到外面，但你動不了';
         }
