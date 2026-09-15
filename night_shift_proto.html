@@ -1049,7 +1049,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v8.5';
+var BUILD='v8.7';
 
 /* ================================================================
    目錄與凍結狀態
@@ -1209,10 +1209,18 @@ var DEF = {
      spritePreview 開起來會讓「所有」品項都改用程式畫的佔位圖 ——
      那是用來在畫圖之前先確認平面 sprite 在這個光線與距離下看不看得清楚的。 */
   spriteSize:0.265, spritePreview:0,
+  /* 商品的自體發光下限。0 = 完全跟著現場光，全黑的角落就真的看不見；
+     太高又會變回「貼上去的貼紙」。0.16 大約是「暗處還認得出輪廓，
+     但一眼看得出那裡沒開燈」。 */
+  spriteGlow:0.16,
   /* 亮度。環境光壓低、燈管本身調高 = 「燈下很亮、走道很黑」，
      而不是「整間店一樣灰」。黑暗在這個遊戲裡是有功能的
      （停電、手電筒升級、躲櫃子、視線距離全部靠它），所以整體不能拉亮。 */
   lightAmb:0.40, lightLamp:1.15,
+  /* 地板反光。shininess 越大光斑越小越銳利（打蠟的感覺），
+     越小越糊越廣（霧面）。0 = 完全霧面。
+     冷凍室與辦公室會自動再乘 1.5 —— 冷藏區的地板永遠是濕的。 */
+  floorShine:46,
   /* 密碼要不要留在畫面上。
      開著（1）＝ 這條鏈的代價是「橫跨整個後場的距離與風險」。
      關掉（0）＝ 再加一層記憶負擔。
@@ -1316,6 +1324,8 @@ var KNOBS = [
   ['k-econ','tzAmmoCost','彈藥價格',50,800,10,''],
   ['k-econ','tzAmmoPer','一次補幾發',1,10,1,' 發'],
   ['k-econ','shelfFill','貨架填充率',.15,1,.02,''],
+  ['k-econ','floorShine','地板反光',0,160,2,''],
+  ['k-econ','spriteGlow','商品自體發光',0,0.8,.02,''],
   ['k-econ','lightAmb','環境光（整體亮度）',0.05,1.2,.02,''],
   ['k-econ','lightLamp','燈管亮度（局部）',0.2,3,.05,''],
   ['k-econ','spritePreview','平面圖預覽（佔位）',0,1,1,''],
@@ -1904,13 +1914,30 @@ function texCeil(){
 var TILE_M=1.8;                                   // 一組 2×2 磁磚等於幾公尺
 var TILE_C=texTile(['#565b52','#51564d','#5a5f56','#4d5249'],'#31352e');
 var COLD_C=texTile(['#414e56','#3d4a52','#45525a','#39464e'],'#262f35');
-function floorMat(cv,w,d){
+/* 地板改用 Phong，不是為了好看而已 —— Lambert 是逐「頂點」打光，
+   而 PlaneGeometry(40,39) 預設只有四個頂點。也就是說整片地板的亮度
+   是從四個角內插出來的，十三盞燈打在地上幾乎沒有效果，
+   所以地板一直看起來像一張均勻的貼圖，燈下沒有光池。
+   Phong 是逐像素，燈池與反光才會真的出現。
+
+   specularMap 直接餵同一張磁磚圖：磁磚面是亮的 → 反光強，
+   磚縫是暗的 → 幾乎不反光。跟真的地板一樣，而且不用另外畫一張圖。 */
+var floorMats=[];
+function floorMat(cv,w,d,shine){
   var t=mkTex(cv); t.repeat.set(w/TILE_M,d/TILE_M);
-  return new THREE.MeshLambertMaterial({map:t});
+  var m=new THREE.MeshPhongMaterial({
+    map:t, specularMap:t,
+    specular:new THREE.Color(0x3d4643),
+    shininess:shine||1
+  });
+  m.userData.shineMul=shine||1;
+  floorMats.push(m);
+  return m;
 }
 var MAT={
-  floor:floorMat(TILE_C,40,39),
-  cold :floorMat(COLD_C,13.2,10.8),
+  floor:floorMat(TILE_C,40,39,1),
+  // 冷凍室與辦公室的地板打亮一點 —— 冷藏區的地永遠是濕的
+  cold :floorMat(COLD_C,13.2,10.8,1.5),
   wall :new THREE.MeshLambertMaterial({map:mkTex(texGrain('#464b42',0.10),3)}),
   shelf:new THREE.MeshLambertMaterial({map:mkTex(texGrain('#5b5040',0.12),2)}),
   common:new THREE.MeshLambertMaterial({color:0x8C8A72}),
@@ -1938,9 +1965,9 @@ coldFloor.rotation.x=-Math.PI/2; coldFloor.position.set(-13,0.02,-15.6); scene.a
    短了的話門口會留一條 0.1m 的縫，門打開的瞬間就看得到底下的虛空。
    y 抬到 0.005 是為了不跟主地板共面 —— 兩塊 y=0 的地板重疊在門口
    會 z-fighting，出現一條閃爍的條紋。 */
-var corrFloor=new THREE.Mesh(new THREE.PlaneGeometry(13.4,4.0),floorMat(TILE_C,13.4,4.0));
+var corrFloor=new THREE.Mesh(new THREE.PlaneGeometry(13.4,4.0),floorMat(TILE_C,13.4,4.0,1));
 corrFloor.rotation.x=-Math.PI/2; corrFloor.position.set(-26.3,0.005,0); scene.add(corrFloor);
-var offFloor=new THREE.Mesh(new THREE.PlaneGeometry(7.6,10.0),floorMat(COLD_C,7.6,10.0));
+var offFloor=new THREE.Mesh(new THREE.PlaneGeometry(7.6,10.0),floorMat(COLD_C,7.6,10.0,1.5));
 offFloor.rotation.x=-Math.PI/2; offFloor.position.set(-36.3,0.01,0); scene.add(offFloor);
 
 /* ---------- 天花板 ----------
@@ -2063,6 +2090,13 @@ var TUBE_ON=0xE4F0DE, TUBE_OFF=0x6A7A68;
 function stepLights(dt,t){
   // 從 CFG 讀，所以調參面板拉滑桿當下就看得到 —— 亮度這種東西用猜的很浪費
   ambient.intensity=LIGHT.amb; sky.intensity=LIGHT.sky;
+  for(var q=0;q<floorMats.length;q++){
+    var want=CFG.floorShine*floorMats[q].userData.shineMul;
+    if(floorMats[q].shininess!==want)floorMats[q].shininess=want;
+  }
+  for(var w=0;w<spriteMats.length;w++)
+    if(spriteMats[w].emissiveIntensity!==CFG.spriteGlow)
+      spriteMats[w].emissiveIntensity=CFG.spriteGlow;
   for(var i=0;i<lamps.length;i++){
     var f=flick[i];
     if(f.burst>0){
@@ -2366,7 +2400,10 @@ function itemTex(id){
   var img=new Image();
   img.onload=function(){ t.image=keyWhite(img); t.needsUpdate=true; };
   img.onerror=function(){ console.warn('[tex] 找不到 '+TEX_DIR+id+'.png'); };
-  img.src=TEX_DIR+id+'.png';
+  /* 帶版號破快取。貼圖會一直重畫，而 <img> 的快取跟 HTML 是分開的 ——
+     沒有這個的話，你換了一張圖、推上去、然後看到的還是舊的那張，
+     而且會以為是程式沒吃到。版號一變，網址就變，瀏覽器就一定重抓。 */
+  img.src=TEX_DIR+id+'.png?v='+BUILD;
   texCache[id]=t; return t;
 }
 /* 佔位圖：還沒有任何 PNG 之前，先用程式畫一張同樣尺度的圖，
@@ -2396,15 +2433,28 @@ function placeholderTex(def){
   texCache[k]=t; return t;
 }
 function spriteMode(def){ return !!HAS_TEX[def.id]||CFG.spritePreview>0; }
+/* 平面的幾何體共用一份。translate 把錨點移到底部中央 ——
+   積木的原點在腳下（幾何往上長），平面預設卻是以中心對齊，
+   不改的話東西會有一半陷進層板裡。 */
+var SPRITE_GEO=new THREE.PlaneGeometry(1,1); SPRITE_GEO.translate(0,0.5,0);
+var spriteMats=[];
 function buildModel(def){
   var g=new THREE.Group();
   if(spriteMode(def)){
-    var s=new THREE.Sprite(new THREE.SpriteMaterial({
-      map:HAS_TEX[def.id]?itemTex(def.id):placeholderTex(def),
-      transparent:true, alphaTest:0.35, depthWrite:true}));
-    /* 錨點移到底部中央。積木的原點在腳下（幾何往上長），
-       sprite 預設卻是以中心對齊 —— 不改的話東西會有一半陷進層板裡。 */
-    s.center.set(0.5,0);
+    var tex=HAS_TEX[def.id]?itemTex(def.id):placeholderTex(def);
+    /* 用 Mesh + Lambert，不用 Sprite。
+       SpriteMaterial 是「不吃光」的 —— 它完全無視場景光線，
+       所以不管房間多暗、燈怎麼閃、停電與否，商品永遠是貼圖原本的亮度。
+       結果就是一堆全亮的東西浮在暗房間裡，像貼上去的。
+
+       emissiveMap 給一點點自體發光當地板價，避免全黑的角落裡
+       東西整個消失 —— 那會變成看不見的東西還撿得到，比太亮更糟。 */
+    var m=new THREE.MeshLambertMaterial({
+      map:tex, transparent:true, alphaTest:0.35,
+      side:THREE.DoubleSide,
+      emissive:0xffffff, emissiveMap:tex, emissiveIntensity:CFG.spriteGlow});
+    spriteMats.push(m);
+    var s=new THREE.Mesh(SPRITE_GEO,m);
     s.scale.set(CFG.spriteSize,CFG.spriteSize,1);
     g.add(s); g.userData.sprite=s;
   }else{
@@ -3511,6 +3561,9 @@ function clearItems(){
   itemMeshes.forEach(function(o){ scene.remove(o.mesh);
     if(o.halo)scene.remove(o.halo); if(o.tag)scene.remove(o.tag); });
   itemMeshes=[]; safeA=null; safeB=null;
+  /* 材質清單也要清。不清的話它每局長 47 筆，而 stepLights 每一幀
+     都會走過整個陣列 —— 玩到第二十局就是每幀掃一千個已經不存在的材質。 */
+  spriteMats=[];
   beacons.forEach(function(b){scene.remove(b);}); beacons=[];
   forbidGlow.intensity=0;
 }
@@ -6691,6 +6744,11 @@ function frame(now){
        漏掉的話 undefined + sin() = NaN，物件的矩陣整個爛掉：
        畫面上消失、射線也打不到，整個辦公室等於不存在。 */
     if(o.taken||o.safe||o.hide||o.officeDoor||o.register||o.note)continue;
+    /* 平面要自己轉向鏡頭 —— Sprite 是引擎幫你轉的，Mesh 不是。
+       只繞 Y 軸，不是完整的面向鏡頭：這樣你抬頭低頭時商品不會跟著翻，
+       它們是站在層板上的東西，不是飄在空中的紙片。 */
+    if(o.sprite)o.mesh.rotation.y=Math.atan2(
+      camera.position.x-o.mesh.position.x, camera.position.z-o.mesh.position.z);
     /* 浮動與旋轉跟發光綁在一起用同一條規則。
        分開的話會出現「不發光但在空中轉」的東西，那個訊號更混亂 ——
        一般商品現在就老老實實躺在架上，價格標自己去講它值多少。 */
