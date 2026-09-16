@@ -37,52 +37,38 @@
     background:radial-gradient(120% 90% at 50% 0%,rgba(20,26,20,.94),rgba(6,8,6,.98));z-index:30}
   .layer.hidden{display:none}
 
-  /* ---------- 提袋檢視 ----------
-     刻意「不」暫停遊戲。keypad 不暫停、躲櫃子不暫停，這個也一樣 ——
-     低頭清點戰利品的那幾秒，店員照樣在走。那本身就是一個代價。 */
-  /* 沒有 backdrop-filter：它是整頁的合成器回讀，每幀一次，
-     而這個面板刻意讓遊戲繼續跑 —— 等於在最需要順暢的那幾秒掉幀。
-     用深一點的純色擋住就夠了。 */
-  #bagview{position:fixed;inset:0;z-index:26;display:none;
-    align-items:center;justify-content:center;padding:24px;
-    background:rgba(5,8,5,.86)}
-  #bagview.on{display:flex}
-  .bagcard{width:min(92vw,560px);max-height:80vh;overflow:auto;
-    background:rgba(17,21,15,.97);border:1px solid var(--line);padding:18px 20px}
-  .baghead{display:flex;justify-content:space-between;align-items:flex-end;
-    gap:16px;padding-bottom:12px;border-bottom:1px solid var(--line)}
-  .bagval{font-family:var(--f-mono);font-size:30px;color:var(--price);line-height:1.1}
-  .bagslots{font-family:var(--f-mono);font-size:13px;color:var(--dim);text-align:right}
-  .bagslots b{color:var(--tube)}
-  .bagslots.heavy b{color:var(--price)}
-  .bagslots.full b{color:var(--danger)}
-  .baggrid{display:grid;gap:2px;margin-top:10px}
-  .bagrow{display:grid;grid-template-columns:38px 1fr auto auto;gap:10px;
-    align-items:center;padding:6px 4px;border-bottom:1px solid #1b211a}
-  .bagrow img{width:38px;height:38px;image-rendering:pixelated;
-    background:#0f1310;border:1px solid #1e2620}
-  .bagrow .bn{font-size:13px;line-height:1.3}
-  .bagrow .bn small{display:block;color:var(--dimmer);font-size:10.5px;
-    font-family:var(--f-mono);letter-spacing:.04em}
-  .bagrow .bq{font-family:var(--f-mono);font-size:12px;color:var(--dim);min-width:26px;
-    text-align:right}
-  .bagrow .bv{font-family:var(--f-mono);font-size:14px;color:var(--price);min-width:56px;
-    text-align:right}
-  .bagrow.forbid .bv{color:var(--forbid)}
-  .bagrow.forbid .bn{color:var(--forbid)}
-  .bagempty{color:var(--dim);font-size:13px;padding:22px 4px;text-align:center}
-  .baghint{margin-top:12px;color:var(--dimmer);font-size:11.5px;text-align:center;
-    border-top:1px solid var(--line);padding-top:10px}
-  /* pointer-events:auto 是必要的，不是裝飾。
-     #basket 在 .layer#hud 裡面，而 .layer 是 pointer-events:none ——
-     少了這一行，點擊事件根本到不了它，整個「點提袋打開」的功能是死的，
-     觸控裝置更是完全沒有辦法開（手機沒有 B 鍵）。 */
-  #basket{cursor:pointer;pointer-events:auto}
+  /* ---------- 三件組完成的慶祝 ----------
+     湊齊機器人是這個遊戲裡唯一「跨越好幾分鐘的目標」達成的那一刻，
+     而它原本只有一行 toast。畫面中央把整隻機器人放大出來停兩秒，
+     那兩秒就是這一局的高點。
+
+     刻意用 DOM 而不是在 3D 場景裡生一隻：它是儀式，不是世界的一部分，
+     而且 sprite 的貼圖本來就在手上，直接拿來用。 */
+  #setfx{position:absolute;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:10px;opacity:0;pointer-events:none}
+  #setfx.on{animation:setpop 2.8s ease-out forwards}
+  /* aspect-ratio 是用來先把位置佔住的。貼圖是正方形，但 height:auto
+     在圖載完之前高度是 0 —— 置中的欄位會先只排出兩行字，圖一進來
+     整組再往下跳一次。慶祝動畫在那半秒正好是最顯眼的時候。 */
+  #setfx img{width:min(34vh,240px);aspect-ratio:1;height:auto;
+    image-rendering:pixelated;filter:drop-shadow(0 0 22px rgba(232,122,43,.55))}
+  #setfx .lbl{font-family:var(--f-num);font-size:26px;color:#E87A2B;
+    letter-spacing:.08em;text-shadow:0 2px 12px rgba(0,0,0,.9)}
+  #setfx .val{font-family:var(--f-mono);font-size:19px;color:var(--price);
+    text-shadow:0 2px 12px rgba(0,0,0,.9)}
+  /* 12% 之前彈到 1.15 再收回 1.0 —— 那個過衝是「達成」的手感來源。
+     18%～82% 之間完全不動，2.8s × 64% ≈ 1.8 秒，就是要的停留。 */
+  @keyframes setpop{
+    0%  {opacity:0;transform:scale(.1)}
+    12% {opacity:1;transform:scale(1.15)}
+    18% {transform:scale(1)}
+    82% {opacity:1;transform:scale(1)}
+    100%{opacity:0;transform:scale(1.06)}
+  }
   @media (max-width:620px){
-    .bagcard{padding:14px 14px;max-height:84vh}
-    .bagval{font-size:24px}
-    .bagrow{grid-template-columns:32px 1fr auto auto;gap:8px}
-    .bagrow img{width:32px;height:32px}
+    #setfx img{width:min(30vh,170px)}
+    #setfx .lbl{font-size:20px}
+    #setfx .val{font-size:15px}
   }
 
   /* ---------- HUD ---------- */
@@ -121,13 +107,19 @@
      兩者的中心就對不齊了。 */
   #beat{position:absolute;left:50%;top:auto;bottom:16%;transform:translateX(-50%);
     box-sizing:border-box;width:min(76vw,460px);text-align:center;
-    background:rgba(8,11,8,.82);
+    /* .82 太透明了。這個框會出現在貨架前面，而貨架是有花紋、有亮點的 ——
+       82% 底下透出來的東西剛好把字的邊緣打散，整段變得很難讀。
+       backdrop-filter 一併拿掉：它是整頁的合成器回讀，手機上很貴，
+       而且底夠不透明之後它本來就沒有作用了。 */
+    background:rgba(7,10,7,.95);
     border-top:2px solid var(--price);border-bottom:2px solid var(--price);
-    padding:13px 18px;opacity:0;transition:opacity .3s;backdrop-filter:blur(3px)}
+    padding:13px 18px;opacity:0;transition:opacity .3s}
   #beat.on{opacity:1}
   #beat .b1{font-family:var(--f-num);font-size:22px;color:var(--tube);letter-spacing:.02em}
   #beat .b2{font-size:13.5px;color:var(--price);margin-top:6px;line-height:1.55}
-  #beat .b3{font-size:12.5px;color:var(--dim);margin-top:8px;padding-top:7px;
+  /* b3 原本是 --dim。那個灰在劇情字條上太弱了 —— 字條的第二句
+     （「那一定不是我」）是整段的重點，不該比第一句還難讀。 */
+  #beat .b3{font-size:12.5px;color:#C9D4C6;margin-top:8px;padding-top:7px;
     border-top:1px solid var(--line)}
   #beat .b2:empty,#beat .b3:empty{display:none}
   #beat .b3::after{content:'　·　點畫面關閉';color:var(--dimmer);font-size:11px}
@@ -657,8 +649,7 @@
   #dev .mini button{flex:1;padding:7px;font-size:11px;font-weight:700;background:transparent;
     border:1px solid var(--line-hi);cursor:pointer}
   #dev .mini button:hover{background:#1B231C}
-  /* z-index 23：要在 #touch（22）之上、提袋（26）之下。
-     跟提袋同層又排在 DOM 後面的話，它會浮在面板上面還能按到。 */
+  /* z-index 23：要在觸控按鍵（#touch，22）之上、密碼鍵盤（24）之下 */
   #devtoggle{position:fixed;right:14px;bottom:14px;z-index:23;pointer-events:auto;padding:7px 12px;
     font-family:var(--f-mono);font-size:11px;letter-spacing:.1em;background:rgba(9,12,9,.9);
     border:1px solid var(--line-hi);cursor:pointer}
@@ -813,6 +804,10 @@
     body.chased #chasefx{animation:none;
       box-shadow:inset 0 0 130px 30px rgba(255,59,48,.6)}
     body.chased #chasetag{animation:none;opacity:1}
+    /* 慶祝：不彈，但一定要顯示。
+       只寫 animation:none 的話會掉回基準的 opacity:0 —— 整個慶祝就永遠看不到了。
+       .on 還是會在 2.8 秒後被 JS 移掉，所以它一樣會自己消失。 */
+    #setfx.on{animation:none;opacity:1;transform:none}
   }
 </style>
 
@@ -870,6 +865,11 @@
      不把整個 #hud 拉上來，是因為提袋面板在左下角、跟搖桿重疊 ——
      拉上來就變成提袋蓋住搖桿，更糟。 -->
 <div class="layer" id="hudtop">
+  <div id="setfx">
+    <img id="setfximg" alt="">
+    <div class="lbl">組裝完成</div>
+    <div class="val" id="setfxval"></div>
+  </div>
   <div id="beat"><div class="b1"></div><div class="b2"></div><div class="b3"></div></div>
   <div id="toast"></div>
   <div id="pa"><span>店內廣播</span><em id="patext"></em></div>
@@ -1067,20 +1067,6 @@
   <div id="morehint">▼ 還有裝備欄與紀錄</div>
 </div>
 
-<div id="bagview">
-  <div class="bagcard">
-    <div class="baghead">
-      <div>
-        <div class="eyebrow" style="margin-bottom:2px">提袋裡有什麼</div>
-        <div class="bagval" id="bagvalbig">$0</div>
-      </div>
-      <div class="bagslots" id="bagslotsbig">—</div>
-    </div>
-    <div class="baggrid" id="baggrid"></div>
-    <div class="baghint" id="baghint"></div>
-  </div>
-</div>
-
 <div id="stopfx">
   <div class="ring"><b id="stopnum">0.0</b><span>時 間 停 止</span></div>
 </div>
@@ -1138,7 +1124,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v9.0';
+var BUILD='v9.2';
 
 /* ================================================================
    目錄與凍結狀態
@@ -2438,7 +2424,8 @@ var HAS_TEX={
   tz_grip:1, tz_cell:1, tz_probe:1, tz_ammo:1,
   bot_head:1, bot_body:1, bot_arm:1, bot_full:1
 };
-var texCache={}, thumbCache={};   // thumbCache 是去背後的縮圖，提袋面板用
+// thumbCache 是去背後的圖，給 DOM 用的（目前只有三件組完成的慶祝動畫）
+var texCache={}, thumbCache={};
 /* 白底自動去背。
    從四個邊界往內做 flood fill，只清掉「接得到畫布邊緣」的白 ——
    所以物件內部的白色（錶面、穀片碗、泡麵袋的米白）不會被吃掉。
@@ -2510,9 +2497,9 @@ function itemTex(id){
   img.onload=function(){
     var k=keyWhite(img);
     t.image=k; t.needsUpdate=true;
-    /* 順手存一份去背後的縮圖給提袋面板用。
-       面板如果直接 <img src="tex/x.png">，走的是沒去背的原圖 ——
-       白底的那幾張在深色卡片上會變成一塊白方塊。 */
+    /* 順手存一份去背後的圖給 DOM 用（三件組完成的慶祝動畫）。
+       直接寫 <img src="tex/x.png"> 的話走的是沒去背的原圖 ——
+       白底的那幾張在近乎全黑的畫面上會變成一塊白方塊。 */
     try{ thumbCache[id]=k.toDataURL(); }catch(e){}
   };
   img.onerror=function(){ console.warn('[tex] 找不到 '+TEX_DIR+id+'.png'); };
@@ -3606,7 +3593,7 @@ function newRun(){
      下一局 stepSlot 接著跑完舊的計時器，把錢加進「新的」那一袋，
      而且 regObj.opened 已經重置，你還可以再拉一次。免費的雙倍。 */
   slot=null; document.body.classList.remove('slotting');
-  closeKeypad(); cancelHold(); dropDrag(); toggleBag(false);
+  closeKeypad(); cancelHold(); dropDrag(); clearSetFx();
   document.body.classList.remove('stopped');
   G.run=r; G.shift++;
   camera.position.set(SPAWN.x,1.65,SPAWN.z);
@@ -3754,6 +3741,12 @@ function buildItems(seed){
       SET_PARTS.bot.forEach(function(id,i){
         spawnItem(BY_ID[id],pick[i].x,pick[i].y,pick[i].z);
       });
+      /* 預熱完整機器人的貼圖。
+         它從來不會以世界物件的身分出現（只有三個部件會 spawn），
+         所以在這之前沒有任何地方請求過它的圖 —— 等到湊齊那一刻才抓，
+         慶祝動畫最搶眼的那 0.3 秒會是一張還沒載完的空圖。
+         這裡預熱之後，它有一整局的時間可以載完並去背。 */
+      itemTex(SET_RESULT.bot);
     }
   }
   /* 鑰匙：每次下手只有 keyChance 的機率會出現，位置隨機。
@@ -4201,10 +4194,6 @@ function openSafeB(code){
 var keypadOpen=false, keypadBuf='', keypadBad=false;
 function openKeypad(){
   if(keypadOpen||!safeB||safeB.opened)return;
-  /* 提袋要先關掉。鍵盤的 z-index 比提袋低，會開在它後面 ——
-     而鍵盤開著的時候鍵盤處理會吃掉除了數字之外的所有按鍵，
-     包含用來關提袋的 B。玩家會卡在一個關不掉、也看不到鍵盤的畫面。 */
-  toggleBag(false);
   keypadOpen=true; keypadBuf=''; keypadBad=false;
   document.body.classList.add('keypad-in');
   renderKeypad(); SFX.scan(); ev('keypad_open');
@@ -4379,7 +4368,6 @@ window.addEventListener('keydown',function(e){
     if(G.phase==='help'||G.phase==='board'){gotoTitle();}
     else if(G.phase==='play'&&lockFailed){ manualPause=!manualPause; }
   }
-  if(k==='b'&&G.phase==='play')toggleBag();
   if(k==='e'&&G.phase==='play')tryInteract();
   if(k==='q'&&G.phase==='play')useTaser();
   if(k==='r'&&G.phase==='play')useShrink();
@@ -4473,9 +4461,7 @@ function setupTouch(){
      漏掉任何一個，那個面板就捲不動 —— 因為一旦 lookId 被設起來，
      onMove 會 preventDefault，瀏覽器原生的捲動就被吃掉了。
      調參面板（#dev）就是這樣卡住的：它在畫面右半邊，而右半邊正是轉頭區。 */
-  // #bagview / #basket 一定要在這條名單裡，不然點提袋會被當成想轉頭
-  var UI_HOLD='#touch,#dev,#devtoggle,#keypad,#fsbtn,#hold,#slot,.layer.screen,'+
-              '#bagview,#basket';
+  var UI_HOLD='#touch,#dev,#devtoggle,#keypad,#fsbtn,#hold,#slot,.layer.screen';
   function onStart(e){
     if(G.phase!=='play')return;          // 標題／商店／排行榜的觸控要留給 UI
     if(devOpen())return;                 // 調參面板開著的時候整個畫面都讓給它
@@ -4601,14 +4587,6 @@ document.addEventListener('pointerlockchange',function(){
   locked = document.pointerLockElement===canvas;
   if(G.phase==='play'){ if(locked){manualPause=false;hidePause();} else if(!lockFailed)showPause(); }
 });
-/* 提袋：點 HUD 上的提袋方塊開，點畫面任何地方關。
-   滑鼠被鎖定的時候點不到 DOM，所以鍵盤的 B 才是主要的開關；
-   觸控沒有指標鎖定的問題，用點的最直覺。 */
-document.getElementById('basket').addEventListener('click',function(e){
-  e.stopPropagation(); toggleBag();
-});
-document.getElementById('bagview').addEventListener('click',function(){ toggleBag(false); });
-
 document.getElementById('pause').addEventListener('click',function(){
   if(G.phase!=='play')return;
   manualPause=false;
@@ -4996,6 +4974,10 @@ function handleSetPickup(r,d){
   r.value+=res.v; r.used+=res.slots;
   r.setDone=true;
   SFX.register();
+  /* 畫面中央把整隻放大出來停約 1.8 秒。
+     這是整局唯一一個「跨越好幾分鐘的目標」達成的瞬間，
+     原本的回饋只有一行 toast，跟撿到一包泡麵同一個等級。 */
+  showSetFx(res);
   showBeat('組裝完成',SET_NAME[key]+' —— $'+res.v,
     '三件分開只值 $'+(20*parts.length)+'，而且它還是算三件。',4000);
   ev('set_completed',{set:key,v:res.v});
@@ -5655,11 +5637,8 @@ function droneQuiet(on){
    因為滑鼠移動那條路徑只服務 delta 模式，而 steer 這條又被 return 跳過了。
    我在那個 return 上面還寫著「視角還能轉」的註解，但程式做的是相反的事。 */
 function stepLook(dt){
-  /* 推移轉向：游標離開中央圈多遠，就以多快的速度持續轉頭。
-     提袋開著的時候要停掉 —— 不然你把滑鼠移過去看清單，
-     視角就一路轉個不停，關掉面板時人已經面向牆壁了。
-     （artifact 的 iframe 常常拿不到指標鎖定，所以 steer 其實是預設路徑。） */
-  if(lookMode==='steer'&&pointerInside&&!bagOpen){
+  // 推移轉向：游標離開中央圈多遠，就以多快的速度持續轉頭。
+  if(lookMode==='steer'&&pointerInside){
     var dz=0.11;
     var ax=Math.abs(cursorNX)>dz ? (Math.abs(cursorNX)-dz)/(1-dz)*(cursorNX<0?-1:1) : 0;
     var ay=Math.abs(cursorNY)>dz ? (Math.abs(cursorNY)-dz)/(1-dz)*(cursorNY<0?-1:1) : 0;
@@ -5888,8 +5867,7 @@ function caught(by){
 var catchCam=null;
 function startCatchCam(by){
   G.phase='catchcam';
-  // 被抓的那個特寫是整局的結尾，不能被提袋面板擋住整整兩秒
-  toggleBag(false);
+  clearSetFx();
   if(document.pointerLockElement)document.exitPointerLock();
   hidePause();
   document.body.classList.add('catchcam');
@@ -5952,7 +5930,7 @@ function pushHistory(r,result){
 }
 function endRun(){
   G.phase='result';
-  closeKeypad(); cancelHold(); dropDrag(); toggleBag(false);
+  closeKeypad(); cancelHold(); dropDrag(); clearSetFx();
   slot=null; document.body.classList.remove('slotting');
   if(stopT>0){ stopT=0; document.body.classList.remove('stopped'); droneQuiet(false); }
   /* 午夜鐘按「回合」而不是「次數」過期：
@@ -6009,68 +5987,33 @@ function updateExitChip(){
   else if(r.unlocked){c.className='on';c.textContent='可以脫身了';}
   else{c.className='';c.textContent='還差 '+Math.max(0,CFG.extractItems-r.count)+' 件';}
 }
-/* ---------- 提袋檢視 ----------
-   不暫停遊戲。keypad 不暫停、躲櫃子不暫停，這個也一樣 ——
-   低頭清點戰利品的那幾秒，店員照樣在走，那本身就是代價。
-   所以提示列會直說「這期間店員不會停」，免得有人以為是安全區。 */
-var bagOpen=false;
-function toggleBag(force){
-  var want=(force===undefined)?!bagOpen:!!force;
-  if(want&&(G.phase!=='play'||!G.run||keypadOpen))return;
-  bagOpen=want;
-  $('bagview').classList.toggle('on',bagOpen);
-  if(bagOpen)renderBag();
+/* ---------- 三件組完成的慶祝 ----------
+   把整隻機器人放到畫面中央、由小彈到大、停約 1.8 秒。
+
+   為什麼值得做：湊齊機器人是這個遊戲裡唯一一個「跨越好幾分鐘」的目標，
+   而它原本的回饋只有一行 toast 跟一個 beat 方塊 —— 跟撿到一包泡麵同一個等級。
+   達成的重量沒有被畫出來。 */
+function showSetFx(def){
+  // 用去背過的那份；還沒載完就退回原圖（白底的話會有個框，但總比沒有好）
+  var src=thumbCache[def.id]||(HAS_TEX[def.id]?TEX_DIR+def.id+'.png?v='+BUILD:'');
+  if(!src)return;
+  var el=$('setfx');
+  $('setfximg').src=src;
+  $('setfxval').textContent='$'+def.v;
+  /* 先移除再強制重排再加回去 —— 不然連續觸發時
+     CSS 動畫不會從頭播（class 沒有真的變過）。 */
+  el.classList.remove('on');
+  void el.offsetWidth;
+  el.classList.add('on');
+  clearTimeout(showSetFx._t);
+  showSetFx._t=setTimeout(function(){ el.classList.remove('on'); },2800);
 }
-function renderBag(){
-  var r=G.run; if(!r)return;
-  $('bagvalbig').textContent='$'+r.value;
-  var cap=capacityNow(), pct=r.used/cap;
-  var sl=$('bagslotsbig');
-  sl.innerHTML='<b>'+r.used+' / '+cap+'</b> 格<br>'+r.count+' 件';
-  sl.classList.toggle('heavy',pct>=CFG.loadThreshold);
-  sl.classList.toggle('full',pct>=1);
-  // 依「這一疊總共值多少」排序 —— 要丟東西的時候，你想先看到的是最貴的
-  var rows=[];
-  for(var id in r.loot)if(r.loot.hasOwnProperty(id))rows.push(r.loot[id]);
-  rows.sort(function(a,b){ return (b.val*b.n)-(a.val*a.n); });
-  // 拉霸贏了錢但一件東西都沒拿，也不能說「還是空的」
-  if(!rows.length&&!r.slotWin){
-    $('baggrid').innerHTML='<div class="bagempty">還是空的。<br>'+
-      '走到商品前面按 '+K('E','「拿」')+'。</div>';
-  }else{
-    $('baggrid').innerHTML=rows.map(function(it){
-      var d=it.def, forb=(d.tier==='forbidden');
-      // 優先用去背過的那份；還沒載完就先退回原圖，載完之後再開就會正常
-      var src=thumbCache[d.id]||(HAS_TEX[d.id]?TEX_DIR+d.id+'.png?v='+BUILD:'');
-      var img=src ? '<img src="'+src+'" alt="">'
-                  : '<img alt="" style="background:#'+
-                    ('000000'+d.color.toString(16)).slice(-6)+'">';
-      return '<div class="bagrow'+(forb?' forbid':'')+'">'+img+
-        '<div class="bn">'+d.name+
-          '<small>'+d.slots+' 格'+(it.n>1?' × '+it.n+' = '+(d.slots*it.n)+' 格':'')+'</small></div>'+
-        '<div class="bq">'+(it.n>1?'×'+it.n:'')+'</div>'+
-        '<div class="bv">$'+(it.val*it.n)+'</div></div>';
-    }).join('');
-  }
-  /* 拉霸贏來的錢有加進 r.value 但沒有對應的物品 ——
-     不列一行的話，上面那個總額會比下面所有列加起來多出最多 $1000，
-     看起來就像面板算錯了。 */
-  if(r.slotWin>0){
-    $('baggrid').innerHTML+=
-      '<div class="bagrow"><div></div>'+
-      '<div class="bn">辦公室拉霸<small>不佔格子</small></div>'+
-      '<div class="bq"></div><div class="bv">$'+r.slotWin+'</div></div>';
-  }
-  var fc=r.forbidCount||0;
-  $('baghint').innerHTML=
-    (fc?'<b style="color:var(--forbid)">身上有 '+fc+' 件非賣品</b> · 整袋加成 '+
-        Math.round(CFG.riskBonus*fc*100)+'%<br>':'')+
-    K('按 <kbd>B</kbd> 關閉','點畫面任一處關閉')+
-    ' · <b style="color:var(--danger)">這期間店員不會停下來</b>';
+function clearSetFx(){
+  clearTimeout(showSetFx._t);
+  $('setfx').classList.remove('on');
 }
 function updateHUD(){
   var r=G.run; if(!r)return;
-  if(bagOpen)renderBag();          // 開著的時候撿到東西要即時反映
   $('bagval').innerHTML='$'+r.value+'<small>'+r.count+' 件</small>';
   $('capnum').textContent=r.used+' / '+capacityNow()+' 格';
   var pct=Math.min(100,r.used/capacityNow()*100);
