@@ -30,9 +30,60 @@
   body.playing #stage canvas{cursor:none}
 
   .layer{position:fixed;inset:0;pointer-events:none;z-index:10}
+  /* 訊息層：要在觸控按鍵（22）之上、密碼鍵盤（24）之下。
+     整層 pointer-events:none，所以不會擋到任何觸控。 */
+  #hudtop{z-index:23}
   .layer.screen{pointer-events:auto;display:flex;align-items:center;justify-content:center;
     background:radial-gradient(120% 90% at 50% 0%,rgba(20,26,20,.94),rgba(6,8,6,.98));z-index:30}
   .layer.hidden{display:none}
+
+  /* ---------- 提袋檢視 ----------
+     刻意「不」暫停遊戲。keypad 不暫停、躲櫃子不暫停，這個也一樣 ——
+     低頭清點戰利品的那幾秒，店員照樣在走。那本身就是一個代價。 */
+  /* 沒有 backdrop-filter：它是整頁的合成器回讀，每幀一次，
+     而這個面板刻意讓遊戲繼續跑 —— 等於在最需要順暢的那幾秒掉幀。
+     用深一點的純色擋住就夠了。 */
+  #bagview{position:fixed;inset:0;z-index:26;display:none;
+    align-items:center;justify-content:center;padding:24px;
+    background:rgba(5,8,5,.86)}
+  #bagview.on{display:flex}
+  .bagcard{width:min(92vw,560px);max-height:80vh;overflow:auto;
+    background:rgba(17,21,15,.97);border:1px solid var(--line);padding:18px 20px}
+  .baghead{display:flex;justify-content:space-between;align-items:flex-end;
+    gap:16px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+  .bagval{font-family:var(--f-mono);font-size:30px;color:var(--price);line-height:1.1}
+  .bagslots{font-family:var(--f-mono);font-size:13px;color:var(--dim);text-align:right}
+  .bagslots b{color:var(--tube)}
+  .bagslots.heavy b{color:var(--price)}
+  .bagslots.full b{color:var(--danger)}
+  .baggrid{display:grid;gap:2px;margin-top:10px}
+  .bagrow{display:grid;grid-template-columns:38px 1fr auto auto;gap:10px;
+    align-items:center;padding:6px 4px;border-bottom:1px solid #1b211a}
+  .bagrow img{width:38px;height:38px;image-rendering:pixelated;
+    background:#0f1310;border:1px solid #1e2620}
+  .bagrow .bn{font-size:13px;line-height:1.3}
+  .bagrow .bn small{display:block;color:var(--dimmer);font-size:10.5px;
+    font-family:var(--f-mono);letter-spacing:.04em}
+  .bagrow .bq{font-family:var(--f-mono);font-size:12px;color:var(--dim);min-width:26px;
+    text-align:right}
+  .bagrow .bv{font-family:var(--f-mono);font-size:14px;color:var(--price);min-width:56px;
+    text-align:right}
+  .bagrow.forbid .bv{color:var(--forbid)}
+  .bagrow.forbid .bn{color:var(--forbid)}
+  .bagempty{color:var(--dim);font-size:13px;padding:22px 4px;text-align:center}
+  .baghint{margin-top:12px;color:var(--dimmer);font-size:11.5px;text-align:center;
+    border-top:1px solid var(--line);padding-top:10px}
+  /* pointer-events:auto 是必要的，不是裝飾。
+     #basket 在 .layer#hud 裡面，而 .layer 是 pointer-events:none ——
+     少了這一行，點擊事件根本到不了它，整個「點提袋打開」的功能是死的，
+     觸控裝置更是完全沒有辦法開（手機沒有 B 鍵）。 */
+  #basket{cursor:pointer;pointer-events:auto}
+  @media (max-width:620px){
+    .bagcard{padding:14px 14px;max-height:84vh}
+    .bagval{font-size:24px}
+    .bagrow{grid-template-columns:32px 1fr auto auto;gap:8px}
+    .bagrow img{width:32px;height:32px}
+  }
 
   /* ---------- HUD ---------- */
   #crosshair{position:absolute;left:50%;top:50%;width:22px;height:22px;margin:-11px 0 0 -11px}
@@ -329,9 +380,13 @@
      的時候黏著，一旦捲過去它就跟著往上跑掉了。而裝備欄、犯案紀錄、歷次犯案
      全在它下面，所以看紀錄的時候按鈕永遠不在畫面上。
      改成 sticky top 並移到最前面：一進商店就看得到，往下捲也不會走。 */
+  /* box-shadow 是在自己上方畫一塊同色實心區。
+     少了它，捲上去的內容會從釘住的這一條「上面」露出一小截 ——
+     卡片有 34px 的上內距，sticky 只蓋得住自己那個盒子。 */
   .cardtop{position:sticky;top:0;z-index:6;display:flex;gap:12px;flex-wrap:wrap;
     align-items:center;padding:14px 0 12px;margin-bottom:6px;
-    background:var(--ink-2);border-bottom:1px solid var(--line)}
+    background:var(--ink-2);border-bottom:1px solid var(--line);
+    box-shadow:0 -40px 0 var(--ink-2)}
   .cardtop .btn{margin-top:0}
   .eyebrow{font-family:var(--f-mono);font-size:11px;letter-spacing:.26em;color:var(--dimmer);
     text-transform:uppercase;margin-bottom:12px}
@@ -602,7 +657,9 @@
   #dev .mini button{flex:1;padding:7px;font-size:11px;font-weight:700;background:transparent;
     border:1px solid var(--line-hi);cursor:pointer}
   #dev .mini button:hover{background:#1B231C}
-  #devtoggle{position:fixed;right:14px;bottom:14px;z-index:26;pointer-events:auto;padding:7px 12px;
+  /* z-index 23：要在 #touch（22）之上、提袋（26）之下。
+     跟提袋同層又排在 DOM 後面的話，它會浮在面板上面還能按到。 */
+  #devtoggle{position:fixed;right:14px;bottom:14px;z-index:23;pointer-events:auto;padding:7px 12px;
     font-family:var(--f-mono);font-size:11px;letter-spacing:.1em;background:rgba(9,12,9,.9);
     border:1px solid var(--line-hi);cursor:pointer}
   #devtoggle:hover{border-color:var(--price);color:var(--price)}
@@ -711,7 +768,12 @@
   body.touch #objective .tag{display:none}
   body.touch #objective .line{font-size:13.5px}
   body.touch #objective .hint{font-size:11px}
-  body.touch #beat{top:auto;bottom:26%;width:min(58vw,400px);padding:11px 14px}
+  /* 58vw 是當初為了「橫向避開觸控按鍵」才壓這麼窄的。
+     現在訊息層疊在按鍵上面了，就不需要閃躲 —— 字條那種兩行的劇情文字
+     在 58vw 下會被擠成四五行。往上挪到 32% 也是同樣的理由。
+     蓋住按鍵不要緊：這一層 pointer-events:none，底下照樣按得到，
+     而且點畫面任一處就能把它關掉。 */
+  body.touch #beat{top:auto;bottom:32%;width:min(72vw,440px);padding:11px 14px}
   body.touch #beat .b1{font-size:18px}
   body.touch #beat .b2{font-size:12px}
   body.touch #beat .b3{font-size:11px}
@@ -725,7 +787,7 @@
   /* 全螢幕與調參：移到左上角提袋面板下方。
      不能放畫面正下方中央 —— 那是 iPhone 的 home 手勢區，會誤觸。 */
   #fsbtn{position:fixed;left:50%;bottom:12px;transform:translateX(-100%);margin-left:-5px;
-    z-index:26;pointer-events:auto;padding:7px 12px;font-family:var(--f-mono);font-size:11px;
+    z-index:23;pointer-events:auto;padding:7px 12px;font-family:var(--f-mono);font-size:11px;
     letter-spacing:.1em;background:rgba(9,12,9,.9);border:1px solid var(--line-hi);
     color:var(--tube);cursor:pointer}
   #fsbtn:hover{border-color:var(--price);color:var(--price)}
@@ -761,7 +823,6 @@
   <div id="crosshair"><i></i><i></i><i></i><i></i></div>
   <div id="spot"><div class="lbl">被發現中</div><div class="track"><div class="fill"></div></div></div>
   <div id="objective"><div class="tag">當前目標</div><div class="line">—</div><div class="hint"></div></div>
-  <div id="beat"><div class="b1"></div><div class="b2"></div><div class="b3"></div></div>
   <div id="basket">
     <div class="cap-label"><span>提袋</span><span class="cap-num" id="capnum">0 / 12 格</span></div>
     <div class="val" id="bagval">$0</div>
@@ -780,8 +841,6 @@
     <div id="exitchip">出口鎖定</div>
   </div>
   <div id="prompt"></div>
-  <div id="toast"></div>
-  <div id="pa"><span>店內廣播</span><em id="patext"></em></div>
   <div id="slot">
     <div class="reels"><b id="sl0">7</b><b id="sl1">7</b><b id="sl2">7</b></div>
     <div id="slotmsg"></div>
@@ -798,6 +857,22 @@
   <div id="chasetag">他在追你</div>
   <div id="caught"><b>你被抓到了</b></div>
   <div id="flash"></div>
+</div>
+
+<!-- 訊息類的東西另外一層，疊在觸控搖桿與按鍵（#touch，z-index 22）之上。
+
+     為什麼不能留在 #hud 裡：.layer 是 z-index:10 而且它自己是一個 stacking
+     context —— 子元素的 z-index 逃不出去。所以手機上字條、廣播、toast
+     全部被觸控按鍵蓋住，文字看得到一半或整段看不到。
+     （#keypad 那邊也踩過同一個坑，它的註解裡寫著同一件事。）
+
+     整層維持 pointer-events:none，所以不會偷走任何觸控。
+     不把整個 #hud 拉上來，是因為提袋面板在左下角、跟搖桿重疊 ——
+     拉上來就變成提袋蓋住搖桿，更糟。 -->
+<div class="layer" id="hudtop">
+  <div id="beat"><div class="b1"></div><div class="b2"></div><div class="b3"></div></div>
+  <div id="toast"></div>
+  <div id="pa"><span>店內廣播</span><em id="patext"></em></div>
 </div>
 
 <div class="layer screen" id="s-title">
@@ -992,6 +1067,20 @@
   <div id="morehint">▼ 還有裝備欄與紀錄</div>
 </div>
 
+<div id="bagview">
+  <div class="bagcard">
+    <div class="baghead">
+      <div>
+        <div class="eyebrow" style="margin-bottom:2px">提袋裡有什麼</div>
+        <div class="bagval" id="bagvalbig">$0</div>
+      </div>
+      <div class="bagslots" id="bagslotsbig">—</div>
+    </div>
+    <div class="baggrid" id="baggrid"></div>
+    <div class="baghint" id="baghint"></div>
+  </div>
+</div>
+
 <div id="stopfx">
   <div class="ring"><b id="stopnum">0.0</b><span>時 間 停 止</span></div>
 </div>
@@ -1049,7 +1138,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v8.7';
+var BUILD='v9.0';
 
 /* ================================================================
    目錄與凍結狀態
@@ -1922,17 +2011,37 @@ var COLD_C=texTile(['#414e56','#3d4a52','#45525a','#39464e'],'#262f35');
 
    specularMap 直接餵同一張磁磚圖：磁磚面是亮的 → 反光強，
    磚縫是暗的 → 幾乎不反光。跟真的地板一樣，而且不用另外畫一張圖。 */
+/* 手機退回 Lambert。
+   Phong 是逐像素，而場上有 16 盞燈（13 支燈管 + 平行光 + 非賣品的兩盞）——
+   地板佔了畫面三分之一到一半，等於每幀幾十萬個像素各跑 16 次光照加一次 pow()。
+   這是這批改動裡唯一真的有手機風險的東西。
+
+   但 Lambert 是逐頂點，而平面預設只有四個頂點 —— 那正是原本
+   「燈光打在地上完全沒效果」的原因。所以退回 Lambert 的同時要把平面切開
+   （見下面的 floorSeg）：一千多個頂點就能把燈池插出來，成本幾乎是零。
+   手機拿到的是「有光池、沒鏡面反光」，桌機兩個都有。 */
 var floorMats=[];
 function floorMat(cv,w,d,shine){
   var t=mkTex(cv); t.repeat.set(w/TILE_M,d/TILE_M);
-  var m=new THREE.MeshPhongMaterial({
-    map:t, specularMap:t,
-    specular:new THREE.Color(0x3d4643),
-    shininess:shine||1
-  });
-  m.userData.shineMul=shine||1;
-  floorMats.push(m);
+  var m;
+  if(IS_TOUCH){
+    m=new THREE.MeshLambertMaterial({map:t});
+  }else{
+    m=new THREE.MeshPhongMaterial({
+      map:t, specularMap:t,
+      specular:new THREE.Color(0x3d4643),
+      shininess:shine||1
+    });
+    m.userData.shineMul=shine||1;
+    floorMats.push(m);
+  }
   return m;
+}
+/* 每 1.5 公尺一個頂點。切太細沒有意義（燈池的邊緣本來就是糊的），
+   切太粗則會看到光池變成一塊一塊的多邊形。 */
+function floorSeg(w,d){
+  return new THREE.PlaneGeometry(w,d,Math.max(1,Math.round(w/1.5)),
+                                      Math.max(1,Math.round(d/1.5)));
 }
 var MAT={
   floor:floorMat(TILE_C,40,39,1),
@@ -1952,9 +2061,9 @@ var MAT={
 
 /* 地板。北牆推到 z=-21.8 之後這三塊都要跟著加大 ——
    漏掉的話後場裡段會是一片虛空，玩家會直接看穿到場景外面。 */
-var floor=new THREE.Mesh(new THREE.PlaneGeometry(40,39),MAT.floor);
+var floor=new THREE.Mesh(floorSeg(40,39),MAT.floor);
 floor.rotation.x=-Math.PI/2; floor.position.set(0,0,-3.3); scene.add(floor);
-var coldFloor=new THREE.Mesh(new THREE.PlaneGeometry(13.2,10.8),MAT.cold);
+var coldFloor=new THREE.Mesh(floorSeg(13.2,10.8),MAT.cold);
 coldFloor.rotation.x=-Math.PI/2; coldFloor.position.set(-13,0.02,-15.6); scene.add(coldFloor);
 /* GridHelper 拿掉了 —— 它本來是拿線框假裝磁磚縫，現在地板貼圖自己有縫。
    兩個疊在一起會出現雙重格線，而且它的格距（2m）跟磁磚（1.8m）對不上。 */
@@ -1965,9 +2074,9 @@ coldFloor.rotation.x=-Math.PI/2; coldFloor.position.set(-13,0.02,-15.6); scene.a
    短了的話門口會留一條 0.1m 的縫，門打開的瞬間就看得到底下的虛空。
    y 抬到 0.005 是為了不跟主地板共面 —— 兩塊 y=0 的地板重疊在門口
    會 z-fighting，出現一條閃爍的條紋。 */
-var corrFloor=new THREE.Mesh(new THREE.PlaneGeometry(13.4,4.0),floorMat(TILE_C,13.4,4.0,1));
+var corrFloor=new THREE.Mesh(floorSeg(13.4,4.0),floorMat(TILE_C,13.4,4.0,1));
 corrFloor.rotation.x=-Math.PI/2; corrFloor.position.set(-26.3,0.005,0); scene.add(corrFloor);
-var offFloor=new THREE.Mesh(new THREE.PlaneGeometry(7.6,10.0),floorMat(COLD_C,7.6,10.0,1.5));
+var offFloor=new THREE.Mesh(floorSeg(7.6,10.0),floorMat(COLD_C,7.6,10.0,1.5));
 offFloor.rotation.x=-Math.PI/2; offFloor.position.set(-36.3,0.01,0); scene.add(offFloor);
 
 /* ---------- 天花板 ----------
@@ -2329,7 +2438,7 @@ var HAS_TEX={
   tz_grip:1, tz_cell:1, tz_probe:1, tz_ammo:1,
   bot_head:1, bot_body:1, bot_arm:1, bot_full:1
 };
-var texCache={};
+var texCache={}, thumbCache={};   // thumbCache 是去背後的縮圖，提袋面板用
 /* 白底自動去背。
    從四個邊界往內做 flood fill，只清掉「接得到畫布邊緣」的白 ——
    所以物件內部的白色（錶面、穀片碗、泡麵袋的米白）不會被吃掉。
@@ -2398,7 +2507,14 @@ function itemTex(id){
   t.magFilter=THREE.NearestFilter; t.minFilter=THREE.NearestFilter;
   t.generateMipmaps=false;
   var img=new Image();
-  img.onload=function(){ t.image=keyWhite(img); t.needsUpdate=true; };
+  img.onload=function(){
+    var k=keyWhite(img);
+    t.image=k; t.needsUpdate=true;
+    /* 順手存一份去背後的縮圖給提袋面板用。
+       面板如果直接 <img src="tex/x.png">，走的是沒去背的原圖 ——
+       白底的那幾張在深色卡片上會變成一塊白方塊。 */
+    try{ thumbCache[id]=k.toDataURL(); }catch(e){}
+  };
   img.onerror=function(){ console.warn('[tex] 找不到 '+TEX_DIR+id+'.png'); };
   /* 帶版號破快取。貼圖會一直重畫，而 <img> 的快取跟 HTML 是分開的 ——
      沒有這個的話，你換了一張圖、推上去、然後看到的還是舊的那張，
@@ -2437,6 +2553,13 @@ function spriteMode(def){ return !!HAS_TEX[def.id]||CFG.spritePreview>0; }
    積木的原點在腳下（幾何往上長），平面預設卻是以中心對齊，
    不改的話東西會有一半陷進層板裡。 */
 var SPRITE_GEO=new THREE.PlaneGeometry(1,1); SPRITE_GEO.translate(0,0.5,0);
+// 佔幾格 → 在架上畫多大。0 格（鑰匙、電擊槍部件）當 1 格處理
+/* 1.5 倍是使用者指定的，但不能照字面做到底：
+   下層層板在 y=0.73，上層層板的底面在 1.2325 —— 中間只有 0.50m。
+   spriteSize 0.265 × 1.32 = 0.35m，乘 1.5 就是 0.525，已經穿過層板了。
+   所以 2 格封在 1.30（0.455m）、3 格封在 1.40（0.49m），
+   兩個都剛好塞得進那 0.50m。視覺上的大小差距還是明顯的。 */
+function slotScale(n){ return n>=3?1.40:(n===2?1.30:1); }
 var spriteMats=[];
 function buildModel(def){
   var g=new THREE.Group();
@@ -2455,7 +2578,12 @@ function buildModel(def){
       emissive:0xffffff, emissiveMap:tex, emissiveIntensity:CFG.spriteGlow});
     spriteMats.push(m);
     var s=new THREE.Mesh(SPRITE_GEO,m);
-    s.scale.set(CFG.spriteSize,CFG.spriteSize,1);
+    /* 佔兩格的東西在架上就要看起來比較大。
+       這不只是好看 —— 提袋格數是這個遊戲最硬的限制，
+       而「這件要吃掉我兩格」以前只有走到價格標前面才知道。
+       體積直接把成本畫出來，你在走道另一頭就能開始算。 */
+    var sz=CFG.spriteSize*slotScale(def.slots);
+    s.scale.set(sz,sz,1);
     g.add(s); g.userData.sprite=s;
   }else{
     (SHAPES[def.shape]||SHAPES.pack)(def.color).forEach(function(m){g.add(m);});
@@ -3468,7 +3596,8 @@ function newRun(){
     // 密碼每局重抽（100～999），所以背不起來，只能當場記
     code:String(100+Math.floor(Math.random()*900)),
     codeFound:false, codeFails:0,
-    spotted:0, maxHeat:0, usedItem:false     // 評分用
+    spotted:0, maxHeat:0, usedItem:false,    // 評分用
+    forbidCount:0, slotWin:0
   };
   shrinkT=0; stopT=0; doorPingT=0;
   document.body.classList.remove('shrunk','shrink-end');
@@ -3477,7 +3606,7 @@ function newRun(){
      下一局 stepSlot 接著跑完舊的計時器，把錢加進「新的」那一袋，
      而且 regObj.opened 已經重置，你還可以再拉一次。免費的雙倍。 */
   slot=null; document.body.classList.remove('slotting');
-  closeKeypad(); cancelHold(); dropDrag();
+  closeKeypad(); cancelHold(); dropDrag(); toggleBag(false);
   document.body.classList.remove('stopped');
   G.run=r; G.shift++;
   camera.position.set(SPAWN.x,1.65,SPAWN.z);
@@ -4072,6 +4201,10 @@ function openSafeB(code){
 var keypadOpen=false, keypadBuf='', keypadBad=false;
 function openKeypad(){
   if(keypadOpen||!safeB||safeB.opened)return;
+  /* 提袋要先關掉。鍵盤的 z-index 比提袋低，會開在它後面 ——
+     而鍵盤開著的時候鍵盤處理會吃掉除了數字之外的所有按鍵，
+     包含用來關提袋的 B。玩家會卡在一個關不掉、也看不到鍵盤的畫面。 */
+  toggleBag(false);
   keypadOpen=true; keypadBuf=''; keypadBad=false;
   document.body.classList.add('keypad-in');
   renderKeypad(); SFX.scan(); ev('keypad_open');
@@ -4246,6 +4379,7 @@ window.addEventListener('keydown',function(e){
     if(G.phase==='help'||G.phase==='board'){gotoTitle();}
     else if(G.phase==='play'&&lockFailed){ manualPause=!manualPause; }
   }
+  if(k==='b'&&G.phase==='play')toggleBag();
   if(k==='e'&&G.phase==='play')tryInteract();
   if(k==='q'&&G.phase==='play')useTaser();
   if(k==='r'&&G.phase==='play')useShrink();
@@ -4339,7 +4473,9 @@ function setupTouch(){
      漏掉任何一個，那個面板就捲不動 —— 因為一旦 lookId 被設起來，
      onMove 會 preventDefault，瀏覽器原生的捲動就被吃掉了。
      調參面板（#dev）就是這樣卡住的：它在畫面右半邊，而右半邊正是轉頭區。 */
-  var UI_HOLD='#touch,#dev,#devtoggle,#keypad,#fsbtn,#hold,#slot,.layer.screen';
+  // #bagview / #basket 一定要在這條名單裡，不然點提袋會被當成想轉頭
+  var UI_HOLD='#touch,#dev,#devtoggle,#keypad,#fsbtn,#hold,#slot,.layer.screen,'+
+              '#bagview,#basket';
   function onStart(e){
     if(G.phase!=='play')return;          // 標題／商店／排行榜的觸控要留給 UI
     if(devOpen())return;                 // 調參面板開著的時候整個畫面都讓給它
@@ -4465,6 +4601,14 @@ document.addEventListener('pointerlockchange',function(){
   locked = document.pointerLockElement===canvas;
   if(G.phase==='play'){ if(locked){manualPause=false;hidePause();} else if(!lockFailed)showPause(); }
 });
+/* 提袋：點 HUD 上的提袋方塊開，點畫面任何地方關。
+   滑鼠被鎖定的時候點不到 DOM，所以鍵盤的 B 才是主要的開關；
+   觸控沒有指標鎖定的問題，用點的最直覺。 */
+document.getElementById('basket').addEventListener('click',function(e){
+  e.stopPropagation(); toggleBag();
+});
+document.getElementById('bagview').addEventListener('click',function(){ toggleBag(false); });
+
 document.getElementById('pause').addEventListener('click',function(){
   if(G.phase!=='play')return;
   manualPause=false;
@@ -5511,8 +5655,11 @@ function droneQuiet(on){
    因為滑鼠移動那條路徑只服務 delta 模式，而 steer 這條又被 return 跳過了。
    我在那個 return 上面還寫著「視角還能轉」的註解，但程式做的是相反的事。 */
 function stepLook(dt){
-  // 推移轉向：游標離開中央圈多遠，就以多快的速度持續轉頭。
-  if(lookMode==='steer'&&pointerInside){
+  /* 推移轉向：游標離開中央圈多遠，就以多快的速度持續轉頭。
+     提袋開著的時候要停掉 —— 不然你把滑鼠移過去看清單，
+     視角就一路轉個不停，關掉面板時人已經面向牆壁了。
+     （artifact 的 iframe 常常拿不到指標鎖定，所以 steer 其實是預設路徑。） */
+  if(lookMode==='steer'&&pointerInside&&!bagOpen){
     var dz=0.11;
     var ax=Math.abs(cursorNX)>dz ? (Math.abs(cursorNX)-dz)/(1-dz)*(cursorNX<0?-1:1) : 0;
     var ay=Math.abs(cursorNY)>dz ? (Math.abs(cursorNY)-dz)/(1-dz)*(cursorNY<0?-1:1) : 0;
@@ -5741,6 +5888,8 @@ function caught(by){
 var catchCam=null;
 function startCatchCam(by){
   G.phase='catchcam';
+  // 被抓的那個特寫是整局的結尾，不能被提袋面板擋住整整兩秒
+  toggleBag(false);
   if(document.pointerLockElement)document.exitPointerLock();
   hidePause();
   document.body.classList.add('catchcam');
@@ -5803,7 +5952,7 @@ function pushHistory(r,result){
 }
 function endRun(){
   G.phase='result';
-  closeKeypad(); cancelHold(); dropDrag();
+  closeKeypad(); cancelHold(); dropDrag(); toggleBag(false);
   slot=null; document.body.classList.remove('slotting');
   if(stopT>0){ stopT=0; document.body.classList.remove('stopped'); droneQuiet(false); }
   /* 午夜鐘按「回合」而不是「次數」過期：
@@ -5860,8 +6009,68 @@ function updateExitChip(){
   else if(r.unlocked){c.className='on';c.textContent='可以脫身了';}
   else{c.className='';c.textContent='還差 '+Math.max(0,CFG.extractItems-r.count)+' 件';}
 }
+/* ---------- 提袋檢視 ----------
+   不暫停遊戲。keypad 不暫停、躲櫃子不暫停，這個也一樣 ——
+   低頭清點戰利品的那幾秒，店員照樣在走，那本身就是代價。
+   所以提示列會直說「這期間店員不會停」，免得有人以為是安全區。 */
+var bagOpen=false;
+function toggleBag(force){
+  var want=(force===undefined)?!bagOpen:!!force;
+  if(want&&(G.phase!=='play'||!G.run||keypadOpen))return;
+  bagOpen=want;
+  $('bagview').classList.toggle('on',bagOpen);
+  if(bagOpen)renderBag();
+}
+function renderBag(){
+  var r=G.run; if(!r)return;
+  $('bagvalbig').textContent='$'+r.value;
+  var cap=capacityNow(), pct=r.used/cap;
+  var sl=$('bagslotsbig');
+  sl.innerHTML='<b>'+r.used+' / '+cap+'</b> 格<br>'+r.count+' 件';
+  sl.classList.toggle('heavy',pct>=CFG.loadThreshold);
+  sl.classList.toggle('full',pct>=1);
+  // 依「這一疊總共值多少」排序 —— 要丟東西的時候，你想先看到的是最貴的
+  var rows=[];
+  for(var id in r.loot)if(r.loot.hasOwnProperty(id))rows.push(r.loot[id]);
+  rows.sort(function(a,b){ return (b.val*b.n)-(a.val*a.n); });
+  // 拉霸贏了錢但一件東西都沒拿，也不能說「還是空的」
+  if(!rows.length&&!r.slotWin){
+    $('baggrid').innerHTML='<div class="bagempty">還是空的。<br>'+
+      '走到商品前面按 '+K('E','「拿」')+'。</div>';
+  }else{
+    $('baggrid').innerHTML=rows.map(function(it){
+      var d=it.def, forb=(d.tier==='forbidden');
+      // 優先用去背過的那份；還沒載完就先退回原圖，載完之後再開就會正常
+      var src=thumbCache[d.id]||(HAS_TEX[d.id]?TEX_DIR+d.id+'.png?v='+BUILD:'');
+      var img=src ? '<img src="'+src+'" alt="">'
+                  : '<img alt="" style="background:#'+
+                    ('000000'+d.color.toString(16)).slice(-6)+'">';
+      return '<div class="bagrow'+(forb?' forbid':'')+'">'+img+
+        '<div class="bn">'+d.name+
+          '<small>'+d.slots+' 格'+(it.n>1?' × '+it.n+' = '+(d.slots*it.n)+' 格':'')+'</small></div>'+
+        '<div class="bq">'+(it.n>1?'×'+it.n:'')+'</div>'+
+        '<div class="bv">$'+(it.val*it.n)+'</div></div>';
+    }).join('');
+  }
+  /* 拉霸贏來的錢有加進 r.value 但沒有對應的物品 ——
+     不列一行的話，上面那個總額會比下面所有列加起來多出最多 $1000，
+     看起來就像面板算錯了。 */
+  if(r.slotWin>0){
+    $('baggrid').innerHTML+=
+      '<div class="bagrow"><div></div>'+
+      '<div class="bn">辦公室拉霸<small>不佔格子</small></div>'+
+      '<div class="bq"></div><div class="bv">$'+r.slotWin+'</div></div>';
+  }
+  var fc=r.forbidCount||0;
+  $('baghint').innerHTML=
+    (fc?'<b style="color:var(--forbid)">身上有 '+fc+' 件非賣品</b> · 整袋加成 '+
+        Math.round(CFG.riskBonus*fc*100)+'%<br>':'')+
+    K('按 <kbd>B</kbd> 關閉','點畫面任一處關閉')+
+    ' · <b style="color:var(--danger)">這期間店員不會停下來</b>';
+}
 function updateHUD(){
   var r=G.run; if(!r)return;
+  if(bagOpen)renderBag();          // 開著的時候撿到東西要即時反映
   $('bagval').innerHTML='$'+r.value+'<small>'+r.count+' 件</small>';
   $('capnum').textContent=r.used+' / '+capacityNow()+' 格';
   var pct=Math.min(100,r.used/capacityNow()*100);
