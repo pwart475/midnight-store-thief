@@ -989,7 +989,7 @@
         代價：拖著走得慢、不能衝刺、一路有聲音，而且他醒來的時候你就站在旁邊 ——
         所以要在立櫃附近開打，位置就是技術</div>
       <div><b>·</b>賣場<b>西牆</b>有個門口，一條 12 公尺的走廊通到最西邊的
-        <b style="color:var(--danger)">辦公室</b>（紅門，旁邊有牌子）。
+        <b style="color:#7CC0FF">辦公室</b>（藍門，旁邊有牌子）。
         走廊<b style="color:var(--danger)">沒有任何掩體</b> —— 在裡面被看到就只能一路衝到底。
         鑰匙只有在你已經組好電擊槍之後才會出現（那之後每關都有），
         開門要<b>按住 5 秒</b>不動，中途被追就重來</div>
@@ -1162,7 +1162,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v10.4';
+var BUILD='v10.6';
 
 /* ================================================================
    目錄與凍結狀態
@@ -1332,10 +1332,11 @@ var DEF = {
      而不是「整間店一樣灰」。黑暗在這個遊戲裡是有功能的
      （停電、手電筒升級、躲櫃子、視線距離全部靠它），所以整體不能拉亮。 */
   /* 這兩個是實際試出來的，不是我算的。
-     環境光壓到幾乎關掉（0.07），燈管也只給 0.70 —— 比我原本提的暗很多。
-     光線幾乎全部來自輝光那一層，所以日光燈變成「會發亮的物體」
-     而不是「照亮房間的東西」。那個差別就是恐怖片跟賣場型錄的差別。 */
-  lightAmb:0.07, lightLamp:0.70,
+     0.07 那一版太極端了：走道完全看不到東西，而店員的視野距離並沒有
+     跟著變短，變成「你看不到他、他看得到你」。0.2 看得見輪廓，
+     但燈下跟走道還是差一截，黑暗仍然有功能（躲櫃子、停電、手電筒升級）。
+     商品的自體發光是綁環境光的比例，所以這一拉，商品會自己跟上。 */
+  lightAmb:0.20, lightLamp:0.70,
   /* 藍綠分級的強度。環境光本身已經是藍綠的（見 PAL.amb），
      這一層是補最後那一點 —— 它連霧和遠處一起染到，環境光只染得到幾何。
      0 = 完全關掉。 */
@@ -2079,13 +2080,49 @@ function texCeil(){
   g.fillRect(3,3,58,58);
   return c;
 }
+/* 橘色木地板。板子是 128 畫素長、16 畫素寬，隔一列錯開半塊 ——
+   不錯開的話，整片賣場會出現一條從門口貫穿到底的直線接縫，
+   那是程序化地板最容易露餡的地方。
+   每塊板子畫兩次（x 與 x-128），讓錯開的那半塊跨過貼圖左右邊界接起來，
+   否則 RepeatWrapping 會在每個貼圖邊界切出一道垂直的縫。
+   木紋線是用 clip 夾在板子裡面畫的 —— 讓它跨過板縫看起來會像壁紙，不像木頭。 */
+function texWood(tones,seam){
+  var c=cvs(128), g=c.getContext('2d');
+  g.fillStyle=seam; g.fillRect(0,0,128,128);
+  for(var r=0;r<8;r++){
+    var y=r*16, off=(r%2)?32:0;
+    for(var k=0;k<2;k++){
+      var x=off+k*64;
+      var col=tones[(r*2+k)%tones.length];
+      for(var dd=0;dd<2;dd++){
+        var px=x-dd*128;
+        g.fillStyle=col; g.fillRect(px+1,y+1,62,14);
+        // 板子上緣一道極淡的高光，厚度感就出來了
+        g.fillStyle='rgba(255,238,210,.06)'; g.fillRect(px+1,y+1,62,1);
+        g.save();
+        g.beginPath(); g.rect(px+1,y+1,62,14); g.clip();
+        for(var i=0;i<4;i++){
+          g.fillStyle='rgba(62,30,10,'+(0.05+Math.random()*0.07).toFixed(3)+')';
+          g.fillRect(px+1,y+1+((Math.random()*14)|0),62,1);
+        }
+        g.restore();
+      }
+    }
+  }
+  return c;
+}
 /* 地板材質要按尺寸各做一份：貼圖是共用的，但 repeat 不是 ——
    同一個 material 給 40m 和 4m 的地板用，小的那塊磁磚會被拉成長方形。 */
 var TILE_M=1.8;                                   // 一組 2×2 磁磚等於幾公尺
-/* 米色磁磚，比牆亮一截 —— 它是接光的面，而且磁磚本來就比牆反光。
-   這幾個值看起來偏亮是對的：環境光只有 0.26，實際畫出來是中間調，
-   而燈下那幾塊才會真的亮起來。全部調暗的話燈就打不出光池了。 */
-var TILE_C=texTile(['#9c968a','#959085','#a39d91','#8e897e'],'#5c584f');
+/* 米色磁磚 TILE_C 原本是賣場地板，現在換成木板了，只剩冷藏庫和辦公室
+   用 COLD_C。保留 texTile 與 TILE_M 是因為那兩塊還在用，
+   但米色那張已經沒人讀，就不要白白在載入時燒一張 canvas。 */
+/* 賣場地板：橘色木板。一塊板 0.2m 寬、0.8m 長（WOOD_M/8 與 WOOD_M/2）。
+   這幾個橘色看起來飽和是對的 —— 它們會被環境光乘下去，
+   而且地板是接燈光的面，燈下那幾塊才會真的燒起來。 */
+var WOOD_M=1.6;
+var WOOD_C=texWood(['#B5702E','#A9682A','#C07B35','#9E5F26',
+                    '#B26C2B','#BC7632','#A36329','#C1803A'],'#49270F');
 // 冷藏庫維持冷色 —— 全場唯一的藍，一走進去溫度差就出來了
 var COLD_C=texTile(['#6e7a82','#68747c','#74808a','#626e76'],'#3a434a');
 /* 地板改用 Phong，不是為了好看而已 —— Lambert 是逐「頂點」打光，
@@ -2106,15 +2143,22 @@ var COLD_C=texTile(['#6e7a82','#68747c','#74808a','#626e76'],'#3a434a');
    （見下面的 floorSeg）：一千多個頂點就能把燈池插出來，成本幾乎是零。
    手機拿到的是「有光池、沒鏡面反光」，桌機兩個都有。 */
 var floorMats=[];
-function floorMat(cv,w,d,shine){
-  var t=mkTex(cv); t.repeat.set(w/TILE_M,d/TILE_M);
+function floorMat(cv,w,d,shine,mod,spec){
+  // mod = 一個貼圖循環等於幾公尺。磁磚與木板的尺度不一樣，不能共用一個常數
+  var M=mod||TILE_M;
+  var t=mkTex(cv); t.repeat.set(w/M,d/M);
+  /* 各向異性過濾。木板的縫是 1 畫素寬、每 0.2m 一條，地板又幾乎是
+     平視過去的 —— 沒有這個，遠處會閃成一片雜訊。這是純硬體的事，
+     不是多一個 pass，所以成本可以忽略。 */
+  try{ t.anisotropy=Math.min(4,renderer.capabilities.getMaxAnisotropy()); }catch(e){}
   var m;
   if(IS_TOUCH){
     m=new THREE.MeshLambertMaterial({map:t});
   }else{
     m=new THREE.MeshPhongMaterial({
       map:t, specularMap:t,
-      specular:new THREE.Color(0x3d4643),
+      // 木地板的反光要偏暖。沿用磁磚那個帶綠的灰，橘色會被洗成土色
+      specular:new THREE.Color(spec===undefined?0x3d4643:spec),
       shininess:shine||1
     });
     m.userData.shineMul=shine||1;
@@ -2129,7 +2173,7 @@ function floorSeg(w,d){
                                       Math.max(1,Math.round(d/1.5)));
 }
 var MAT={
-  floor:floorMat(TILE_C,40,39,1),
+  floor:floorMat(WOOD_C,40,39,1.1,WOOD_M,0x58412c),
   // 冷凍室與辦公室的地板打亮一點 —— 冷藏區的地永遠是濕的
   cold :floorMat(COLD_C,13.2,10.8,1.5),
   // 牆：白磁磚，但比地板暗一階。它面積最大，跟地板一樣亮就會沒有層次
@@ -2161,7 +2205,7 @@ coldFloor.rotation.x=-Math.PI/2; coldFloor.position.set(-13,0.02,-15.6); scene.a
    短了的話門口會留一條 0.1m 的縫，門打開的瞬間就看得到底下的虛空。
    y 抬到 0.005 是為了不跟主地板共面 —— 兩塊 y=0 的地板重疊在門口
    會 z-fighting，出現一條閃爍的條紋。 */
-var corrFloor=new THREE.Mesh(floorSeg(13.4,4.0),floorMat(TILE_C,13.4,4.0,1));
+var corrFloor=new THREE.Mesh(floorSeg(13.4,4.0),floorMat(WOOD_C,13.4,4.0,1.1,WOOD_M,0x58412c));
 corrFloor.rotation.x=-Math.PI/2; corrFloor.position.set(-26.3,0.005,0); scene.add(corrFloor);
 var offFloor=new THREE.Mesh(floorSeg(7.6,10.0),floorMat(COLD_C,7.6,10.0,1.5));
 offFloor.rotation.x=-Math.PI/2; offFloor.position.set(-36.3,0.01,0); scene.add(offFloor);
@@ -3985,16 +4029,19 @@ function buildOffice(){
   /* 椅子沒有進 itemMeshes，所以 clearItems 不會收它 ——
      不自己清的話每局都會多疊一張椅子在同一個座標上。 */
   officeProps.forEach(function(m){scene.remove(m);}); officeProps=[];
-  /* 紅門。紅色在這個店裡原本是「威脅」的顏色（店員、警報、停電）——
-     用在這扇門上剛好：它不是一個獎勵的入口，是一個你不該進去的地方。
-     鎖的指示燈改成白色，紅底配紅燈會看不出來。 */
+  /* 藍門。賣場地板換成橘木之後，紅門跟地板已經在同一個色相區間裡，
+     走廊盡頭那一塊紅會整個糊掉 —— 藍是橘的補色，所以它在橘地板上
+     是全場最跳的東西，玩家一轉進走廊就看得到終點在哪。
+     紅色本來承擔的「威脅」語意這裡不需要：這扇門是階段目標，
+     真正的威脅是店員、警報和停電，那幾個還是紅的。
+     鎖的指示燈維持白色，藍底配藍燈一樣會看不出來。 */
   var g=new THREE.Group();
-  g.add(P(GEO.box,0x5A1714,[0.12,2.20,2.10],[0,1.10,0]));            // 門板底色（暗紅）
-  g.add(P(GEO.box,0xE03428,[0.14,0.16,2.10],[0,2.08,0],0.9));        // 上緣亮條
-  g.add(P(GEO.box,0xE03428,[0.14,0.16,2.10],[0,0.12,0],0.9));        // 下緣亮條
-  g.add(P(GEO.box,0xE03428,[0.14,2.20,0.16],[0,1.10,1.00],0.9));     // 側邊亮條
-  g.add(P(GEO.box,0xE03428,[0.14,2.20,0.16],[0,1.10,-1.00],0.9));
-  g.add(P(GEO.box,0xFF3B30,[0.13,0.62,0.62],[0,1.32,0],0.55));       // 中央色塊
+  g.add(P(GEO.box,0x16355A,[0.12,2.20,2.10],[0,1.10,0]));            // 門板底色（暗藍）
+  g.add(P(GEO.box,0x2E7CE0,[0.14,0.16,2.10],[0,2.08,0],0.9));        // 上緣亮條
+  g.add(P(GEO.box,0x2E7CE0,[0.14,0.16,2.10],[0,0.12,0],0.9));        // 下緣亮條
+  g.add(P(GEO.box,0x2E7CE0,[0.14,2.20,0.16],[0,1.10,1.00],0.9));     // 側邊亮條
+  g.add(P(GEO.box,0x2E7CE0,[0.14,2.20,0.16],[0,1.10,-1.00],0.9));
+  g.add(P(GEO.box,0x3BA0FF,[0.13,0.62,0.62],[0,1.32,0],0.55));       // 中央色塊
   g.add(P(GEO.box,0xC9CCC4,[0.07,0.16,0.06],[0.09,1.05,-0.72]));     // 把手
   g.add(P(GEO.box,0xF2F0E8,[0.07,0.07,0.05],[0.09,1.62,-0.72],1.8)); // 上鎖指示燈（白）
   g.position.set(OFFICE.door.x,0,OFFICE.door.z); scene.add(g);
@@ -4002,13 +4049,13 @@ function buildOffice(){
   /* 門旁邊的牌子。掛在門南側的那截牆上，面向賣場。
      有了它，這扇門從「一塊紅色的東西」變成「辦公室」——
      玩家第一次經過就知道那是什麼，而不是拿到鑰匙才恍然大悟。 */
-  var plate=textPlane('辦公室',1.5,0.44,'#FF6A5A',72,'rgba(30,8,6,.96)');
+  var plate=textPlane('辦公室',1.5,0.44,'#7CC0FF',72,'rgba(6,16,30,.96)');
   plate.position.set(-32.15,2.05,3.0);
   plate.rotation.y=Math.PI/2;            // 面向東邊（走廊來的方向）
   scene.add(plate); officeProps.push(plate);
   // 走廊口再掛一塊，讓人在賣場裡就知道西邊那條路通到哪
   // 貼在西牆的東面，面向賣場（跟 signExit3 同一個做法），不然會埋進牆裡
-  var plate2=textPlane('← 辦公室',2.2,0.5,'#FF6A5A',68,'rgba(30,8,6,.96)');
+  var plate2=textPlane('← 辦公室',2.2,0.5,'#7CC0FF',68,'rgba(6,16,30,.96)');
   plate2.position.set(-19.55,2.45,3.4); plate2.rotation.y=Math.PI/2;
   scene.add(plate2); officeProps.push(plate2);
   officeDoorObj={mesh:g,officeDoor:true,taken:false,
