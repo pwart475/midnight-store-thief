@@ -1162,7 +1162,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v11.2';
+var BUILD='v11.3';
 
 /* ================================================================
    目錄與凍結狀態
@@ -7340,6 +7340,7 @@ function botReset(){
            interactCd:0, stuckT:0, lastX:0, lastZ:0, aimLockT:0,
            afterUnlockN:0, afterUnlockV:0, unlockValue:0, lastCount:0,
            maxDepth:0, hideTried:0, leaving:false, deadlock:false,
+           sideT:0, sideDir:1, moved:false,
            /* 「要不要跑後場」每局擲一次，不是每次評分擲一次。
               每次擲的話同一個人格在同一局裡會一下想去一下不想去，
               目標一直跳，而且同參數跑兩次結果會差很多 —— 那就不是
@@ -7348,6 +7349,20 @@ function botReset(){
   for(var k in keys)keys[k]=false;
 }
 
+/* 有寬度的通行判定。
+   blocked() 是一條零寬度的射線，但玩家的碰撞半徑是 0.36 ——
+   擦過貨架角落的那條線算「通」，身體卻會卡住。只用中心線做剪枝的話，
+   機器人會一直選到一條它鑽不過去的捷徑，然後貼著轉角磨。
+   所以左右各平移 0.35 再各射一條，三條都通才算通。
+   成本是三倍，但這條每幀只跑幾次，而 nearestNode 才是真正的大頭。 */
+function wideClear(ax,az,bx,bz){
+  if(blocked(ax,az,bx,bz,1.0))return false;
+  var dx=bx-ax, dz=bz-az, L=Math.hypot(dx,dz);
+  if(L<0.001)return true;
+  var px=-dz/L*0.35, pz=dx/L*0.35;          // 垂直於行進方向
+  return !blocked(ax+px,az+pz,bx+px,bz+pz,1.0) &&
+         !blocked(ax-px,az-pz,bx-px,bz-pz,1.0);
+}
 // 玩家的前向量是 (-sin yaw, -cos yaw)，所以朝目標的 yaw 是這個
 function yawTo(tx,tz){
   return Math.atan2(-(tx-camera.position.x),-(tz-camera.position.z));
@@ -7414,14 +7429,47 @@ function botFollowPath(dt,tx,tz,P,run){
     st.path.push({x:tx,z:tz});
     st.pi=0;
   }
+  /* 視線剪枝（string pulling）。
+     waypoint 圖是每 2.6 公尺一個格點，照著一個一個走就是在空曠的走道上
+     走鋸齒 —— 每個轉角都要重新轉身，有效速度掉到帳面的一半以下。
+     這就是為什麼把玩家衝刺拉到 18 m/s（店員的四倍）都救不回來：
+     瓶頸從來不是速度，是機器人自己在原地轉圈。
+     往前找「還看得到」的最遠一個節點，中間的轉角全部跳過。 */
+  st.moved=true;
+  while(st.pi+1<st.path.length){
+    var nx=st.path[st.pi+1];
+    if(!wideClear(camera.position.x,camera.position.z,nx.x,nx.z))break;
+    st.pi++;
+  }
   var wp=st.path[st.pi];
   if(!wp){ st.path=[]; return; }
   if(Math.hypot(wp.x-camera.position.x,wp.z-camera.position.z)<0.75){ st.pi++; return; }
-  var off=turnToward(yawTo(wp.x,wp.z),dt,5.0);
-  /* 只有大致朝向目標才往前走。否則轉身那半秒會一直往舊方向滑，
-     看起來像在冰上，而且會撞進貨架 —— 那不是玩家會做的事。 */
-  keys['w'] = off<0.9;
-  keys['shift'] = !!run && off<0.4;
+
+  /* 用分量驅動按鍵，而不是「轉好了才往前走」。
+     玩家有 WASD 四個方向，真人在逃命時會一邊側移一邊轉頭，
+     不會站著把身體轉正再起跑。前向量 (-sin y, -cos y)、右向量 (cos y, -sin y)，
+     把目標方向投影到這兩軸就直接得到該按哪幾個鍵。 */
+  var dx=wp.x-camera.position.x, dz=wp.z-camera.position.z;
+  var L=Math.hypot(dx,dz)||1; dx/=L; dz/=L;
+  var sy=Math.sin(yaw), cy=Math.cos(yaw);
+  var fwd = -dx*sy - dz*cy;
+  var rgt =  dx*cy - dz*sy;
+  keys['w'] = fwd> 0.20;
+  keys['s'] = fwd<-0.55;
+  keys['d'] = rgt> 0.30;
+  keys['a'] = rgt<-0.30;
+  // 逃命時無條件衝刺。原本要「大致朝向目標」才按，等於每個轉角都鬆開油門
+  keys['shift'] = !!run;
+  turnToward(yawTo(wp.x,wp.z),dt,run?9.0:5.5);
+
+  /* 脫困側移。卡在貨架角落的時候，上面那組分量會一直要你往前 ——
+     而你前面就是牆，所以永遠不會動。真人的反應是先往旁邊挪一步。
+     方向每次卡住時擲一次並記住，不然會左右抖動在原地。 */
+  if(st.sideT>0){
+    st.sideT-=dt;
+    keys['a'] = st.sideDir<0; keys['d'] = st.sideDir>0;
+    keys['s'] = false; keys['w'] = true;
+  }
 }
 
 function botStep(dt){
@@ -7437,7 +7485,14 @@ function botStep(dt){
      結果是「正在衝出口時卡在牆角」這個最常見的情況完全偵測不到。 */
   var mv=Math.hypot(camera.position.x-st.lastX,camera.position.z-st.lastZ);
   st.lastX=camera.position.x; st.lastZ=camera.position.z;
-  st.stuckT = mv<dt*0.4 ? st.stuckT+dt : 0;
+  /* 只有「上一幀真的想移動」才算卡住。
+     瞄準、撿東西、躲在櫃子裡本來就該站著不動 —— 把那幾段算成卡住的話，
+     會累積出一個假的脫困指令，等到下次真的要走路時才爆開，
+     變成莫名其妙往旁邊衝一下；而且真正卡住的時候反而偵測不到。 */
+  st.stuckT = (st.moved&&mv<dt*0.4) ? st.stuckT+dt : 0;
+  st.moved=false;
+  // 卡住 0.5 秒就先往旁邊挪 0.6 秒，再談重算路線
+  if(st.sideT<=0&&st.stuckT>0.5){ st.sideT=0.6; st.sideDir=Math.random()<0.5?-1:1; st.stuckT=0; }
   if(st.stuckT>1.2){ st.path=[]; st.repathT=0; }
   if(st.stuckT>3.0){ st.goal=null; st.stuckT=0; }
 
