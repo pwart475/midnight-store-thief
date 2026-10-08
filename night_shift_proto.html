@@ -1162,7 +1162,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v10.6';
+var BUILD='v10.8';
 
 /* ================================================================
    目錄與凍結狀態
@@ -6244,6 +6244,9 @@ function clearBeat(){
   $('beat').classList.remove('on');
 }
 function toast(msg){
+  // 批次模擬一局會噴幾十則，而且每則掛一個 2.2 秒的 timer。
+  // 跑幾百局就是幾萬個 DOM 節點加幾萬個 timer，瀏覽器會死在這裡，不是死在遊戲上。
+  if(SIM.on&&SIM.skipDraw)return;
   var d=document.createElement('div'); d.textContent=msg;
   $('toast').appendChild(d);
   setTimeout(function(){d.remove();},2200);
@@ -6676,6 +6679,12 @@ function copyData(){
    14. 存檔（每位測試者的瀏覽器本地，讀寫都包 try/catch）
    ============================================================ */
 function save(){
+  /* 模擬中絕對不能寫檔。extract / caught / nextShift 都會呼叫 save()，
+     一批模擬是上千局 —— 玩家的個人最佳會被機器人的數字取代，
+     history 只留 40 筆也會被洗光，而且 build 標記一樣，事後分不出來。
+     這是整個 harness 最危險的一個副作用：它不會報錯，只會安靜地
+     把人家的紀錄換掉。 */
+  if(SIM.on)return;
   // 只存紀錄。現金、裝備、關卡進度刻意不存 ——
   // 關掉瀏覽器就是新的一輪，每次開啟都從第 1 次、身上什麼都沒有開始。
   try{localStorage.setItem('nightshift_v1',
@@ -6814,11 +6823,18 @@ function renderBoard(){
 }
 
 function startGame(){
-  audioInit(); if(AC&&AC.state==='suspended')AC.resume();
-  setVolume(CFG.volume); ambienceOn(); musicOn();
-  // 手機上瀏覽器介面會吃掉三分之一畫面，開場就直接進全螢幕
-  if(IS_TOUCH&&!fsActive())goFullscreen();
-  hideAll(); manualPause=false; G.phase='play'; newRun(); syncItemButtons(); requestLock();
+  /* 批次模擬會呼叫這支近千次。音訊與指標鎖定在那個情境下不只是浪費：
+     requestLock() 每次都會排一個 1800ms 的逾時，整批同步跑完之後
+     那幾百個逾時會一起落地，把 lockTries 推過上限，玩家的遊戲就被
+     丟進推移轉向了 —— 使用者會看到「跑完模擬之後操作突然變怪」。 */
+  if(!SIM.on){
+    audioInit(); if(AC&&AC.state==='suspended')AC.resume();
+    setVolume(CFG.volume); ambienceOn(); musicOn();
+    // 手機上瀏覽器介面會吃掉三分之一畫面，開場就直接進全螢幕
+    if(IS_TOUCH&&!fsActive())goFullscreen();
+  }
+  hideAll(); manualPause=false; G.phase='play'; newRun(); syncItemButtons();
+  if(!SIM.on)requestLock();
 }
 /* 電擊槍那顆按鍵要在「還沒組好」的時候就出現，並且顯示進度。
    理由是它現在是一個跨局的目標 —— 看得到 1/3 才知道自己在收集什麼；
@@ -6859,7 +6875,8 @@ function gotoShop(){
 }
 function nextShift(){
   STATS.nextShifts++; ev('next_shift_started'); save();
-  hideAll(); manualPause=false; G.phase='play'; newRun(); syncItemButtons(); requestLock();
+  hideAll(); manualPause=false; G.phase='play'; newRun(); syncItemButtons();
+  if(!SIM.on)requestLock();
 }
 $('btn-start').addEventListener('click',startGame);
 $('btn-help').addEventListener('click',gotoHelp);
@@ -7044,9 +7061,19 @@ function renderLog(){
    17. 主迴圈
    ============================================================ */
 var flickerT=0, animT=0, doorPingT=0;
+/* 模擬狀態。宣告在 frame() 前面，因為 frame 與 toast 都會讀它 ——
+   函式宣告會提升，var 的「賦值」不會，所以這兩行必須在真正執行到
+   requestAnimationFrame(frame) 之前先跑過。IIFE 尾端那一行就是界線。 */
+var SIM={on:false, skipDraw:true, rows:[], runs:0};
+var BOT={on:false, P:null, st:null};
 function frame(now){
-  requestAnimationFrame(frame);
-  var dt=Math.min(0.05,(now-G.lastTime)/1000); G.lastTime=now;
+  /* 模擬模式時不自己排下一幀 —— 由 SIM 以固定 dt 連續呼叫，
+     不然一幀會被跑兩次（rAF 一次、SIM 一次），所有速度與計時都會錯一倍。 */
+  if(!SIM.on)requestAnimationFrame(frame);
+  // 下限 0：批次模擬結束時會把 lastTime 設成 performance.now()，
+  // 而緊接著那一個 rAF 的時間戳是「該幀開始的時刻」，通常早幾毫秒 ——
+  // 不夾的話那一幀的 dt 是負的，所有速度與計時會倒退一格。
+  var dt=Math.max(0,Math.min(0.05,(now-G.lastTime)/1000)); G.lastTime=now;
 
   /* FOV 集中在這裡套用，所以調參面板拉滑桿就會即時反應。
      被抓特寫（catchCam）有自己的 FOV 動畫，那段期間讓它自己管。 */
@@ -7058,7 +7085,9 @@ function frame(now){
   }
   document.body.classList.toggle('playing',
     G.phase==='play'&&!isPaused()&&lookMode==='delta');
-  updateFeed(dt,now);
+  // 監視器是一塊 2D canvas，每秒重畫九次。批次模擬時沒人看，而它是整個
+  // 迴圈裡最貴的一塊 —— 不擋掉的話 skipDraw 省下來的其實沒多少。
+  if(!(SIM.on&&SIM.skipDraw))updateFeed(dt,now);
   syncPause();
   // 被追的紅框：狀態直接驅動，不用等 stepClerk 有移動才更新
   var chasingNow=anyChasing();
@@ -7086,6 +7115,11 @@ function frame(now){
   if(G.phase==='play'&&G.run){
     if(!isPaused()){
       G.run.t+=dt;
+      /* 機器人在 stepPlayer 之前跑：它只負責「按鍵」和「轉頭」，
+         實際的移動、碰撞、撿取判定全部走玩家那條路。
+         這點是整個模擬可信度的根 —— bot 不會穿牆、不會隔空撿東西、
+         不會比玩家跑得快，因為它用的就是玩家的程式。 */
+      if(BOT.on)botStep(dt);
       stepPlayer(dt);
       /* 午夜鐘：整個 stepClerk 直接跳掉。
          這一行就是「停止時間」的全部實作 —— 移動、視線、聽覺、警戒累積、
@@ -7156,6 +7190,10 @@ function frame(now){
         }
       }
       runScript();
+      /* 不渲染的時候 Three.js 不會更新世界矩陣，而 updateAim 是對
+         itemMeshes 做射線 —— 矩陣是上一幀的（第一幀甚至是單位矩陣），
+         射線就會打在錯的地方。模擬模式自己補這一次更新。 */
+      if(SIM.on&&SIM.skipDraw)scene.updateMatrixWorld(true);
       updateAim();
       var mm=Math.floor(G.run.t/60),ss=Math.floor(G.run.t%60);
       $('clock').textContent=mm+':'+String(ss).padStart(2,'0');
@@ -7229,8 +7267,363 @@ function frame(now){
   // 每道光柱錯開相位，三根一起呼吸會像裝飾，錯開才像三個獨立的東西
   for(var bi2=0;bi2<beacons.length;bi2++)
     beacons[bi2].material.opacity=0.10+Math.sin(t*1.5+bi2*2.1)*0.045;
-  renderer.render(scene,camera);
+  // 批次模擬時不畫 —— 畫一幀的成本是整個模擬的大宗，而且沒人在看
+  if(!(SIM.on&&SIM.skipDraw))renderer.render(scene,camera);
 }
+
+/* ============================================================
+   18. 模擬玩家（BOT）與批次跑分（SIM）
+   ============================================================
+
+   這一段的目的只有一個：回答「貪心到底有沒有被獎勵」。
+   核心假設是「明明可以乾淨脫身，你還會不會回頭去拿最貴的那件」，
+   而那個問句只有在「回頭」的期望值不比「現在就走」差太多時才成立。
+   差太多，回頭就只是一個錯誤決定，沒有人想做第二次。
+   差太少（回頭永遠賺），那也不是抉擇，是廢話。
+
+   問十個真人問不出這個答案 —— 他們的技術差異會蓋過規則本身。
+   同一套策略、只改「什麼時候走」的門檻、各跑幾百局，
+   曲線會直接告訴你門檻該在哪。
+
+   設計約束：BOT 不另外實作一套物理。它只寫 keys[] 和 yaw，
+   移動、碰撞、撿取、視線判定全部走玩家那條既有的路。
+   所以它不會穿牆、不會隔空撿東西、不會比玩家快。
+   它唯一的特權是「知道物品在哪」—— 那等同於一個把地圖背熟的玩家，
+   不是一個開外掛的玩家。 */
+
+/* 人格 = 參數組，不是四份程式碼。
+   四份程式碼會讓差異來自我寫法的不同，那就什麼都測不出來了。 */
+var PERSONAS={
+  greedy:{  key:'greedy',  name:'貪心仔',
+    quota:13,      // 要湊到幾件才肯走（解鎖門檻是 5 件）
+    fillLeave:0.95,// 袋子裝到幾成才肯走
+    react:0.30,    // 看到自己被盯上之後過多久才反應
+    deep:0.95,     // 願意跑到後場（z<-9）的程度 0~1
+    onChase:'run', // 被追時：run=衝出口 hide=找立櫃 panic=亂跑
+    risk:0.3,      // 選目標時扣掉多少「店員很近」的分數
+    sprint:true }, // 沒被追時要不要衝刺（有聲音）
+  safe:{    key:'safe',    name:'穩健派',
+    quota:6,  fillLeave:0.55, react:0.45, deep:0.25,
+    onChase:'hide', risk:1.6, sprint:false },
+  explorer:{key:'explorer',name:'探索者',
+    quota:10, fillLeave:0.85, react:0.45, deep:1.0,
+    onChase:'hide', risk:0.8, sprint:true },
+  panic:{   key:'panic',   name:'恐慌型',
+    quota:7,  fillLeave:0.70, react:1.20, deep:0.15,
+    onChase:'panic', risk:1.0, sprint:true }
+};
+
+function botReset(){
+  BOT.st={ goal:null, path:[], pi:0, repathT:0, reactT:0, wasSeen:false,
+           interactCd:0, stuckT:0, lastX:0, lastZ:0, aimLockT:0,
+           afterUnlockN:0, afterUnlockV:0, unlockValue:0, lastCount:0,
+           maxDepth:0, hideTried:0, leaving:false, deadlock:false,
+           /* 「要不要跑後場」每局擲一次，不是每次評分擲一次。
+              每次擲的話同一個人格在同一局裡會一下想去一下不想去，
+              目標一直跳，而且同參數跑兩次結果會差很多 —— 那就不是
+              人格差異，是雜訊。 */
+           deepRoll:Math.random() };
+  for(var k in keys)keys[k]=false;
+}
+
+// 玩家的前向量是 (-sin yaw, -cos yaw)，所以朝目標的 yaw 是這個
+function yawTo(tx,tz){
+  return Math.atan2(-(tx-camera.position.x),-(tz-camera.position.z));
+}
+// 以有限角速度轉向，不瞬移 —— 瞬移會讓「轉身的時候被看到」這件事整個消失
+function turnToward(want,dt,rate){
+  var d=((want-yaw+Math.PI*3)%(Math.PI*2))-Math.PI;
+  var m=(rate||4.5)*dt;
+  yaw += Math.abs(d)<m ? d : (d>0?m:-m);
+  return Math.abs(d);
+}
+
+/* 目標評分：價值除以距離是基礎，再扣風險與「要跑多深」。
+   這不是最佳解，也不該是 —— 真人不會在賣場裡解 TSP。
+   它只要像一個「會挑貴的、但不想走太遠、也不想靠店員太近」的人。 */
+function botScore(o,P){
+  var d=o.def;
+  if(!d||!d.slots)return -1e9;                      // 鑰匙、電擊槍部件不走這條
+  if(G.run.used+d.slots>capacityNow())return -1e9;  // 裝不下就不列入
+  if(d.tier==='forbidden'&&P.deep<0.5)return -1e9;  // 非賣品只有夠貪的人格會碰
+  var back = o.mesh.position.z<-9 ? 1 : 0;
+  if(back&&BOT.st.deepRoll>P.deep)return -1e9;
+  var dist=Math.hypot(o.mesh.position.x-camera.position.x,
+                      o.mesh.position.z-camera.position.z);
+  var v = d.tier==='forbidden'?forbiddenValueNow():d.v;
+  var s = v/(2+dist*1.4);
+  for(var i=0;i<CLERKS.length;i++){
+    var cd=Math.hypot(CLERKS[i].position.x-o.mesh.position.x,
+                      CLERKS[i].position.z-o.mesh.position.z);
+    if(cd<9)s -= P.risk*(9-cd)*2.2;
+  }
+  if(back)s -= P.risk*6;
+  return s;
+}
+
+function botPickGoal(P){
+  var best=null,bs=-1e8;
+  for(var i=0;i<itemMeshes.length;i++){
+    var o=itemMeshes[i];
+    if(o.taken||o.safe||o.hide||o.officeDoor||o.register||o.note)continue;
+    var s=botScore(o,P);
+    if(s>bs){bs=s;best=o;}
+  }
+  return best;
+}
+
+// 想不想走：件數夠了，或袋子滿了
+function botWantsOut(P){
+  var r=G.run;
+  if(!r.unlocked)return false;
+  if(r.count>=P.quota)return true;
+  if(r.used/Math.max(1,capacityNow())>=P.fillLeave)return true;
+  return false;
+}
+
+function botFollowPath(dt,tx,tz,P,run){
+  var st=BOT.st;
+  st.repathT-=dt;
+  if(!st.path.length||st.repathT<=0){
+    st.repathT=1.2;
+    var p=findPath(nearestNode(camera.position.x,camera.position.z),
+                   nearestNode(tx,tz));
+    st.path=p.map(function(i){return {x:NODES[i].x,z:NODES[i].z};});
+    st.path.push({x:tx,z:tz});
+    st.pi=0;
+  }
+  var wp=st.path[st.pi];
+  if(!wp){ st.path=[]; return; }
+  if(Math.hypot(wp.x-camera.position.x,wp.z-camera.position.z)<0.75){ st.pi++; return; }
+  var off=turnToward(yawTo(wp.x,wp.z),dt,5.0);
+  /* 只有大致朝向目標才往前走。否則轉身那半秒會一直往舊方向滑，
+     看起來像在冰上，而且會撞進貨架 —— 那不是玩家會做的事。 */
+  keys['w'] = off<0.9;
+  keys['shift'] = !!run && off<0.4;
+}
+
+function botStep(dt){
+  var P=BOT.P, st=BOT.st, r=G.run;
+  if(!P||!st||!r)return;
+  keys['w']=keys['a']=keys['s']=keys['d']=keys['shift']=false;
+  st.interactCd-=dt;
+
+  /* 卡住偵測擺在最前面。
+     原本放在函式尾端，但下面有六個 return（躲、逃、瞄準、沒目標…），
+     那些路徑永遠走不到尾端，lastX/lastZ 就一直是舊的，
+     下次真的走到尾端時位移看起來很大，stuckT 被歸零。
+     結果是「正在衝出口時卡在牆角」這個最常見的情況完全偵測不到。 */
+  var mv=Math.hypot(camera.position.x-st.lastX,camera.position.z-st.lastZ);
+  st.lastX=camera.position.x; st.lastZ=camera.position.z;
+  st.stuckT = mv<dt*0.4 ? st.stuckT+dt : 0;
+  if(st.stuckT>1.2){ st.path=[]; st.repathT=0; }
+  if(st.stuckT>3.0){ st.goal=null; st.stuckT=0; }
+
+  // 「回頭」的量化：解鎖門檻之後還拿了幾件、那幾件值多少
+  if(r.count>st.lastCount){
+    if(r.count===CFG.extractItems)st.unlockValue=r.value;
+    if(r.unlocked&&st.lastCount>=CFG.extractItems){
+      st.afterUnlockN++;
+      st.afterUnlockV=r.value-st.unlockValue;
+    }
+    st.lastCount=r.count;
+  }
+  if(camera.position.z<st.maxDepth)st.maxDepth=camera.position.z;
+
+  // ---- 威脅反應 ----
+  var chased=anyChasing(), aw=maxAware();
+  if(chased||aw>0.45){
+    if(!st.wasSeen){ st.wasSeen=true; st.reactT=P.react; }
+    st.reactT-=dt;
+    if(st.reactT<=0){
+      if(P.onChase==='hide'&&st.hideTried<3&&!hiding){
+        var hb=null,hd=1e9;
+        for(var i=0;i<itemMeshes.length;i++){
+          var o=itemMeshes[i];
+          if(!o.hide||o.stuffed)continue;
+          var d2=Math.hypot(o.mesh.position.x-camera.position.x,
+                            o.mesh.position.z-camera.position.z);
+          if(d2<hd){hd=d2;hb=o;}
+        }
+        if(hb&&hd<14){
+          if(hd<2.4){
+            turnToward(yawTo(hb.mesh.position.x,hb.mesh.position.z),dt,6.0);
+            if(aim===hb&&st.interactCd<=0){ tryInteract(); st.interactCd=0.5; st.hideTried++; }
+          }else botFollowPath(dt,hb.mesh.position.x,hb.mesh.position.z,P,true);
+          return;
+        }
+      }
+      if(P.onChase==='panic'){
+        /* 恐慌型不算路，就是朝離店員最遠的方向跑。
+           這在走道裡常常把自己跑進死角 —— 那正是要測的東西。 */
+        var cc=nearestChaser();
+        if(cc){
+          turnToward(yawTo(camera.position.x*2-cc.position.x,
+                           camera.position.z*2-cc.position.z),dt,6.0);
+          keys['w']=true; keys['shift']=true;
+          return;
+        }
+      }
+      st.leaving=true;      // 預設反應：衝出口
+    }
+  }else st.wasSeen=false;
+
+  // 躲在櫃子裡就不動，等店員放棄
+  if(hiding){
+    if(!chased&&aw<0.1&&st.interactCd<=0){ tryInteract(); st.interactCd=0.6; }
+    return;
+  }
+
+  // ---- 走人 ----
+  if(st.leaving||botWantsOut(P)){
+    if(r.unlocked){ botFollowPath(dt,0,14.6,P,true); return; }
+    st.leaving=false;      // 還沒解鎖就走不了，繼續搬
+  }
+
+  // ---- 搬東西 ----
+  if(!st.goal||st.goal.taken){ st.goal=botPickGoal(P); st.path=[]; st.aimLockT=0; }
+  var g=st.goal;
+  if(!g){
+    /* 沒有任何可拿的目標了。
+       如果已經解鎖就直接走人；但如果「還沒解鎖」就沒目標了，
+       代表袋子在湊滿 5 件之前就塞爆了 —— 這一局是走不完的。
+       原本這裡會在「想走→走不了→再找目標→沒有」之間空轉到逾時，
+       看起來像 bot 壞了，其實是規則本身的死局。
+       標成 deadlock 讓它當場結束，這個數字本身就是要回報的東西。 */
+    if(G.run.unlocked)st.leaving=true;
+    else st.deadlock=true;
+    return;
+  }
+  var dist=Math.hypot(g.mesh.position.x-camera.position.x,
+                      g.mesh.position.z-camera.position.z);
+
+  if(dist<CFG.reachDist-0.6){
+    /* 到了就瞄準。轉完頭之後要等下一幀 updateAim 跑過，aim 才會指到它 ——
+       所以撿取條件是「aim 已經等於目標」，不是「我覺得我對準了」。
+       這一條讓 bot 吃到跟玩家一樣的視線遮蔽與 15 度輔助角；
+       少了它，模擬會偏樂觀。 */
+    turnToward(yawTo(g.mesh.position.x,g.mesh.position.z),dt,6.0);
+    pitch=Math.max(-1.25,Math.min(1.25,
+      Math.atan2(g.mesh.position.y+0.15-camera.position.y,Math.max(0.2,dist))));
+    if(aim===g&&st.interactCd<=0){ tryInteract(); st.interactCd=0.35; st.goal=null; st.aimLockT=0; }
+    else{
+      st.aimLockT+=dt;
+      // 對著它一秒還撿不到就是被擋住了，換一個，不要卡死
+      if(st.aimLockT>1.2){ st.goal=null; st.aimLockT=0; }
+    }
+    return;
+  }
+  st.aimLockT=0;
+  botFollowPath(dt,g.mesh.position.x,g.mesh.position.z,P,P.sprint&&!chased);
+}
+
+/* ---------- 批次跑分 ----------
+   dt 固定 1/30：在 frame() 的 0.05 上限之內，而且比畫面更新率穩定，
+   所以同一組參數跑兩次會接近 —— 剩下的隨機只有物品擺放與店員巡邏。 */
+function simOneRun(P,maxT){
+  BOT.P=P; BOT.on=true; botReset();
+  var dt=1/30, t=0, lim=maxT||300, startCash=G.cash;
+  /* isPaused() 的最後一項是 (!locked && !lockFailed)。模擬是同步迴圈，
+     沒有真的指標鎖定，locked 本來就是 false —— 不處理的話每一幀都算
+     暫停，整個 play 區塊被跳過，bot 不動、店員不動、計時不走，
+     迴圈會空轉到逾時然後吐出一堆全零的資料。這個 bug 不會報錯，
+     只會讓人以為「模擬跑完了，結果就是這樣」。
+     選 locked 而不是 lockFailed：lockFailed 會連帶把視角切成推移轉向，
+     stepLook 每幀會用上一次的游標位置去轉 yaw，跟 bot 搶方向盤。 */
+  var lockWas=locked; locked=true;
+  try{
+    /* catchcam 也要繼續跑：被抓之後是一段鏡頭動畫，動畫跑完才會
+       endRun() 進入 result。只等 'play' 的話會卡在特寫中間，
+       net 永遠是 0，被抓那一局的資料就全部不見。 */
+    while((G.phase==='play'||G.phase==='catchcam')&&t<lim&&!BOT.st.deadlock){
+      G.lastTime+=dt*1000;
+      frame(G.lastTime);
+      t+=dt;
+    }
+  }finally{ locked=lockWas; }
+  var r=G.run||{}, st=BOT.st;
+  BOT.on=false;
+  return {
+    persona:P.key, shift:G.shift,
+    result:r.extracted?'extract':(r.caught?'caught':(st.deadlock?'deadlock':'timeout')),
+    net:r.net||0, value:r.value||0, count:r.count||0,
+    used:r.used||0, cap:capacityNow(),
+    spotted:r.spotted||0, forbidden:!!r.forbiddenTaken,
+    t:Math.round(r.t||t),
+    afterUnlockN:st.afterUnlockN, afterUnlockV:Math.round(st.afterUnlockV||0),
+    deepest:Math.round(st.maxDepth*10)/10,
+    cashDelta:G.cash-startCash
+  };
+}
+
+/* 一整條命：從第 1 關打到被抓光或打滿 maxShift 關。
+   這才是該比的單位 —— 單局收益比不出貪心的代價，
+   因為貪心的代價是「偶爾整條命歸零」。 */
+function simLife(P,maxShift){
+  G.cash=0; G.upgrades={}; G.shift=0; G.tzParts={}; G.tzAmmo=0; G.stopRuns=0;
+  var rows=[],lost=0;
+  startGame();
+  for(var s=0;s<(maxShift||12);s++){
+    var row=simOneRun(P,300);
+    rows.push(row); SIM.rows.push(row); SIM.runs++;
+    if(row.result!=='extract')lost++;
+    /* 逾時或死局時這一局並沒有真的結束，G.phase 還停在 'play'。
+       不在這裡收掉的話，下一圈會對「同一局」再跑一次 simOneRun，
+       同一局會被記成十二筆資料 —— 統計整個歪掉。 */
+    if(row.result==='timeout'||row.result==='deadlock')break;
+    // 升級一律不買 —— 先量規則本身，不要讓升級曲線混進來
+    if(G.phase==='result')gotoShop();
+    if(G.phase==='shop')nextShift();
+    if(G.phase!=='play')break;
+  }
+  return {persona:P.key, shifts:rows.length, lost:lost, cash:G.cash, rows:rows};
+}
+
+function simBatch(lives,maxShift){
+  /* STATS 必須整個備份再還原。
+     save() 已經擋住寫檔了，但 extract/caught/endRun 還是會改記憶體裡的
+     STATS —— 個人最佳、累計次數、只留 40 筆的 history 全部會被機器人洗掉。
+     然後玩家關掉分頁，beforeunload 的 save() 在 SIM.on 已經是 false 的
+     情況下把那份髒資料寫進去。擋寫檔只擋住一半。 */
+  var statsBak=JSON.stringify(STATS);
+  var cashBak=G.cash, upBak=G.upgrades, shiftBak=G.shift;
+  SIM.on=true; SIM.skipDraw=true; SIM.rows=[]; SIM.runs=0;
+  var out=[];
+  /* try/finally 不是防禦性裝飾：模擬中途丟例外的話，SIM.on 會卡在 true，
+     frame() 就永遠不再排下一幀 —— 整個遊戲靜止，而且畫面上什麼都沒說。
+     locked 也會卡在 true。這兩個都必須保證還原。 */
+  try{
+    for(var k in PERSONAS){
+      for(var i=0;i<(lives||20);i++)out.push(simLife(PERSONAS[k],maxShift||12));
+    }
+  }finally{
+    SIM.on=false; BOT.on=false;
+    try{ var s=JSON.parse(statsBak); for(var sk in s)STATS[sk]=s[sk]; }catch(e){}
+    G.cash=cashBak; G.upgrades=upBak; G.shift=shiftBak;
+    for(var kk in keys)keys[kk]=false;
+    G.lastTime=performance.now();
+    /* 回標題畫面。批次最後一局常常停在 'play' 或 'result'，
+       不收的話玩家會發現自己突然站在一局機器人玩到一半的賣場裡，
+       而 cash/shift 已經被還原成他自己的 —— 畫面跟狀態對不起來。 */
+    gotoTitle();
+  }
+  /* 這裡刻意「不」重新 requestAnimationFrame。
+     batch 是同步跑完的，而呼叫它的那一刻本來就有一個 rAF 排在佇列裡；
+     那個 callback 會在 batch 回傳之後才執行，那時 SIM.on 已經是 false，
+     frame() 自己會把下一幀排回去。在這裡再排一次就會變成兩條
+     互相自我延續的 rAF 鏈 —— 整個遊戲從此每個 vsync 跑兩幀，
+     速度加倍，而且看起來只是「模擬之後遊戲變快了」，很難查。 */
+  return out;
+}
+
+// 給主控台／自動化用的唯一入口
+window.NSSIM={
+  personas:PERSONAS,
+  batch:function(lives,maxShift){ return simBatch(lives,maxShift); },
+  rows:function(){ return SIM.rows; },
+  build:BUILD
+};
+
 requestAnimationFrame(frame);
 window.addEventListener('beforeunload',save);
 })();
