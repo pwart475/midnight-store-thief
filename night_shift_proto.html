@@ -1162,7 +1162,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v10.8';
+var BUILD='v10.9';
 
 /* ================================================================
    目錄與凍結狀態
@@ -7616,12 +7616,66 @@ function simBatch(lives,maxShift){
   return out;
 }
 
-// 給主控台／自動化用的唯一入口
+/* 給主控台／自動化用的入口。
+   debug 不是裝飾：這個 harness 的失敗模式幾乎都是「安靜地什麼都沒做」——
+   跑完、不報錯、吐出一堆零。沒有辦法從外面看內部狀態的話，
+   根本分不出「模擬跑了但 bot 不會玩」和「模擬根本沒跑」。
+   這兩件事的修法完全相反。 */
 window.NSSIM={
   personas:PERSONAS,
   batch:function(lives,maxShift){ return simBatch(lives,maxShift); },
   rows:function(){ return SIM.rows; },
-  build:BUILD
+  build:BUILD,
+  // 跑單獨一局並回傳逐秒的軌跡，用來看 bot 到底在幹嘛
+  trace:function(key,maxT,every){
+    var P=PERSONAS[key]||PERSONAS.greedy;
+    var statsBak=JSON.stringify(STATS);
+    var cashBak=G.cash, upBak=G.upgrades, shiftBak=G.shift;
+    SIM.on=true; SIM.skipDraw=true;
+    var tr=[];
+    try{
+      G.cash=0; G.upgrades={}; G.shift=0;
+      startGame();
+      BOT.P=P; BOT.on=true; botReset();
+      var dt=1/30,t=0,lim=maxT||120,n=0,ev2=every||15;
+      var lockWas=locked; locked=true;
+      try{
+        while((G.phase==='play'||G.phase==='catchcam')&&t<lim&&!BOT.st.deadlock){
+          G.lastTime+=dt*1000; frame(G.lastTime); t+=dt;
+          if((n++%ev2)===0)tr.push({
+            t:+t.toFixed(1),
+            x:+camera.position.x.toFixed(1), z:+camera.position.z.toFixed(1),
+            yaw:+yaw.toFixed(2),
+            w:!!keys['w'], paused:isPaused(), runT:+G.run.t.toFixed(1),
+            cnt:G.run.count, val:G.run.value,
+            goal:BOT.st.goal?BOT.st.goal.def.id:null,
+            gx:BOT.st.goal?+BOT.st.goal.mesh.position.x.toFixed(1):null,
+            gz:BOT.st.goal?+BOT.st.goal.mesh.position.z.toFixed(1):null,
+            aim:aim?(aim.def?aim.def.id:'?'):null,
+            pathLen:BOT.st.path.length, pi:BOT.st.pi,
+            aware:+maxAware().toFixed(2), chase:anyChasing(),
+            dead:BOT.st.deadlock, leave:BOT.st.leaving
+          });
+        }
+      }finally{ locked=lockWas; }
+    }finally{
+      SIM.on=false; BOT.on=false;
+      try{ var s=JSON.parse(statsBak); for(var sk in s)STATS[sk]=s[sk]; }catch(e){}
+      G.cash=cashBak; G.upgrades=upBak; G.shift=shiftBak;
+      for(var kk in keys)keys[kk]=false;
+      G.lastTime=performance.now(); gotoTitle();
+    }
+    return tr;
+  },
+  // 場上現在有什麼，用來確認物品真的生出來了
+  snapshot:function(){
+    return { phase:G.phase, nodes:NODES.length, clerks:CLERKS.length,
+             items:itemMeshes.length,
+             live:itemMeshes.filter(function(o){return !o.taken&&o.def&&o.def.slots;}).length,
+             cap:capacityNow(), reach:CFG.reachDist, need:CFG.extractItems,
+             locked:locked, lockFailed:lockFailed, manualPause:manualPause,
+             devOpen:devOpen(), paused:isPaused() };
+  }
 };
 
 requestAnimationFrame(frame);
