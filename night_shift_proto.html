@@ -71,6 +71,13 @@
     #setfx .val{font-size:15px}
   }
 
+  /* 常駐暗角。跟 #vignette（警報時的紅框）是兩回事 —— 那個是訊號，這個是氛圍。
+     用兩層漸層：外圈壓暗、四角再壓一次，單一漸層會在中間就開始灰掉。 */
+  #vig0{position:absolute;inset:0;pointer-events:none;
+    background:
+      radial-gradient(ellipse 78% 68% at 50% 52%,rgba(0,0,0,0) 48%,rgba(0,0,0,.55) 100%),
+      radial-gradient(ellipse 120% 100% at 50% 50%,rgba(0,0,0,0) 62%,rgba(0,0,0,.42) 100%)}
+
   /* ---------- HUD ---------- */
   #crosshair{position:absolute;left:50%;top:50%;width:22px;height:22px;margin:-11px 0 0 -11px}
   #crosshair i{position:absolute;background:var(--tube);opacity:.72;transition:background .18s,opacity .18s}
@@ -814,6 +821,10 @@
 <div id="stage"></div>
 
 <div class="layer" id="hud">
+  <!-- 常駐暗角。放第一個，所以 HUD 的字都壓在它上面。
+       這是整批視覺調整裡最便宜的一個：一個 CSS 漸層，零繪製成本，
+       但它把視線往畫面中央收，暗處也立刻變得更深。 -->
+  <div id="vig0"></div>
   <div id="steerring"></div>
   <div id="crosshair"><i></i><i></i><i></i><i></i></div>
   <div id="spot"><div class="lbl">被發現中</div><div class="track"><div class="fill"></div></div></div>
@@ -1124,7 +1135,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v9.2';
+var BUILD='v9.5';
 
 /* ================================================================
    目錄與凍結狀態
@@ -1296,6 +1307,10 @@ var DEF = {
      越小越糊越廣（霧面）。0 = 完全霧面。
      冷凍室與辦公室會自動再乘 1.5 —— 冷藏區的地板永遠是濕的。 */
   floorShine:46,
+  /* 假 bloom。bloom 是燈管周圍那圈軟暈，floorGlow 是地上的濕反光。
+     兩個都是加色混合的四邊形，不是後處理 —— 成本等於多畫 26 個面，
+     而真正的 UnrealBloomPass 在手機上是 3～6ms。 */
+  bloom:0.42, floorGlow:0.30,
   /* 密碼要不要留在畫面上。
      開著（1）＝ 這條鏈的代價是「橫跨整個後場的距離與風險」。
      關掉（0）＝ 再加一層記憶負擔。
@@ -1399,6 +1414,8 @@ var KNOBS = [
   ['k-econ','tzAmmoCost','彈藥價格',50,800,10,''],
   ['k-econ','tzAmmoPer','一次補幾發',1,10,1,' 發'],
   ['k-econ','shelfFill','貨架填充率',.15,1,.02,''],
+  ['k-econ','bloom','燈光輝光（假 bloom）',0,1.2,.02,''],
+  ['k-econ','floorGlow','地面濕反光',0,1,.02,''],
   ['k-econ','floorShine','地板反光',0,160,2,''],
   ['k-econ','spriteGlow','商品自體發光',0,0.8,.02,''],
   ['k-econ','lightAmb','環境光（整體亮度）',0.05,1.2,.02,''],
@@ -1904,9 +1921,30 @@ var SHUTTER_SPOTS=[
 /* ============================================================
    3. Three.js 場景
    ============================================================ */
+/* ---------- 場景配色 ----------
+   規則只有一條：環境全部是冷色，唯一的暖色是燈。
+
+   之前是綠灰地板 + 咖啡色貨架 + 近黑天花板 —— 三個互不相干的中間調，
+   彩度接近、明度也接近，所以沒有東西主導也沒有東西對比，整片糊掉。
+
+   冷環境配暖光會自己產生兩個好處：畫面立刻讀成「深夜的室內」，
+   而且燈下變成全場唯一的暖色，對一個躲貓貓遊戲來說，
+   那正好等於「唯一安全的地方」，不用額外解釋。
+
+   另一半是明度：牆與天花板壓到比以前暗得多，地板留亮（它接光），
+   貨架維持中間偏暗的暖褐。有了明度階梯，燈才打得出來。 */
+var PAL={
+  dark   :0x080B0E,   // 背景與霧：近黑的冷藍
+  amb    :0x4C5A68,   // 環境光：冷藍灰
+  sky    :0xB8C8D6,   // 平行光
+  lamp   :0xFFEAC8,   // 日光燈：暖白 —— 全場唯一的暖色
+  tubeOn :0xFFF4E2,   // 燈管本體
+  glow   :0xFFE4BC,   // 燈管輝光
+  pool   :0xE8D8C0    // 地面濕反光（暖光落在冷地板上）
+};
 var scene=new THREE.Scene();
-scene.background=new THREE.Color(0x0A0C0A);
-scene.fog=new THREE.FogExp2(0x0A0C0A,0.019);
+scene.background=new THREE.Color(PAL.dark);
+scene.fog=new THREE.FogExp2(PAL.dark,0.019);
 
 var camera=new THREE.PerspectiveCamera(74,1,0.08,140);
 camera.position.set(SPAWN.x,1.65,SPAWN.z);
@@ -1927,8 +1965,8 @@ var LIGHT={
   get sky(){ return CFG.lightAmb*0.5; },
   get lamp(){ return CFG.lightLamp; }
 };
-var ambient=new THREE.AmbientLight(0x556256,LIGHT.amb); scene.add(ambient);
-var sky=new THREE.DirectionalLight(0xC8D8C4,LIGHT.sky); sky.position.set(-4,12,6); scene.add(sky);
+var ambient=new THREE.AmbientLight(PAL.amb,LIGHT.amb); scene.add(ambient);
+var sky=new THREE.DirectionalLight(PAL.sky,LIGHT.sky); sky.position.set(-4,12,6); scene.add(sky);
 
 /* ---------- 程序化材質貼圖 ----------
    目標是「超商感」，不是照片寫實。真正撐起超商感的其實只有三樣東西：
@@ -1974,21 +2012,24 @@ function texGrain(base,amp){
 // 天花板：輕鋼架的方格，每隔幾格換一塊淺色的當燈盤
 function texCeil(){
   var c=cvs(128), g=c.getContext('2d');
-  g.fillStyle='#232722'; g.fillRect(0,0,128,128);      // 骨架
-  var p=['#3d423b','#3a3f38','#40453e','#383d36'];
+  // 天花板是全場最暗的面。它在視野上緣，壓暗之後畫面重心自然落在貨架與地板
+  g.fillStyle='#171c21'; g.fillRect(0,0,128,128);      // 骨架
+  var p=['#2a3139','#272e34','#2d343a','#242b31'];
   for(var i=0;i<2;i++)for(var j=0;j<2;j++){
     g.fillStyle=p[(i*2+j)%4];
     g.fillRect(i*64+3,j*64+3,58,58);
   }
-  g.fillStyle='#575c50';                                // 一塊燈盤
+  g.fillStyle='#424c54';                                // 一塊燈盤
   g.fillRect(3,3,58,58);
   return c;
 }
 /* 地板材質要按尺寸各做一份：貼圖是共用的，但 repeat 不是 ——
    同一個 material 給 40m 和 4m 的地板用，小的那塊磁磚會被拉成長方形。 */
 var TILE_M=1.8;                                   // 一組 2×2 磁磚等於幾公尺
-var TILE_C=texTile(['#565b52','#51564d','#5a5f56','#4d5249'],'#31352e');
-var COLD_C=texTile(['#414e56','#3d4a52','#45525a','#39464e'],'#262f35');
+/* 地板比牆亮一截是刻意的 —— 它是接光的面，而且磁磚本來就比牆反光。
+   明度階梯（地板亮 › 貨架中 › 牆暗 › 天花板最暗）就是讓燈打得出來的那個東西。 */
+var TILE_C=texTile(['#5a636a','#555e65','#5f686f','#515a61'],'#2c3238');
+var COLD_C=texTile(['#3d4e5c','#394a58','#415260','#354656'],'#222e38');
 /* 地板改用 Phong，不是為了好看而已 —— Lambert 是逐「頂點」打光，
    而 PlaneGeometry(40,39) 預設只有四個頂點。也就是說整片地板的亮度
    是從四個角內插出來的，十三盞燈打在地上幾乎沒有效果，
@@ -2033,12 +2074,16 @@ var MAT={
   floor:floorMat(TILE_C,40,39,1),
   // 冷凍室與辦公室的地板打亮一點 —— 冷藏區的地永遠是濕的
   cold :floorMat(COLD_C,13.2,10.8,1.5),
-  wall :new THREE.MeshLambertMaterial({map:mkTex(texGrain('#464b42',0.10),3)}),
-  shelf:new THREE.MeshLambertMaterial({map:mkTex(texGrain('#5b5040',0.12),2)}),
+  // 牆壓暗。它佔的面積最大，亮的話整個畫面就沒有「深夜」可言
+  wall :new THREE.MeshLambertMaterial({map:mkTex(texGrain('#363d44',0.10),3)}),
+  /* 貨架留暖褐，但壓暗、降彩度。
+     這是全場唯一不是冷色的表面 —— 跟冷地板擺在一起會互相襯，
+     但彩度一高就會跳出來搶戲，變回原本那種糊掉的咖啡色。 */
+  shelf:new THREE.MeshLambertMaterial({map:mkTex(texGrain('#4a4038',0.12),2)}),
   common:new THREE.MeshLambertMaterial({color:0x8C8A72}),
   rare :new THREE.MeshStandardMaterial({color:0x6B5A1E,emissive:0xFFC93C,emissiveIntensity:0.55,roughness:.6,metalness:.1}),
   forbid:new THREE.MeshStandardMaterial({color:0x3A1E52,emissive:0xC77DFF,emissiveIntensity:0.85,roughness:.5,metalness:.1}),
-  tube :new THREE.MeshBasicMaterial({color:0xE4F0DE}),
+  tube :new THREE.MeshBasicMaterial({color:PAL.tubeOn}),
   signG:new THREE.MeshBasicMaterial({color:0x4ADE80,side:THREE.DoubleSide}),
   clerk:new THREE.MeshLambertMaterial({color:0x35564E}),
   apron:new THREE.MeshLambertMaterial({color:0xC9CBB4}),
@@ -2095,7 +2140,8 @@ COL_STATIC.forEach(function(c){
 });
 
 // 貨架區的網格與層板每次重建，統一掛在這個 Group 底下方便整批清除
-var ledgeMat=new THREE.MeshLambertMaterial({color:0x5C6E5F});
+// 層板改成冷調金屬，跟暖褐的貨架體分開 —— 真正的超商層板就是鐵的
+var ledgeMat=new THREE.MeshLambertMaterial({color:0x5E6A72});
 var shutterMat=new THREE.MeshLambertMaterial({color:0x6B5A32});
 var aisleGroup=new THREE.Group(); scene.add(aisleGroup);
 var layoutSpots=[], layoutName='A';
@@ -2162,14 +2208,50 @@ function buildAisles(seed){
 var TUBES=[[-13,10],[0,2],[10.5,9.5],[-13,-2],[13,-2],[0,9],[0,-6],
            [-14,-13],[10,-13],[-15,-19],[8,-19],
            [-25.5,0],[-36.3,0]];  // 走廊、辦公室
-var lamps=[],tubeMeshes=[];
+/* 光暈 sprite 材質。
+   這一段原本在檔案更下面（光源之後），但燈管的輝光、商品的光暈、
+   被抓特寫的紅光全都要用它 —— var 提升會讓它在那些地方是 undefined，
+   材質沒有貼圖就畫成一整塊實心白方塊。所以它必須在第一個使用者之前。 */
+function haloTex(){
+  var c=document.createElement('canvas'); c.width=c.height=64;
+  var g=c.getContext('2d'), r=g.createRadialGradient(32,32,0,32,32,32);
+  r.addColorStop(0,'rgba(255,255,255,1)'); r.addColorStop(.35,'rgba(255,255,255,.42)');
+  r.addColorStop(1,'rgba(255,255,255,0)');
+  g.fillStyle=r; g.fillRect(0,0,64,64); return new THREE.CanvasTexture(c);
+}
+var HALO=haloTex();
+
+var lamps=[],tubeMeshes=[],tubeGlow=[],tubePool=[];
 var tubeGeo=new THREE.BoxGeometry(3.4,0.12,0.34);
 TUBES.forEach(function(p){
   var t=new THREE.Mesh(tubeGeo,MAT.tube.clone());
   t.position.set(p[0],3.15,p[1]); scene.add(t); tubeMeshes.push(t);
   // 距離 21→13、衰減 1.4→1.8：光圈收小，燈與燈之間才會真的有暗帶
-  var L=new THREE.PointLight(0xD6E6D0,LIGHT.lamp,13,1.8);
+  var L=new THREE.PointLight(PAL.lamp,LIGHT.lamp,13,1.8);
   L.position.set(p[0],3.0,p[1]); scene.add(L); lamps.push(L);
+
+  /* ---------- 假 bloom：燈管本身的輝光 ----------
+     真正的 UnrealBloomPass 是五組降採樣加可分離模糊，手機上大概 3～6ms。
+     而「燈會泛光」這件事九成的觀感只來自「光源周圍有一圈軟暈」——
+     那用一張加色混合的 sprite 就畫得出來，成本等於一個四邊形。
+     它也會跟著閃爍一起亮暗（見 stepLights），所以燈快壞掉的時候
+     暈開的範圍也跟著抽動，那才是日光燈的樣子。 */
+  var gl=new THREE.Sprite(new THREE.SpriteMaterial({
+    map:HALO,color:PAL.glow,transparent:true,
+    blending:THREE.AdditiveBlending,depthWrite:false,opacity:0}));
+  gl.scale.set(7.2,2.6,1); gl.position.set(p[0],3.05,p[1]);
+  scene.add(gl); tubeGlow.push(gl);
+
+  /* ---------- 地面的濕反光 ----------
+     參考圖裡最有辨識度的其實是這個：燈在地上拖出一塊亮斑。
+     Phong 的鏡面反光只有桌機吃得到（手機退回 Lambert 了），
+     所以這裡用一片貼在地上的加色平面補 —— 兩邊都看得到，而且幾乎零成本。
+     往 Z 拉長是刻意的：真正的濕地板反光是往觀眾方向拉出一條，不是一個圓。 */
+  var pl=new THREE.Mesh(new THREE.PlaneGeometry(5.6,9.0),
+    new THREE.MeshBasicMaterial({map:HALO,color:PAL.pool,transparent:true,
+      blending:THREE.AdditiveBlending,depthWrite:false,opacity:0}));
+  pl.rotation.x=-Math.PI/2; pl.position.set(p[0],0.035,p[1]);
+  scene.add(pl); tubePool.push(pl);
 });
 /* ---------- 日光燈的詭異閃爍 ----------
    每一支燈自己一個計時器、自己一個相位，所以不會整店一起眨眼
@@ -2181,7 +2263,7 @@ TUBES.forEach(function(p){
 var flick=lamps.map(function(){
   return {next:2+Math.random()*14, burst:0, lvl:1, ph:Math.random()*6.283};
 });
-var TUBE_ON=0xE4F0DE, TUBE_OFF=0x6A7A68;
+var TUBE_ON=PAL.tubeOn, TUBE_OFF=0x6E7076;
 function stepLights(dt,t){
   // 從 CFG 讀，所以調參面板拉滑桿當下就看得到 —— 亮度這種東西用猜的很浪費
   ambient.intensity=LIGHT.amb; sky.intensity=LIGHT.sky;
@@ -2208,6 +2290,10 @@ function stepLights(dt,t){
     var want=f.lvl<0.5?TUBE_OFF:TUBE_ON;
     if(tubeMeshes[i]&&tubeMeshes[i].material.color.getHex()!==want)
       tubeMeshes[i].material.color.setHex(want);
+    /* 輝光與地面光池跟著同一個 f.lvl。
+       不跟的話燈滅了暈還在，看起來像貼圖沒清掉。 */
+    if(tubeGlow[i])tubeGlow[i].material.opacity=CFG.bloom*f.lvl;
+    if(tubePool[i])tubePool[i].material.opacity=CFG.floorGlow*f.lvl;
   }
 }
 
@@ -2249,15 +2335,6 @@ var flash=new THREE.SpotLight(0xE8F0E0,0.85,24,THREE.MathUtils.degToRad(26),0.5,
 flash.position.set(0,0,0); camera.add(flash);
 flash.target.position.set(0,0,-1); camera.add(flash.target);
 
-// 光暈 sprite 材質
-function haloTex(){
-  var c=document.createElement('canvas'); c.width=c.height=64;
-  var g=c.getContext('2d'), r=g.createRadialGradient(32,32,0,32,32,32);
-  r.addColorStop(0,'rgba(255,255,255,1)'); r.addColorStop(.35,'rgba(255,255,255,.42)');
-  r.addColorStop(1,'rgba(255,255,255,0)');
-  g.fillStyle=r; g.fillRect(0,0,64,64); return new THREE.CanvasTexture(c);
-}
-var HALO=haloTex();
 
 /* ---------- 商品積木造型（全部程序化生成，不用外部素材） ---------- */
 var GEO={
@@ -4296,7 +4373,10 @@ function setDanger(on){
   ambient.intensity = LIGHT.amb*k;
   sky.intensity = LIGHT.sky*k;
   lamps.forEach(function(L){L.intensity=LIGHT.lamp*k;});
-  tubeMeshes.forEach(function(t){t.material.color.setHex(on?0x2A3028:TUBE_ON);});
+  // 切換的當下先給一個合理值，免得閃爍計時器還沒跑到就先露出前一個狀態
+  tubeGlow.forEach(function(g){g.material.opacity=CFG.bloom*k;});
+  tubePool.forEach(function(p){p.material.opacity=CFG.floorGlow*k;});
+  tubeMeshes.forEach(function(t){t.material.color.setHex(on?0x262C33:TUBE_ON);});
   signs.forEach(function(s){s.material.color.setHex(on?0xFF3B30:0x4ADE80);});
   guides.forEach(function(m){
     m.material.color.setHex(on?0xFF3B30:0x3FBF6A);
@@ -6873,7 +6953,15 @@ function frame(now){
         if(flickerT<=0){ flickerT=0.1+Math.random()*0.45;
           var on=Math.random()<0.38;
           var k=CFG.alarmLight;
-          lamps.forEach(function(L){L.intensity=LIGHT.lamp*k*(on?1.75:0.72);});
+          /* 輝光與地面光池也要跟著停電閃 —— stepLights 在 danger 期間
+             整個讓位給這一段，不在這裡更新的話它們會凍在停電前的亮度，
+             變成「燈滅了但暈還在」。 */
+          var gk=k*(on?1.3:0.35);
+          lamps.forEach(function(L,i){
+            L.intensity=LIGHT.lamp*k*(on?1.75:0.72);
+            if(tubeGlow[i])tubeGlow[i].material.opacity=CFG.bloom*gk;
+            if(tubePool[i])tubePool[i].material.opacity=CFG.floorGlow*gk;
+          });
           ambient.intensity=LIGHT.amb*k*(on?1.35:0.94);
         }
         // 疏散導引燈帶在停電時閃動 —— 黑掉之後這是最明確的一條路
