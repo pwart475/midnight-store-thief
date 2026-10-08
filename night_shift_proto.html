@@ -1162,7 +1162,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v10.9';
+var BUILD='v11.0';
 
 /* ================================================================
    目錄與凍結狀態
@@ -7536,8 +7536,12 @@ function simOneRun(P,maxT){
        endRun() 進入 result。只等 'play' 的話會卡在特寫中間，
        net 永遠是 0，被抓那一局的資料就全部不見。 */
     while((G.phase==='play'||G.phase==='catchcam')&&t<lim&&!BOT.st.deadlock){
-      G.lastTime+=dt*1000;
-      frame(G.lastTime);
+      /* frame() 自己算 dt = now - G.lastTime，而且自己更新 G.lastTime。
+         所以這裡只能把「未來的時間戳」餵進去，絕對不能先改 G.lastTime ——
+         先改的話 now 跟 G.lastTime 相等，dt 變成 0：整個模擬會跑好跑滿、
+         不報錯、isPaused 也是 false，但沒有任何東西會動。
+         一整批資料就是這樣變成全零的。 */
+      frame(G.lastTime+dt*1000);
       t+=dt;
     }
   }finally{ locked=lockWas; }
@@ -7641,7 +7645,7 @@ window.NSSIM={
       var lockWas=locked; locked=true;
       try{
         while((G.phase==='play'||G.phase==='catchcam')&&t<lim&&!BOT.st.deadlock){
-          G.lastTime+=dt*1000; frame(G.lastTime); t+=dt;
+          frame(G.lastTime+dt*1000); t+=dt;   // 同 simOneRun：不能先改 lastTime，否則 dt=0
           if((n++%ev2)===0)tr.push({
             t:+t.toFixed(1),
             x:+camera.position.x.toFixed(1), z:+camera.position.z.toFixed(1),
