@@ -1162,7 +1162,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v11.0';
+var BUILD='v11.2';
 
 /* ================================================================
    目錄與凍結狀態
@@ -1267,6 +1267,10 @@ var DEF = {
      v7.6 把架上的貨加了四成之後，湊滿 4 件變成一件不用動腦的事，
      提到 5 只是把那段時間補回原本的長度。 */
   capacity:12, riskBonus:0.25, forbiddenValue:300, extractItems:5,
+  /* 拿到非賣品之後，店員「晚幾秒」才知道你在哪。0 = 立刻（舊行為）。
+     燈、聲音、廣播都還是當下就發生，只有位置情報延後 —— 所以玩家
+     感覺到的是警報在醞釀，不是遊戲放水。 */
+  forbidGrace:0,
   /* 稀有品的前後場落差（v7.7）。
      貨變多之後如果兩邊同比例上升，前場自己就湊得出一袋好貨，
      「要不要往深處走」這個決定會直接消失 ——
@@ -1478,7 +1482,8 @@ var KNOBS = [
   ['k-econ','loadPenalty','過門檻的減速',0,0.5,.01,''],
   ['k-econ','heatFullValue','注意度滿的金額',150,1500,10,''],
   ['k-econ','heatVision','注意度→視線加成',0,1.5,.05,''],
-  ['k-econ','forbiddenValue','禁忌品價值',20,400,10,''],
+  ['k-econ','forbiddenValue','禁忌品價值',20,900,10,''],
+  ['k-econ','forbidGrace','警報起跑緩衝',0,8,.5,' s'],
   ['k-econ','riskBonus','每件非賣品的整袋加成',0,1,.05,''],
   ['k-econ','extractItems','解鎖撤離所需件數',1,10,1,' 件'],
   ['k-item','stopTime','午夜鐘停止秒數',2,20,.5,' s'],
@@ -3770,7 +3775,11 @@ function newRun(){
     spotted:0, maxHeat:0, usedItem:false,    // 評分用
     forbidCount:0, slotWin:0
   };
-  shrinkT=0; stopT=0; doorPingT=0;
+  /* forbidAlertT 一定要在這裡歸零。
+     倒數只在 phase==='play' 時走，所以「拿了非賣品，在緩衝秒數內就脫身」
+     會讓它帶著殘值進到下一局 —— 下一局開場幾秒後，店員會莫名其妙全部
+     知道你在哪。那是一個不會報錯、只會讓人覺得「這局好像壞掉了」的 bug。 */
+  shrinkT=0; stopT=0; doorPingT=0; forbidAlertT=0;
   document.body.classList.remove('shrunk','shrink-end');
   /* 拉霸的狀態一定要在這裡清掉。
      不清的話：拉到一半被抓 → slot 還留著 done:false →
@@ -5269,6 +5278,15 @@ function unlockExit(){
     '三件全拿 · 約 $'+all,
     '要走，還是再進去一次？',6000);
 }
+/* 警報的「起跑時間」。
+   原本拿到非賣品的瞬間就 alertAllClerks()，每個店員立刻知道你在哪 ——
+   而你人在全場最深處，離後門 33 公尺。模擬跑出來那條路線 96~97% 會被抓，
+   那不是高風險高報酬，那是一個沒有決策空間的陷阱。
+   這個計時器讓警報「響起來」跟「店員動起來」分開：燈先暗、聲先響、
+   廣播先講話，店員晚幾秒才收到位置。玩家因此有一段可以跑的窗口，
+   escape 才變成技術，而不是擲骰子。
+   0 = 完全沿用舊行為，所以這個參數可以直接 A/B。 */
+var forbidAlertT=0;
 function triggerForbidden(){
   var r=G.run;
   flashScreen();
@@ -5280,7 +5298,9 @@ function triggerForbidden(){
      而且畫面同時變暗。現在只留頂端一行「衝回後門」，其餘靠紅暈與導引燈帶講。 */
   setObjective('衝回後門',true);
   setTimeout(function(){ if(G.phase==='play')pa('偵測到非賣品離架。保全程序已啟動，請留在原地不要移動。'); },1600);
-  alertAllClerks();
+  // 用遊戲內時鐘，不用 setTimeout —— 模擬是同步迴圈，setTimeout 永遠不會在局內觸發
+  if(CFG.forbidGrace>0)forbidAlertT=CFG.forbidGrace;
+  else alertAllClerks();
   ev('chase_started',{src:'forbidden'});
 }
 /* 全店警戒：警報或密碼錯誤時，每一個店員都直接知道你在哪。
@@ -7119,6 +7139,8 @@ function frame(now){
          實際的移動、碰撞、撿取判定全部走玩家那條路。
          這點是整個模擬可信度的根 —— bot 不會穿牆、不會隔空撿東西、
          不會比玩家跑得快，因為它用的就是玩家的程式。 */
+      // 非賣品警報的起跑倒數（見 triggerForbidden）
+      if(forbidAlertT>0){ forbidAlertT-=dt; if(forbidAlertT<=0)alertAllClerks(); }
       if(BOT.on)botStep(dt);
       stepPlayer(dt);
       /* 午夜鐘：整個 stepClerk 直接跳掉。
@@ -7630,6 +7652,14 @@ window.NSSIM={
   batch:function(lives,maxShift){ return simBatch(lives,maxShift); },
   rows:function(){ return SIM.rows; },
   build:BUILD,
+  /* 直接把 CFG 與出廠值暴露出來。
+     這是整個 harness 最重要的一個出口：沒有它，每測一個設計想法
+     就要改檔、推 GitHub、等部署 —— 一個問題一次來回。
+     有了它，所有數值題（非賣品價值、警報緩衝、容量、視野、解鎖件數…）
+     都可以在主控台掃完，不用再動一次程式。 */
+  cfg:CFG, def:DEF,
+  setCfg:function(o){ for(var k in o)CFG[k]=o[k]; return CFG; },
+  resetCfg:function(){ for(var k in DEF)CFG[k]=DEF[k]; return CFG; },
   // 跑單獨一局並回傳逐秒的軌跡，用來看 bot 到底在幹嘛
   trace:function(key,maxT,every){
     var P=PERSONAS[key]||PERSONAS.greedy;
