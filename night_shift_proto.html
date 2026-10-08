@@ -71,12 +71,22 @@
     #setfx .val{font-size:15px}
   }
 
+  /* 色彩分級：藍綠色的 screen 混合。
+     screen 的特性剛好是我們要的 —— 它對已經很亮的像素幾乎沒有作用，
+     對暗的像素影響最大。所以亮處維持暖白，暗處往藍綠靠，
+     而這只是合成器的一次混合，不是逐像素的濾鏡，比 backdrop-filter 便宜得多。
+     強度由 CFG.coolGrade 控制（調參面板 → 畫面），設 0 就整個關掉。 */
+  #grade{position:fixed;inset:0;z-index:5;pointer-events:none;
+    background:#0C2A26;mix-blend-mode:screen;opacity:0}
+
   /* 常駐暗角。跟 #vignette（警報時的紅框）是兩回事 —— 那個是訊號，這個是氛圍。
-     用兩層漸層：外圈壓暗、四角再壓一次，單一漸層會在中間就開始灰掉。 */
+     用兩層漸層：外圈壓暗、四角再壓一次，單一漸層會在中間就開始灰掉。
+     邊緣帶一點藍綠而不是純黑 —— 純黑的暗角會把分級的顏色吃掉，
+     變成「中間藍綠、四周死黑」的兩截。 */
   #vig0{position:absolute;inset:0;pointer-events:none;
     background:
-      radial-gradient(ellipse 78% 68% at 50% 52%,rgba(0,0,0,0) 48%,rgba(0,0,0,.55) 100%),
-      radial-gradient(ellipse 120% 100% at 50% 50%,rgba(0,0,0,0) 62%,rgba(0,0,0,.42) 100%)}
+      radial-gradient(ellipse 78% 68% at 50% 52%,rgba(4,14,12,0) 48%,rgba(4,14,12,.55) 100%),
+      radial-gradient(ellipse 120% 100% at 50% 50%,rgba(2,10,9,0) 62%,rgba(2,10,9,.44) 100%)}
 
   /* ---------- HUD ---------- */
   #crosshair{position:absolute;left:50%;top:50%;width:22px;height:22px;margin:-11px 0 0 -11px}
@@ -93,7 +103,10 @@
     margin:-11vmin 0 0 -11vmin;border:1px dashed rgba(220,235,216,.20);border-radius:50%;
     display:none}
   #steerring.on{display:block}
-  #steerring::after{content:'推出圈外持續轉頭';position:absolute;left:50%;bottom:-26px;
+  /* 文字要把「怎麼切回去」講出來。推移轉向的手感本來就比較像搖桿，
+     玩家十之八九不是自己選的，而是指標鎖定失敗被丟進來的 —— 看到這個圈
+     只會覺得遊戲手感很怪，不會知道有另一個模式。 */
+  #steerring::after{content:'推出圈外持續轉頭 · 按 M 切回滑鼠鎖定';position:absolute;left:50%;bottom:-26px;
     transform:translateX(-50%);white-space:nowrap;font-size:10.5px;letter-spacing:.1em;
     color:rgba(126,143,128,.75);font-family:var(--f-mono)}
 
@@ -645,6 +658,13 @@
   #dev h4{font-family:var(--f-mono);font-size:10px;letter-spacing:.2em;text-transform:uppercase;
     color:var(--dimmer);margin:20px 0 9px;padding-bottom:6px;border-bottom:1px solid var(--line)}
   #dev h4:first-child{margin-top:0}
+  /* 搜尋框釘在面板頂端，捲到哪裡都按得到 */
+  #devfind{position:sticky;top:-16px;z-index:2;width:100%;box-sizing:border-box;
+    margin:-4px 0 12px;padding:8px 10px;background:#0E1310;color:var(--tube);
+    border:1px solid var(--line-hi);border-radius:6px;
+    font:13px "Noto Sans TC",system-ui,sans-serif}
+  #devfind:focus{outline:none;border-color:var(--price)}
+  #devfind::placeholder{color:var(--dimmer)}
   .knob{display:grid;grid-template-columns:1fr auto;gap:2px 8px;margin-bottom:11px;align-items:center}
   .knob label{font-size:12px;color:var(--dim)}
   .knob output{font-family:var(--f-mono);font-size:12px;color:var(--price);font-variant-numeric:tabular-nums}
@@ -819,6 +839,9 @@
 </style>
 
 <div id="stage"></div>
+<!-- 色彩分級。z-index 5：壓在畫面上、但在 HUD（.layer 是 10）下面，
+     所以介面的字不會跟著被染色。 -->
+<div id="grade"></div>
 
 <div class="layer" id="hud">
   <!-- 常駐暗角。放第一個，所以 HUD 的字都壓在它上面。
@@ -1105,10 +1128,14 @@
 <button id="fsbtn">⛶ 全螢幕</button>
 <button id="devtoggle">T · 調參</button>
 <div id="dev">
-  <h4>音量</h4><div id="k-audio"></div>
-  <h4>玩家</h4><div id="k-player"></div>
-  <h4>店員</h4><div id="k-clerk"></div>
-  <h4>經濟與節奏</h4><div id="k-econ"></div>
+  <input id="devfind" type="search" placeholder="搜尋參數…　例：亮度、機率、速度" autocomplete="off">
+  <h4 data-sec="k-look">畫面</h4><div id="k-look"></div>
+  <h4 data-sec="k-spawn">生成與關卡</h4><div id="k-spawn"></div>
+  <h4 data-sec="k-clerk">店員</h4><div id="k-clerk"></div>
+  <h4 data-sec="k-player">玩家</h4><div id="k-player"></div>
+  <h4 data-sec="k-econ">經濟與節奏</h4><div id="k-econ"></div>
+  <h4 data-sec="k-item">道具與互動</h4><div id="k-item"></div>
+  <h4 data-sec="k-audio">音量</h4><div id="k-audio"></div>
   <h4>本局事件</h4>
   <div id="devlog"></div>
   <div class="mini"><button id="dev-reset">重置參數</button><button id="dev-copy">複製全部數據</button></div>
@@ -1135,7 +1162,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v9.5';
+var BUILD='v10.4';
 
 /* ================================================================
    目錄與凍結狀態
@@ -1295,22 +1322,35 @@ var DEF = {
      spritePreview 開起來會讓「所有」品項都改用程式畫的佔位圖 ——
      那是用來在畫圖之前先確認平面 sprite 在這個光線與距離下看不看得清楚的。 */
   spriteSize:0.265, spritePreview:0,
-  /* 商品的自體發光下限。0 = 完全跟著現場光，全黑的角落就真的看不見；
-     太高又會變回「貼上去的貼紙」。0.16 大約是「暗處還認得出輪廓，
-     但一眼看得出那裡沒開燈」。 */
-  spriteGlow:0.16,
+  /* 商品的自體發光，單位是「環境光的幾成」，不是絕對值。
+     這一點很重要：寫成絕對值的話，環境光一降（0.26 → 0.07），
+     自體發光沒跟著降，商品就變成全場唯一亮的東西 ——
+     看起來像貼紙浮在黑色裡面，而那正是當初做成會吃光的 Mesh 要解決的問題。
+     綁成比例之後，不管整體亮度怎麼調，商品跟環境的關係都不會跑掉。 */
+  spriteGlow:0.55,
   /* 亮度。環境光壓低、燈管本身調高 = 「燈下很亮、走道很黑」，
      而不是「整間店一樣灰」。黑暗在這個遊戲裡是有功能的
      （停電、手電筒升級、躲櫃子、視線距離全部靠它），所以整體不能拉亮。 */
-  lightAmb:0.40, lightLamp:1.15,
+  /* 這兩個是實際試出來的，不是我算的。
+     環境光壓到幾乎關掉（0.07），燈管也只給 0.70 —— 比我原本提的暗很多。
+     光線幾乎全部來自輝光那一層，所以日光燈變成「會發亮的物體」
+     而不是「照亮房間的東西」。那個差別就是恐怖片跟賣場型錄的差別。 */
+  lightAmb:0.07, lightLamp:0.70,
+  /* 藍綠分級的強度。環境光本身已經是藍綠的（見 PAL.amb），
+     這一層是補最後那一點 —— 它連霧和遠處一起染到，環境光只染得到幾何。
+     0 = 完全關掉。 */
+  coolGrade:0.30,
   /* 地板反光。shininess 越大光斑越小越銳利（打蠟的感覺），
      越小越糊越廣（霧面）。0 = 完全霧面。
      冷凍室與辦公室會自動再乘 1.5 —— 冷藏區的地板永遠是濕的。 */
-  floorShine:46,
+  /* 136 很高 —— 光斑收得又小又銳利，像剛打完蠟。
+     注意這個只有桌機看得到：手機的地板是 Lambert（見 floorMat），
+     根本沒有鏡面項。手機拿到的是地面濕反光那一層，不是這個。 */
+  floorShine:136,
   /* 假 bloom。bloom 是燈管周圍那圈軟暈，floorGlow 是地上的濕反光。
      兩個都是加色混合的四邊形，不是後處理 —— 成本等於多畫 26 個面，
      而真正的 UnrealBloomPass 在手機上是 3～6ms。 */
-  bloom:0.42, floorGlow:0.30,
+  bloom:0.68, floorGlow:0.26,
   /* 密碼要不要留在畫面上。
      開著（1）＝ 這條鏈的代價是「橫跨整個後場的距離與風險」。
      關掉（0）＝ 再加一層記憶負擔。
@@ -1339,7 +1379,7 @@ var DEF = {
   // 轉再多就會看到門板側緣外面去，那會破功。
   hideLook:0.50,
   hideGiveUp:6,          // 躲著時店員在附近找多久就放棄
-  tagRange:10,                     // 價格標看得到的距離（估價鏡 ×1.8）
+  tagRange:8,                      // 價格標看得到的距離（估價鏡 ×1.8）
   reachDist:3.4, aimAssist:15      // 互動距離與瞄準寬容度（度）
 };
 var CFG = Object.assign({},DEF);
@@ -1398,35 +1438,39 @@ var KNOBS = [
   ['k-clerk','alarmPatrolMul','警報時非追擊速度 ×',1,3,.1,'x'],
   ['k-clerk','stuffStun','塞進立櫃昏多久',5,90,5,' s'],
   ['k-player','dragSpeed','拖行速度倍率',0.2,1,.05,'x'],
-  ['k-econ','officeUnlock','辦公室開鎖秒數',1,15,.5,' s'],
-  ['k-econ','regOpen','收銀機開啟秒數',1,12,.5,' s'],
-  ['k-econ','alarmLight','警報時亮度（平常的幾成）',0.1,1,.05,''],
+  ['k-item','officeUnlock','辦公室開鎖秒數',1,15,.5,' s'],
+  ['k-item','regOpen','收銀機開啟秒數',1,12,.5,' s'],
+  ['k-look','alarmLight','警報時亮度（平常的幾成）',0.1,1,.05,''],
   ['k-clerk','clerk2Shift','第幾班變 2 人',1,99,1,' 班'],
   ['k-clerk','clerk3Shift','第幾班變 3 人',1,99,1,' 班'],
   ['k-clerk','catchDist','抓到距離',.8,3,.05,' m'],
   ['k-clerk','hearSprint','衝刺聲響半徑',4,34,1,' m'],
+  /* ---- 畫面 ---- */
+  ['k-look','coolGrade','暗處藍綠濾鏡',0,0.8,.02,''],
+  ['k-look','lightAmb','環境光（整體亮度）',0.05,1.2,.02,''],
+  ['k-look','lightLamp','燈管亮度（局部）',0.2,3,.05,''],
+  ['k-look','bloom','燈光輝光（假 bloom）',0,1.2,.02,''],
+  ['k-look','floorGlow','地面濕反光',0,1,.02,''],
+  ['k-look','floorShine','地板反光（鏡面）',0,160,2,''],
+  ['k-look','spriteGlow','商品自體發光(環境光倍率)',0,1.5,.05,''],
+  ['k-look','spriteSize','商品圖大小',.12,.6,.005,' m'],
+  ['k-look','spritePreview','商品圖預覽（佔位）',0,1,1,''],
+  ['k-look','tagRange','價格標可視距離',4,30,1,' m'],
+  /* ---- 生成 ---- */
+  ['k-spawn','shelfFill','貨架填充率',.15,1,.02,''],
+  ['k-spawn','rareFront','稀有機率（前場）',0,1,.02,''],
+  ['k-spawn','rareDeep','稀有機率（深處）',0,1,.02,''],
+  ['k-spawn','keyChance','鑰匙出現機率',0,1,.05,''],
+  ['k-spawn','setChance','三件組出現機率',0,1,.05,''],
+  ['k-spawn','safeChance','保險箱中獎機率',0,1,.05,''],
+  ['k-spawn','tzPartChance','電擊槍部件出現機率',0,1,.05,''],
+  ['k-spawn','tzAmmoChance','店內彈藥出現機率',0,1,.05,''],
+  ['k-spawn','codeHint','密碼留在畫面上',0,1,1,''],
+  /* ---- 經濟 ---- */
   ['k-econ','capacity','提袋格數（基礎）',4,30,1,' 格'],
   ['k-econ','gearLost','被抓沒收幾件裝備',0,6,1,' 件'],
-  ['k-econ','keyChance','鑰匙出現機率',0,1,.05,''],
-  ['k-econ','codeHint','密碼留在畫面上',0,1,1,''],
-  ['k-econ','tzPartChance','電擊槍部件出現機率',0,1,.05,''],
-  ['k-econ','tzAmmoChance','店內彈藥出現機率',0,1,.05,''],
-  ['k-econ','tzAmmoCost','彈藥價格',50,800,10,''],
-  ['k-econ','tzAmmoPer','一次補幾發',1,10,1,' 發'],
-  ['k-econ','shelfFill','貨架填充率',.15,1,.02,''],
-  ['k-econ','bloom','燈光輝光（假 bloom）',0,1.2,.02,''],
-  ['k-econ','floorGlow','地面濕反光',0,1,.02,''],
-  ['k-econ','floorShine','地板反光',0,160,2,''],
-  ['k-econ','spriteGlow','商品自體發光',0,0.8,.02,''],
-  ['k-econ','lightAmb','環境光（整體亮度）',0.05,1.2,.02,''],
-  ['k-econ','lightLamp','燈管亮度（局部）',0.2,3,.05,''],
-  ['k-econ','spritePreview','平面圖預覽（佔位）',0,1,1,''],
-  ['k-econ','spriteSize','平面圖大小',.12,.6,.005,' m'],
-  ['k-econ','rareFront','稀有機率（前場）',0,1,.02,''],
-  ['k-econ','rareDeep','稀有機率（深處）',0,1,.02,''],
-  ['k-econ','tagRange','價格標可視距離',4,30,1,' m'],
-  ['k-econ','setChance','三件組出現機率',0,1,.05,''],
-  ['k-econ','safeChance','保險箱中獎機率',0,1,.05,''],
+  ['k-item','tzAmmoCost','彈藥價格',50,800,10,''],
+  ['k-item','tzAmmoPer','一次補幾發',1,10,1,' 發'],
   ['k-clerk','taserRange','電擊槍射程',5,40,1,' m'],
   ['k-clerk','taserSpread','電擊槍散布',2,25,1,'°'],
   ['k-econ','loadThreshold','負重門檻',0.3,1,.05,''],
@@ -1436,10 +1480,10 @@ var KNOBS = [
   ['k-econ','forbiddenValue','禁忌品價值',20,400,10,''],
   ['k-econ','riskBonus','每件非賣品的整袋加成',0,1,.05,''],
   ['k-econ','extractItems','解鎖撤離所需件數',1,10,1,' 件'],
-  ['k-econ','stopTime','午夜鐘停止秒數',2,20,.5,' s'],
-  ['k-econ','stopUses','午夜鐘每局次數',1,6,1,' 次'],
-  ['k-econ','stopRuns','午夜鐘可用回合',1,10,1,' 回'],
-  ['k-econ','stopNeed','午夜鐘解鎖門檻',1,10,1,' 次']
+  ['k-item','stopTime','午夜鐘停止秒數',2,20,.5,' s'],
+  ['k-item','stopUses','午夜鐘每局次數',1,6,1,' 次'],
+  ['k-item','stopRuns','午夜鐘可用回合',1,10,1,' 回'],
+  ['k-item','stopNeed','午夜鐘解鎖門檻',1,10,1,' 次']
 ];
 
 /* ============================================================
@@ -1934,17 +1978,27 @@ var SHUTTER_SPOTS=[
    另一半是明度：牆與天花板壓到比以前暗得多，地板留亮（它接光），
    貨架維持中間偏暗的暖褐。有了明度階梯，燈才打得出來。 */
 var PAL={
-  dark   :0x080B0E,   // 背景與霧：近黑的冷藍
-  amb    :0x4C5A68,   // 環境光：冷藍灰
-  sky    :0xB8C8D6,   // 平行光
-  lamp   :0xFFEAC8,   // 日光燈：暖白 —— 全場唯一的暖色
-  tubeOn :0xFFF4E2,   // 燈管本體
-  glow   :0xFFE4BC,   // 燈管輝光
-  pool   :0xE8D8C0    // 地面濕反光（暖光落在冷地板上）
+  /* 霧是淡綠的。這一條是整個畫面的個性所在 ——
+     日光燈打在空氣裡會散射成這個顏色，而深處越遠就越綠、
+     所以「越往裡面走越不對勁」不用靠任何文字講。
+     不能太亮：FogExp2 密度 0.019，二十公尺就吃掉三成，
+     霧一亮後場就會發光，黑暗那一半的遊戲性跟著不見。 */
+  fog    :0x3C4A33,
+  bg     :0x0E120C,   // 背景比霧暗 —— 沒有幾何的地方不該發亮
+  /* 環境光改成藍綠 —— 這就是「暗處偏藍綠」的主要機制，而且不用後處理。
+     AmbientLight 本來就只在燈照不到的地方占主導：燈下被暖白壓過去，
+     沒燈的地方剩下的全是它的顏色。所以暖高光／冷陰影自己就成立了，
+     不需要任何逐像素的濾鏡。 */
+  amb    :0x3E6A62,
+  sky    :0xA8C4BC,
+  lamp   :0xFFEFD2,   // 日光燈：暖白。冷綠的空氣配暖白的燈，對比就出來了
+  tubeOn :0xFFF8EA,
+  glow   :0xFFE8C4,
+  pool   :0xF2E2C4    // 地面反光（暖光落在米色磁磚上）
 };
 var scene=new THREE.Scene();
-scene.background=new THREE.Color(PAL.dark);
-scene.fog=new THREE.FogExp2(PAL.dark,0.019);
+scene.background=new THREE.Color(PAL.bg);
+scene.fog=new THREE.FogExp2(PAL.fog,0.019);
 
 var camera=new THREE.PerspectiveCamera(74,1,0.08,140);
 camera.position.set(SPAWN.x,1.65,SPAWN.z);
@@ -2012,24 +2066,28 @@ function texGrain(base,amp){
 // 天花板：輕鋼架的方格，每隔幾格換一塊淺色的當燈盤
 function texCeil(){
   var c=cvs(128), g=c.getContext('2d');
-  // 天花板是全場最暗的面。它在視野上緣，壓暗之後畫面重心自然落在貨架與地板
-  g.fillStyle='#171c21'; g.fillRect(0,0,128,128);      // 骨架
-  var p=['#2a3139','#272e34','#2d343a','#242b31'];
+  /* 天花板是全場最暗的面，而且刻意跟其他地方反過來：
+     地板牆壁貨架都是淺色，天花板一壓暗，畫面的重心就自然掉到視線高度，
+     那正好是貨架與走道的高度。參考圖也是這樣 —— 上面那一條是黑的。 */
+  g.fillStyle='#1b1a17'; g.fillRect(0,0,128,128);      // 骨架
+  var p=['#2b2a26','#282722','#2f2e29','#252420'];
   for(var i=0;i<2;i++)for(var j=0;j<2;j++){
     g.fillStyle=p[(i*2+j)%4];
     g.fillRect(i*64+3,j*64+3,58,58);
   }
-  g.fillStyle='#424c54';                                // 一塊燈盤
+  g.fillStyle='#4c4a43';                                // 一塊燈盤
   g.fillRect(3,3,58,58);
   return c;
 }
 /* 地板材質要按尺寸各做一份：貼圖是共用的，但 repeat 不是 ——
    同一個 material 給 40m 和 4m 的地板用，小的那塊磁磚會被拉成長方形。 */
 var TILE_M=1.8;                                   // 一組 2×2 磁磚等於幾公尺
-/* 地板比牆亮一截是刻意的 —— 它是接光的面，而且磁磚本來就比牆反光。
-   明度階梯（地板亮 › 貨架中 › 牆暗 › 天花板最暗）就是讓燈打得出來的那個東西。 */
-var TILE_C=texTile(['#5a636a','#555e65','#5f686f','#515a61'],'#2c3238');
-var COLD_C=texTile(['#3d4e5c','#394a58','#415260','#354656'],'#222e38');
+/* 米色磁磚，比牆亮一截 —— 它是接光的面，而且磁磚本來就比牆反光。
+   這幾個值看起來偏亮是對的：環境光只有 0.26，實際畫出來是中間調，
+   而燈下那幾塊才會真的亮起來。全部調暗的話燈就打不出光池了。 */
+var TILE_C=texTile(['#9c968a','#959085','#a39d91','#8e897e'],'#5c584f');
+// 冷藏庫維持冷色 —— 全場唯一的藍，一走進去溫度差就出來了
+var COLD_C=texTile(['#6e7a82','#68747c','#74808a','#626e76'],'#3a434a');
 /* 地板改用 Phong，不是為了好看而已 —— Lambert 是逐「頂點」打光，
    而 PlaneGeometry(40,39) 預設只有四個頂點。也就是說整片地板的亮度
    是從四個角內插出來的，十三盞燈打在地上幾乎沒有效果，
@@ -2074,12 +2132,10 @@ var MAT={
   floor:floorMat(TILE_C,40,39,1),
   // 冷凍室與辦公室的地板打亮一點 —— 冷藏區的地永遠是濕的
   cold :floorMat(COLD_C,13.2,10.8,1.5),
-  // 牆壓暗。它佔的面積最大，亮的話整個畫面就沒有「深夜」可言
-  wall :new THREE.MeshLambertMaterial({map:mkTex(texGrain('#363d44',0.10),3)}),
-  /* 貨架留暖褐，但壓暗、降彩度。
-     這是全場唯一不是冷色的表面 —— 跟冷地板擺在一起會互相襯，
-     但彩度一高就會跳出來搶戲，變回原本那種糊掉的咖啡色。 */
-  shelf:new THREE.MeshLambertMaterial({map:mkTex(texGrain('#4a4038',0.12),2)}),
+  // 牆：白磁磚，但比地板暗一階。它面積最大，跟地板一樣亮就會沒有層次
+  wall :new THREE.MeshLambertMaterial({map:mkTex(texGrain('#817d73',0.10),3)}),
+  // 貨架：白鐵層架。淺色才襯得出商品的顏色，那是超商貨架唯一的工作
+  shelf:new THREE.MeshLambertMaterial({map:mkTex(texGrain('#8a8982',0.11),2)}),
   common:new THREE.MeshLambertMaterial({color:0x8C8A72}),
   rare :new THREE.MeshStandardMaterial({color:0x6B5A1E,emissive:0xFFC93C,emissiveIntensity:0.55,roughness:.6,metalness:.1}),
   forbid:new THREE.MeshStandardMaterial({color:0x3A1E52,emissive:0xC77DFF,emissiveIntensity:0.85,roughness:.5,metalness:.1}),
@@ -2140,8 +2196,8 @@ COL_STATIC.forEach(function(c){
 });
 
 // 貨架區的網格與層板每次重建，統一掛在這個 Group 底下方便整批清除
-// 層板改成冷調金屬，跟暖褐的貨架體分開 —— 真正的超商層板就是鐵的
-var ledgeMat=new THREE.MeshLambertMaterial({color:0x5E6A72});
+// 層板比貨架體再亮一階 —— 真正的超商層板是鍍鋅鐵，邊緣會反光
+var ledgeMat=new THREE.MeshLambertMaterial({color:0xA6A49C});
 var shutterMat=new THREE.MeshLambertMaterial({color:0x6B5A32});
 var aisleGroup=new THREE.Group(); scene.add(aisleGroup);
 var layoutSpots=[], layoutName='A';
@@ -2264,16 +2320,21 @@ var flick=lamps.map(function(){
   return {next:2+Math.random()*14, burst:0, lvl:1, ph:Math.random()*6.283};
 });
 var TUBE_ON=PAL.tubeOn, TUBE_OFF=0x6E7076;
+// 分級層。查一次存起來 —— stepLights 每一幀都會碰它
+var gradeEl=document.getElementById('grade');
 function stepLights(dt,t){
   // 從 CFG 讀，所以調參面板拉滑桿當下就看得到 —— 亮度這種東西用猜的很浪費
   ambient.intensity=LIGHT.amb; sky.intensity=LIGHT.sky;
+  if(gradeEl&&gradeEl._o!==CFG.coolGrade){
+    gradeEl._o=CFG.coolGrade; gradeEl.style.opacity=CFG.coolGrade;
+  }
   for(var q=0;q<floorMats.length;q++){
     var want=CFG.floorShine*floorMats[q].userData.shineMul;
     if(floorMats[q].shininess!==want)floorMats[q].shininess=want;
   }
+  var se=spriteEmissive();
   for(var w=0;w<spriteMats.length;w++)
-    if(spriteMats[w].emissiveIntensity!==CFG.spriteGlow)
-      spriteMats[w].emissiveIntensity=CFG.spriteGlow;
+    if(spriteMats[w].emissiveIntensity!==se)spriteMats[w].emissiveIntensity=se;
   for(var i=0;i<lamps.length;i++){
     var f=flick[i];
     if(f.burst>0){
@@ -2617,6 +2678,8 @@ function spriteMode(def){ return !!HAS_TEX[def.id]||CFG.spritePreview>0; }
    積木的原點在腳下（幾何往上長），平面預設卻是以中心對齊，
    不改的話東西會有一半陷進層板裡。 */
 var SPRITE_GEO=new THREE.PlaneGeometry(1,1); SPRITE_GEO.translate(0,0.5,0);
+// 商品自體發光＝環境光 × 比例。一個地方算，建材質和每幀同步都用它
+function spriteEmissive(){ return CFG.spriteGlow*CFG.lightAmb; }
 // 佔幾格 → 在架上畫多大。0 格（鑰匙、電擊槍部件）當 1 格處理
 /* 1.5 倍是使用者指定的，但不能照字面做到底：
    下層層板在 y=0.73，上層層板的底面在 1.2325 —— 中間只有 0.50m。
@@ -2639,7 +2702,7 @@ function buildModel(def){
     var m=new THREE.MeshLambertMaterial({
       map:tex, transparent:true, alphaTest:0.35,
       side:THREE.DoubleSide,
-      emissive:0xffffff, emissiveMap:tex, emissiveIntensity:CFG.spriteGlow});
+      emissive:0xffffff, emissiveMap:tex, emissiveIntensity:spriteEmissive()});
     spriteMats.push(m);
     var s=new THREE.Mesh(SPRITE_GEO,m);
     /* 佔兩格的東西在架上就要看起來比較大。
@@ -4405,6 +4468,8 @@ function pa(text){
    ============================================================ */
 var keys={}, yaw=SPAWN.yaw, pitch=0, vel=new THREE.Vector3();
 var locked=false, lockFailed=false, manualPause=false, cursorX=0.5;
+// 這次鎖定有沒有拿到「原始滑鼠輸入」（繞過系統指標加速）。file:// 拿不到。
+var rawInput=false, rawWarned=false;
 // 視角模式：delta = 移動轉向（需要指標鎖定才好用）；steer = 推移轉向（游標不會跑出視窗）
 var lookMode='delta', cursorNX=0, cursorNY=0, pointerInside=true;
 var canvas=renderer.domElement;
@@ -4440,9 +4505,16 @@ window.addEventListener('keydown',function(e){
   if(k==='f'){toggleFullscreen();}
   if(k==='m'&&G.phase==='play'){
     if(lookMode==='steer'){
-      lockFailed=false; setLookMode('delta');
+      lockFailed=false; lockTries=0; setLookMode('delta');
       toast('嘗試鎖定滑鼠…'); requestLock();
-    }else{ setLookMode('steer'); toast('推移轉向：把游標推離中央圈就持續轉頭'); }
+    }else{
+      /* lockFailed 在這裡不是「失敗」的意思，是「不要再等指標鎖定了」。
+         少了這行，按 M 進推移轉向之後 locked 和 lockFailed 都是 false，
+         isPaused() 永遠為真 —— 遊戲直接卡在暫停畫面，點畫面也沒用，
+         因為 requestLock 看到不是 delta 模式就直接 return。 */
+      lockFailed=true; setLookMode('steer'); hidePause();
+      toast('推移轉向：把游標推離中央圈就持續轉頭 · 按 M 切回');
+    }
   }
   if(k==='escape'){
     if(G.phase==='help'||G.phase==='board'){gotoTitle();}
@@ -4479,8 +4551,15 @@ window.addEventListener('mousemove',function(e){
   cursorNY = (e.clientY/h)*2-1;
   pointerInside=true;
   if(isPaused()||lookMode!=='delta')return;
-  yaw   -= (e.movementX||0)*CFG.mouseSens;
-  pitch -= (e.movementY||0)*CFG.mouseSens;
+  var mx=e.movementX||0, my=e.movementY||0;
+  /* 突波防護。瀏覽器在「剛鎖定指標」「切回視窗」「游標跨螢幕」這幾個時機
+     偶爾會送出一筆幾千像素的 movement —— 那一筆會把視角整個甩走，
+     玩家看到的就是「視角自己飄掉」或「轉一轉突然朝向天花板」。
+     真人在一次 mousemove 事件裡不可能移動這麼多，所以整筆丟掉比較安全。
+     注意是 return 不是 clamp：clamp 還是會讓視角跳 300px，一樣難看。 */
+  if(Math.abs(mx)>300||Math.abs(my)>300)return;
+  yaw   -= mx*CFG.mouseSens;
+  pitch -= my*CFG.mouseSens;
   pitch = Math.max(-1.25,Math.min(1.25,pitch));
 });
 document.addEventListener('mouseleave',function(){ pointerInside=false; });
@@ -4492,10 +4571,31 @@ function setLookMode(m){
 }
 // 鎖定滑鼠是首選：像 CS 一樣游標消失、無限轉頭、不會跑出視窗。
 // unadjustedMovement 關掉作業系統的滑鼠加速，手感才會是 FPS 該有的線性。
-function lockFail(msg){
-  if(lockFailed)return;
+/* 第一次鎖定失敗不代表這個環境不能鎖。瀏覽器會在剛 exitPointerLock 之後
+   壓一段冷卻（Chrome 大約 1.25 秒），這段期間的請求一定失敗；開場載入
+   貼圖卡住一下，900ms 的逾時也會誤判。以前只要失敗一次就永久切到推移
+   轉向，而且 lockFailed 再也不會變回來 —— 玩家就被鎖在搖桿手感裡，
+   除非他知道要按 M，但沒人會知道。
+   所以給三次機會，三次都不行才認定這個環境真的不支援。 */
+/* 一次請求只能算一次失敗。這點不小心就會把整個重試機制作廢：
+   一次真正失敗的 requestLock 可以同時觸發 pointerlockerror 事件、
+   fallback promise 的 reject、以及 1800ms 逾時 —— 三條路都呼叫
+   lockFail，一次點擊就把三次機會燒光，行為跟改之前一模一樣。
+   所以每次請求發一個流水號，只有「還是最新的那次」而且「還沒被計過」
+   才算數。順便擋掉已經鎖上之後才遲到的錯誤。 */
+var lockTries=0, lockReq=0, lockCounted=0;
+function lockFail(msg,id){
+  if(lockFailed||locked)return;
+  if(id===undefined)id=lockReq;          // 事件來源沒有流水號，當作當前這次
+  if(id!==lockReq||id===lockCounted)return;
+  lockCounted=id;
+  lockTries++;
+  if(lockTries<3){
+    toast('鎖定滑鼠沒成功（第'+lockTries+'次）· 點一下畫面再試');
+    return;
+  }
   lockFailed=true; hidePause(); setLookMode('steer');
-  toast(msg||'這個環境不允許鎖定滑鼠 · 已切換為推移轉向 · 按 M 切換');
+  toast(msg||'這個環境不允許鎖定滑鼠 · 已切換為推移轉向 · 按 M 切回');
 }
 /* ---------- 觸控：左搖桿移動、右半邊拖曳轉頭、三顆按鈕 ---------- */
 var touchMove={f:0,s:0,mag:0};
@@ -4643,29 +4743,70 @@ function checkOrient(){
 function requestLock(){
   if(IS_TOUCH){lockFailed=true;hidePause();return;}
   if(lookMode!=='delta')return;
-  if(!canvas.requestPointerLock){ lockFail(); return; }
+  var rid=++lockReq;               // 這次請求的流水號，所有失敗路徑共用
+  if(!canvas.requestPointerLock){ lockFail(null,rid); return; }
   var p;
+  rawInput=false;
   try{ p=canvas.requestPointerLock({unadjustedMovement:true}); }
   catch(e){ p=null; }
   if(p&&p.then){
-    p.then(function(){},function(){
+    p.then(function(){ rawInput=true; },function(){
+      /* 原始輸入拿不到。最常見的原因是 file:// —— 它不是安全來源，
+         unadjustedMovement 一定被拒。退回普通鎖定還是能玩，但滑鼠
+         movement 會帶著作業系統的指標加速：慢慢推幾乎不動、快甩又過頭，
+         手感就是「黏黏的、會飄」。所以這裡要講出來，不然玩家只會覺得
+         是遊戲做壞了，然後跑去調靈敏度 —— 調靈敏度治不好加速曲線。 */
+      rawInput=false;
+      /* 第一次（帶 unadjustedMovement）被拒時，瀏覽器也會丟一個
+         pointerlockerror 事件。那個事件講的是「這個選項不行」，
+         不是「這個環境不能鎖」—— 退回去的普通鎖定通常馬上就成功。
+         不擋的話，file:// 每次點擊都會先跳一個假的「鎖定沒成功」，
+         而且計數累到 3 就會把人踢進推移轉向，但指標其實鎖上了。 */
       try{ var p2=canvas.requestPointerLock();
-           if(p2&&p2.then)p2.then(function(){},function(){lockFail();}); }
-      catch(e2){ lockFail(); }
+           if(p2&&p2.then)p2.then(function(){},function(){lockFail(null,rid);}); }
+      catch(e2){ lockFail(null,rid); }
     });
   }else{
-    try{ canvas.requestPointerLock(); }catch(e3){ lockFail(); return; }
+    /* 舊版 API：requestPointerLock 不回 promise，也就吃不到 options。
+       這種瀏覽器本來就拿不到原始輸入，不管開 file:// 還是網址都一樣，
+       所以不要跳那句「用網址版就正常」—— 那是錯的建議。
+       直接把警告標記成已講過，讓它永遠不出現。 */
+    rawWarned=true;
+    try{ canvas.requestPointerLock(); }catch(e3){ lockFail(null,rid); return; }
   }
+  // 1800ms 不是 900ms：開場要解 47 張貼圖，主執行緒塞住的時候
+  // 鎖定會晚一點才生效，900ms 很容易在成功前就誤判成失敗。
   setTimeout(function(){
-    if(document.pointerLockElement!==canvas&&G.phase==='play')lockFail();
-  },900);
+    if(document.pointerLockElement!==canvas&&G.phase==='play')lockFail(null,rid);
+  },1800);
 }
 document.addEventListener('pointerlockerror',function(){
-  lockFailed=true; hidePause(); setLookMode('steer');
+  /* 這裡刻意「不」計一次失敗。
+     pointerlockerror 的語意太含糊：帶 unadjustedMovement 的第一次請求
+     被拒時也會丟這個事件，而那只代表「這個選項不支援」，退回去的普通
+     鎖定通常馬上就成功。以前直接 lockFailed=true，所以 file:// 上
+     第一次點擊就被永久丟進推移轉向 —— 指標其實鎖得起來。
+     真正鎖不起來的情況，1800ms 逾時那條會抓到，而且只會算一次。
+     所以這個 handler 現在只負責讓暫停畫面留著，讓玩家能再點一次。 */
 });
 document.addEventListener('pointerlockchange',function(){
   locked = document.pointerLockElement===canvas;
+  if(locked)lockTries=0;   // 成功過一次就重新計數，之後的暫停/恢復不該累積到上限
+  /* 鎖上了，但模式是推移轉向 —— 這是最糟的死狀態：滑鼠移動被 delta 分支
+     擋掉（不是 delta 模式），推移分支又被 !locked 擋掉，結果完全不能轉頭。
+     會走到這裡是因為鎖定請求還在飛的時候模式被切掉了。
+     既然指標真的鎖上了，就用它，反而是比較好的那個模式。 */
+  if(locked&&lookMode==='steer'){ lockFailed=false; lockTries=0; setLookMode('delta'); }
   if(G.phase==='play'){ if(locked){manualPause=false;hidePause();} else if(!lockFailed)showPause(); }
+  /* 只講一次。鎖定成功但沒拿到原始輸入的時候，手感一定是黏的，
+     而玩家無從得知 —— 游標消失了，看起來一切正常。
+     延遲 400ms 是因為 unadjustedMovement 的 promise 可能比
+     pointerlockchange 晚一點點才 settle，太早問會誤報。 */
+  if(locked&&!rawWarned)setTimeout(function(){
+    if(rawWarned||rawInput||!locked||lookMode!=='delta')return;
+    rawWarned=true;
+    toast('滑鼠是系統加速曲線（本機開檔沒有原始輸入）· 慢推會鈍、快甩會過頭 · 用網址版就正常');
+  },900);
 });
 document.getElementById('pause').addEventListener('click',function(){
   if(G.phase!=='play')return;
@@ -6742,9 +6883,28 @@ $('dev-copy').addEventListener('click',copyData);
 /* ============================================================
    16. 調參面板
    ============================================================ */
+/* 搜尋比分組更有用 —— 七十幾個旋鈕，分再細也還是要掃過好幾段。
+   比對中文標籤跟 CFG 的英文鍵名兩邊，所以打「亮度」或「light」都找得到。
+   整段都空的分類連標題一起收起來，不然會剩一排孤兒標題。 */
+function filterKnobs(q){
+  q=(q||'').trim().toLowerCase();
+  KNOBS.forEach(function(k){
+    if(!k.wrap)return;
+    var hit=!q||k[2].toLowerCase().indexOf(q)>=0||k[1].toLowerCase().indexOf(q)>=0;
+    k.wrap.style.display=hit?'':'none';
+  });
+  var secs=document.querySelectorAll('#dev h4[data-sec]');
+  for(var i=0;i<secs.length;i++){
+    var box=document.getElementById(secs[i].dataset.sec);
+    var any=box&&box.querySelector('.knob:not([style*="none"])');
+    secs[i].style.display=any?'':'none';
+    if(box)box.style.display=any?'':'none';
+  }
+}
 function buildKnobs(){
   KNOBS.forEach(function(k){
     var wrap=document.createElement('div'); wrap.className='knob';
+    k.wrap=wrap;
     var id='knob-'+k[1];
     wrap.innerHTML='<label for="'+id+'">'+k[2]+'</label><output id="out-'+k[1]+'"></output>'+
       '<input id="'+id+'" type="range" min="'+k[3]+'" max="'+k[4]+'" step="'+k[5]+'">';
@@ -6762,6 +6922,15 @@ function buildKnobs(){
   });
 }
 buildKnobs();
+(function(){
+  var f=$('devfind');
+  f.addEventListener('input',function(){ filterKnobs(f.value); });
+  // 面板是在轉頭區裡的，鍵盤事件要攔下來不然打字會觸發 T／E／Q 那些
+  f.addEventListener('keydown',function(e){
+    if(e.key==='Escape'){ f.value=''; filterKnobs(''); f.blur(); }
+    e.stopPropagation();
+  });
+})();
 $('dev-reset').addEventListener('click',function(){
   Object.keys(DEF).forEach(function(k){CFG[k]=DEF[k];});
   KNOBS.forEach(function(k){if(k.sync)k.sync();}); updateHUD();
