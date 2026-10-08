@@ -1162,7 +1162,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v11.3';
+var BUILD='v11.4';
 
 /* ================================================================
    目錄與凍結狀態
@@ -7340,7 +7340,7 @@ function botReset(){
            interactCd:0, stuckT:0, lastX:0, lastZ:0, aimLockT:0,
            afterUnlockN:0, afterUnlockV:0, unlockValue:0, lastCount:0,
            maxDepth:0, hideTried:0, leaving:false, deadlock:false,
-           sideT:0, sideDir:1, moved:false,
+           sideT:0, sideDir:1, moved:false, rush:false,
            /* 「要不要跑後場」每局擲一次，不是每次評分擲一次。
               每次擲的話同一個人格在同一局裡會一下想去一下不想去，
               目標一直跳，而且同參數跑兩次結果會差很多 —— 那就不是
@@ -7382,13 +7382,25 @@ function botScore(o,P){
   var d=o.def;
   if(!d||!d.slots)return -1e9;                      // 鑰匙、電擊槍部件不走這條
   if(G.run.used+d.slots>capacityNow())return -1e9;  // 裝不下就不列入
-  if(d.tier==='forbidden'&&P.deep<0.5)return -1e9;  // 非賣品只有夠貪的人格會碰
+  if(d.tier==='forbidden'){
+    if(P.deep<0.5)return -1e9;                      // 只有夠貪的人格會碰
+    /* 還沒解鎖撤離就不要碰非賣品。
+       這不是給機器人開的方便門，是修正一個會污染全部數據的行為錯誤：
+       拿非賣品會讓全店店員立刻知道你的位置，而「衝回後門」這個指示
+       在 count<5 的時候是假的 —— 出口還鎖著，你根本走不了，
+       只能在被追的狀態下繼續搬貨湊件數。
+       機器人原本因為「價值÷距離」最高而一開場就衝去拿，於是每一局都是
+       在無法脫身的狀態下被追 —— 量到的 96% 死亡率有一大半是這個造成的。
+       真人看得懂「還差 N 件」那行字，不會這樣玩。 */
+    if(!G.run.unlocked)return -1e9;
+  }
   var back = o.mesh.position.z<-9 ? 1 : 0;
   if(back&&BOT.st.deepRoll>P.deep)return -1e9;
   var dist=Math.hypot(o.mesh.position.x-camera.position.x,
                       o.mesh.position.z-camera.position.z);
   var v = d.tier==='forbidden'?forbiddenValueNow():d.v;
-  var s = v/(2+dist*1.4);
+  // 趕著湊件數的時候，價值無所謂 —— 只有「拿得快」有意義
+  var s = BOT.st.rush ? 100/(2+dist*1.4) : v/(2+dist*1.4);
   for(var i=0;i<CLERKS.length;i++){
     var cd=Math.hypot(CLERKS[i].position.x-o.mesh.position.x,
                       CLERKS[i].position.z-o.mesh.position.z);
@@ -7554,8 +7566,12 @@ function botStep(dt){
   // ---- 走人 ----
   if(st.leaving||botWantsOut(P)){
     if(r.unlocked){ botFollowPath(dt,0,14.6,P,true); return; }
-    st.leaving=false;      // 還沒解鎖就走不了，繼續搬
-  }
+    /* 還沒解鎖就走不了。原本只是把 leaving 清掉繼續照常搬 ——
+       但此刻可能正被追，照常搬等於挑最貴的、往最遠的走。
+       改成「先湊件數」：這時候的評分只看距離，把最近的東西掃進袋子
+       才是唯一能打開出口的路。這也是真人會做的事。 */
+    st.leaving=false; st.rush=true;
+  }else st.rush=false;
 
   // ---- 搬東西 ----
   if(!st.goal||st.goal.taken){ st.goal=botPickGoal(P); st.path=[]; st.aimLockT=0; }
