@@ -765,6 +765,13 @@
     letter-spacing:.02em;opacity:.9}
   /* 還沒組好、或沒子彈：壓暗，但仍然看得到進度 */
   #btnTaser.dry{border-color:#3E5A60;color:#5E8A92}
+  /* 長槍：跟電擊槍同一欄、再往上一層。兩把槍放在一起，
+     玩家一眼就看得出「上面那把比較貴也比較狠」。 */
+  #btnRifle{width:66px;height:66px;font-size:16px;flex-direction:column;line-height:1;
+    right:calc(var(--sar) + 116px);bottom:calc(var(--sab) + 186px);
+    border-color:#FFD166;color:#FFD166}
+  #btnRifle small{display:block;margin-top:3px;font-size:10px;font-weight:700;opacity:.9}
+  #btnRifle.dry{border-color:#5E5230;color:#8A7A46}
   #btnShrink{width:60px;height:60px;font-size:16px;
     right:calc(var(--sar) + 190px);bottom:calc(var(--sab) + 60px);
     border-color:var(--forbid);color:var(--forbid)}
@@ -1148,6 +1155,7 @@
   <button class="tbtn" id="btnDuck">蹲</button>
   <button class="tbtn" id="btnJump" hidden>跳</button>
   <button class="tbtn" id="btnTaser" hidden>電</button>
+  <button class="tbtn" id="btnRifle" hidden>雷</button>
   <button class="tbtn" id="btnShrink" hidden>縮</button>
   <button class="tbtn" id="btnStop" hidden>鐘</button>
 </div>
@@ -1162,7 +1170,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v11.5';
+var BUILD='v11.9';
 
 /* ================================================================
    目錄與凍結狀態
@@ -1277,6 +1285,9 @@ var DEF = {
      注意「一條命」的尺度上貪心還是虧的（歸零率 70% vs 26%），
      那個變異數成本本來就該留著，它是回頭拿東西的代價。 */
   capacity:12, riskBonus:0.25, forbiddenValue:450, extractItems:5,
+  /* 雷電長槍：辦公室牆上那把。當場付現，六發，一發永久解決一個。
+     $5000 刻意訂在「要存好幾局」的位置 —— 它不該是順手買的。 */
+  rifleCost:5000, rifleAmmo:6, rifleRange:30, rifleSpread:5,
   /* 拿到非賣品之後，店員「晚幾秒」才知道你在哪。0 = 立刻（舊行為）。
      燈、聲音、廣播都還是當下就發生，只有位置情報延後 —— 所以玩家
      感覺到的是警報在醞釀，不是遊戲放水。 */
@@ -1738,6 +1749,7 @@ function resetProgress(){
      這是它整個設計的重點：那把槍是你四、五局慢慢撿回來的，
      所以「被抓」的代價不再只是現金，而是一段具體的努力。 */
   G.tzParts={}; G.tzAmmo=0;
+  G.hasRifle=false; G.rifleAmmo=0;   // 長槍也一起沒收 —— 它是這條線上最貴的一筆投資
   applyFlashlight();
   return lost;
 }
@@ -2880,6 +2892,134 @@ var signStock=textPlane('倉庫',2.4,0.6,'#DCEBD8',80);
 signStock.position.set(9.5,2.78,-9.5); scene.add(signStock);
 
 /* ============================================================
+   鏡子與海報
+   ============================================================
+   鏡子沒有做真的反射。真反射要第二次 renderer.render 到 RenderTarget，
+   那是整個畫面成本再加一次 —— 為了一面牆上的裝飾，不值得。
+
+   做的是一張每幀重畫的小 canvas：一個模糊的人形，大小與左右位置
+   跟著玩家與鏡面的相對位置走。看不清楚臉，但「那個東西會跟著我動」
+   這件事是成立的，而那正是鏡子在恐怖場景裡唯一要做到的事。
+   看不清楚甚至更好 —— 你會一直想再靠近一點確認。 */
+var MIR_W=96, MIR_H=128;
+var mirCanvas=document.createElement('canvas');
+mirCanvas.width=MIR_W; mirCanvas.height=MIR_H;
+var mirCtx=mirCanvas.getContext('2d');
+var mirTex=new THREE.CanvasTexture(mirCanvas);
+var mirrors=[];
+function addMirror(x,y,z,ry,w,h){
+  var g=new THREE.Group();
+  // 外框
+  g.add(P(GEO.box,0x4A4238,[w+0.12,h+0.12,0.06],[0,0,-0.03]));
+  var m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),
+    new THREE.MeshBasicMaterial({map:mirTex}));
+  m.position.z=0.012; g.add(m);
+  g.position.set(x,y,z); g.rotation.y=ry;
+  scene.add(g);
+  mirrors.push({g:g,x:x,z:z,ry:ry});
+  return g;
+}
+function drawMirror(){
+  var g=mirCtx;
+  // 底：很暗的玻璃，上緣帶一點反光
+  g.fillStyle='#10140F'; g.fillRect(0,0,MIR_W,MIR_H);
+  var grd=g.createLinearGradient(0,0,0,MIR_H);
+  grd.addColorStop(0,'rgba(150,170,150,.14)');
+  grd.addColorStop(1,'rgba(20,26,20,0)');
+  g.fillStyle=grd; g.fillRect(0,0,MIR_W,MIR_H);
+  // 找最近的那一面鏡子來決定人形的大小與左右偏移
+  var best=null,bd=1e9;
+  for(var i=0;i<mirrors.length;i++){
+    var mr=mirrors[i];
+    var d=Math.hypot(mr.x-camera.position.x,mr.z-camera.position.z);
+    if(d<bd){bd=d;best=mr;}
+  }
+  if(best&&bd<7){
+    /* 把玩家位置轉到鏡面的本地座標：lat 是左右偏移，用來決定人形畫在哪一邊。
+       距離越近人形越大 —— 這一條就是整個效果的來源。 */
+    var dx=camera.position.x-best.x, dz=camera.position.z-best.z;
+    var cs=Math.cos(-best.ry), sn=Math.sin(-best.ry);
+    var lat=dx*cs-dz*sn;
+    var k=Math.max(0.12,Math.min(1,(7-bd)/6));      // 0~1，越近越大
+    var cx=MIR_W/2+Math.max(-30,Math.min(30,lat*14));
+    var hh=28+k*78;                                  // 人形高度
+    var hw=hh*0.34;
+    g.globalAlpha=0.20+k*0.42;
+    g.fillStyle='#A9BBA6';
+    // 身體 + 頭，只有兩個圓角方塊 —— 再多就會「看清楚」，那反而不嚇人
+    g.fillRect(cx-hw/2, MIR_H-hh*0.74, hw, hh*0.74);
+    var r=hh*0.17;
+    g.beginPath(); g.arc(cx, MIR_H-hh*0.74-r*0.9, r, 0, Math.PI*2); g.fill();
+    g.globalAlpha=1;
+  }
+  // 一層很淡的髒污，讓它永遠不會變清楚
+  g.globalAlpha=0.10; g.fillStyle='#000';
+  for(var s=0;s<14;s++)g.fillRect((s*37)%MIR_W,(s*53)%MIR_H,9,3);
+  g.globalAlpha=1;
+  mirTex.needsUpdate=true;
+}
+
+/* 店長海報。
+   這是字條那段劇情的伏筆：牆上到處是他的臉，而你後來會讀到
+   「如果你看到店裡有人走動 —— 那一定不是我」。
+   海報用的就是店員那張臉的貼圖 —— 同一張臉貼滿整間店，
+   然後那張臉在走道盡頭動了起來。 */
+function posterTex(){
+  var c=document.createElement('canvas'); c.width=192; c.height=256;
+  var g=c.getContext('2d');
+  g.fillStyle='#C9B88A'; g.fillRect(0,0,192,256);
+  g.fillStyle='#A8966C'; g.fillRect(6,6,180,244);
+  g.fillStyle='#E8DCC0'; g.fillRect(12,12,168,232);
+  // 把店員的臉貼上來（放大、最近鄰，維持像素感）
+  g.imageSmoothingEnabled=false;
+  g.drawImage(faceCalm.image,26,30,140,140);
+  g.fillStyle='#2A2620';
+  g.font='900 26px "Noto Sans TC",sans-serif';
+  g.textAlign='center';
+  g.fillText('本店店長',96,206);
+  g.font='700 15px "Noto Sans TC",sans-serif';
+  g.fillStyle='#6A5F48';
+  g.fillText('24H 為您服務',96,230);
+  var t=new THREE.CanvasTexture(c);
+  t.magFilter=THREE.NearestFilter;
+  return t;
+}
+var POSTER_TEX=null;
+function addPoster(x,y,z,ry,w){
+  var p=new THREE.Mesh(new THREE.PlaneGeometry(w||0.9,(w||0.9)*1.333),
+    new THREE.MeshLambertMaterial({map:POSTER_TEX}));
+  p.position.set(x,y,z); p.rotation.y=ry; scene.add(p); return p;
+}
+/* 擺位原則：**不要擺在玩家正面會看到的地方**。
+   海報的作用是餘光 —— 轉身的時候瞥到一張臉，而不是正對著一張臉。
+   所以全部貼在走道側牆與轉角，而且高度在視線略上方。
+
+   這支要等到 faceCalm 真的存在才能跑（海報用的就是店員那張臉），
+   而店員那一段在檔案後面 —— 所以這裡只定義，呼叫擺在那之後。
+   寫成在這裡直接執行的話，posterTex 會拿到 undefined.image，
+   drawImage 當場丟例外，整個遊戲連畫面都不會出現。 */
+function buildDecor(){
+  POSTER_TEX=posterTex();
+  addPoster(-19.53,1.95, 6.0, Math.PI/2);          // 西牆（靠出口那段）
+  addPoster(-19.53,1.95,-5.0, Math.PI/2);          // 西牆（深處）
+  addPoster( 19.53,1.95, 2.0,-Math.PI/2);          // 東牆
+  addPoster( 19.53,1.95,-6.5,-Math.PI/2);          // 東牆（深處）
+  /* 這一張的 rotation 是 0 不是 π。PlaneGeometry 的法線是 +Z，
+     而這面牆的賣場側在 +Z —— 轉 π 會讓它面向牆裡面，
+     Lambert 預設 FrontSide，從賣場看過去就是整張消失。
+     下面出口那張用 π 是對的，因為那面牆的房間在 −Z 側。 */
+  addPoster(  6.0, 1.95,-9.53, 0);                 // 後場隔牆，面向賣場
+  addPoster( -5.0, 1.95,15.53, Math.PI);           // 出口旁 —— 離開前最後看到的東西
+  // z 要離下面那面鏡子夠遠：鏡框佔 z[-20.11,-19.09]，擺在 -19.0 會被蓋掉四成
+  addPoster(-19.53,1.95,-18.2, Math.PI/2, 1.1);    // 後場西牆深處，大一點
+  /* 鏡子：賣場一面、後場一面。後場那面才是真正會嚇到人的那一面。
+     後場這面的 z 要避開冷凍室的內隔間（z −17.4…−16.6，而且高 2.6m）——
+     擺在 −16.5 的話鏡框有四成會埋進那道牆裡。 */
+  addMirror(-19.52,1.55,10.5, Math.PI/2, 0.9,1.4);
+  addMirror(-19.52,1.55,-19.6, Math.PI/2, 0.9,1.4);
+}
+
+/* ============================================================
    監視螢幕：抬頭就能看到自己和店員在賣場的哪裡。
    四台共用同一張即時繪製的 canvas 材質，約 9fps 更新，成本極低。
    ============================================================ */
@@ -3042,8 +3182,31 @@ function mcFace(alert){
   t.magFilter=THREE.NearestFilter; t.minFilter=THREE.NearestFilter;
   return t;
 }
-var faceCalm=mcFace(false), faceAlert=mcFace(true);
+/* 外星人的臉：同一張臉的骨架，只換三樣東西 ——
+   底色變綠、眼睛變紅、嘴角那抹微笑拉平。
+   刻意不重畫一張新的臉：恐怖來自「這明明就是剛剛那個人」，
+   而不是來自一個你沒看過的怪物。五官位置一模一樣，顏色全變了，
+   那個不協調感比換一張臉強得多。 */
+function alienFace(){
+  var c=document.createElement('canvas'); c.width=c.height=64;
+  var g=c.getContext('2d'); g.imageSmoothingEnabled=false;
+  g.fillStyle='#5FA564'; g.fillRect(0,0,64,64);
+  g.fillStyle='#4E8F55'; for(var i=0;i<28;i++){ g.fillRect((i*23)%64,(i*37)%64,4,4); }
+  g.fillStyle='#3E7A48'; g.fillRect(6,38,10,7); g.fillRect(48,38,10,7);
+  // 眼睛：睜大的紅色，中間一點更亮的紅
+  g.fillStyle='#2A0A0A'; g.fillRect(12,21,16,15); g.fillRect(36,21,16,15);
+  g.fillStyle='#FF2A1E'; g.fillRect(15,24,10,9);  g.fillRect(39,24,10,9);
+  g.fillStyle='#FFB4AA'; g.fillRect(18,26,3,3);   g.fillRect(42,26,3,3);
+  // 嘴：一條平的縫
+  g.fillStyle='#24401F'; g.fillRect(22,49,20,3);
+  var t=new THREE.CanvasTexture(c);
+  t.magFilter=THREE.NearestFilter; t.minFilter=THREE.NearestFilter;
+  return t;
+}
+var faceCalm=mcFace(false), faceAlert=mcFace(true), faceAlien=alienFace();
 var skinMat=itemMat(SKIN);
+var ALIEN_SKIN=0x5FA564;
+var alienSkinMat=itemMat(ALIEN_SKIN);
 function blk(color,w,h,d,x,y,z){ return P(GEO.box,color,[w,h,d],[x,y,z]); }
 
 /* 頭上的狀態符號：? = 聽到了正在過來，! = 已經發現你。
@@ -3058,6 +3221,8 @@ function markTex(ch,css){
   var t=new THREE.CanvasTexture(c); return t;
 }
 var markQ=markTex('?','#FFC93C'), markX=markTex('!','#FF3B30');
+// 海報與鏡子：擺在這裡是因為海報要用 faceCalm，而它上面幾行才剛做好
+buildDecor();
 
 /* ---------- 一隻店員 = 一個 Group，零件與 AI 狀態全掛在它身上 ----------
    v7.8 以前這些是模組層的單一變數（clerk / head / faceMat / walkT / AI）。
@@ -3089,9 +3254,16 @@ function makeClerk(){
   c.head.scale.set(0.50,0.50,0.50); c.head.position.y=1.736; c.add(c.head);
   // 制服帽
   c.cap=blk(CAPC,0.53,0.13,0.53,0,2.05,0); c.add(c.cap);
-  c.add(blk(CAPC,0.50,0.05,0.26,0,1.99,-0.36));          // 帽簷
+  c.brim=blk(CAPC,0.50,0.05,0.26,0,1.99,-0.36); c.add(c.brim);   // 帽簷
   c.armL=limb(SHIRT,-0.372,1.488); c.armR=limb(SHIRT,0.372,1.488);
   c.legL=limb(PANTS,-0.124,0.744); c.legR=limb(PANTS,0.124,0.744);
+  /* 第三、四隻手。平常 visible=false，中了長槍才長出來。
+     建在 makeClerk 裡而不是中槍當下才建：pool 是跨局重用的，
+     臨時 new 出來的東西會一局漏一隻掛在 scene 上。
+     位置比正常手臂略低、略外側，所以四隻手同時揮的時候看得出是兩對。 */
+  c.armL2=limb(SHIRT,-0.50,1.30); c.armR2=limb(SHIRT,0.50,1.30);
+  c.armL2.visible=false; c.armR2.visible=false;
+  c.alienT=0;                        // >0 = 正在變身／倒下的演出中
   c.halo=new THREE.Sprite(new THREE.SpriteMaterial({map:HALO,color:0xFF3B30,
     transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,opacity:0}));
   c.halo.scale.set(3.4,3.4,1); c.halo.position.y=1.75; c.add(c.halo);
@@ -3753,6 +3925,10 @@ var G={
      tzParts 是已經撿到的部件（用 id 當 key），tzAmmo 是槍裡的子彈。
      被抓的話兩個一起歸零 —— 見 resetProgress。 */
   tzParts:{}, tzAmmo:0,
+  /* 雷電長槍。跟電擊槍一樣是跨局裝備、被抓一起沒收。
+     它跟電擊槍的差別不是「更強的昏迷」，是**永久解決掉一個店員**，
+     所以它只有六發，而且要在辦公室當場付 $5000。 */
+  hasRifle:false, rifleAmmo:0,
   run:null, spawned:[], t:0, lastTime:performance.now()
 };
 var STATS={runs:0,extracted:0,caught:0,forbiddenSeen:0,forbiddenPicked:0,
@@ -3836,6 +4012,16 @@ function newRun(){
     c.halo.material.opacity=0;
     c.stuffedIn=null;
     c.ai=newClerkAI(); c.ai.state='PATROL';
+    /* 外星形態要完整還原 —— 包含那兩隻多出來的手與綠色的頭。
+       pool 是跨局重用的，不還原的話下一局開場就站著一隻綠色四手店員，
+       而且它的 AI 是正常的。那會是一個很難查的「上一局的殘留」。 */
+    c.alienT=0; c.dead=false;
+    c.armL2.visible=false; c.armR2.visible=false;
+    c.armL2.rotation.set(0,0,0); c.armR2.rotation.set(0,0,0);
+    c.head.material=[skinMat,skinMat,skinMat,skinMat,skinMat,c.faceMat];
+    c.faceMat.map=faceCalm; c.faceMat.needsUpdate=true;
+    c.cap.material=itemMat(CAPC); c.brim.material=itemMat(CAPC);
+    c.halo.material.color.setHex(0xFF3B30);
     setMark(c,null);
     /* 把四肢、帽子與臉復位。被抓特寫把它們擺成「舉手、紅帽、驚訝臉」，
        而 animClerk 只有在真的走動時才跑（if(dist>0.001)）——
@@ -3966,17 +4152,24 @@ function buildItems(seed){
      三件 ÷ 70% ≈ 四局多一點，剛好是一段會讓你開始在意「這局別被抓」的長度。
      只出缺的那幾種同樣重要 —— 純隨機的話會一直撿到重複的，期望局數會爆掉。
      一半機率放地上、一半放架上，所以你得同時看高處和低處。 */
+  /* 第一個部件還是看運氣，但**只要撿到過一個，之後每一局保證再出一個**，
+     直到湊滿為止。
+     理由是這兩種「等待」的性質完全不同：還沒開始收集的時候，撿到部件是
+     一個驚喜；已經握著 1/3 的時候，沒出現就只是一局白跑的挫折 ——
+     而玩家還看得到 HUD 上那個 1/3 一直不動。
+     隨機性應該用在「會不會開始」，不應該用在「開始之後能不能繼續」。 */
   var miss=tzMissing();
-  if(miss.length&&rand()<CFG.tzPartChance){
+  if(miss.length&&(tzHave()>0||rand()<CFG.tzPartChance)){
     var pid=miss[Math.floor(rand()*miss.length)];
     var ps=grab(spots,null);
     if(ps)spawnItem(BY_ID[pid],ps.x,rand()<0.5?0.06:ps.y,ps.z);
   }
-  /* 彈藥：只有在「槍已經組好但沒子彈」的時候才會出現。
-     槍還沒組好就撿到彈藥是純噪音，組好又有子彈也不需要。 */
+  /* 彈藥：只有在「槍已經組好但沒子彈」的時候才會出現，而且**只在後場**。
+     放前場的話補彈是順路撿到的，等於沒有成本；放後場，補彈本身就變成
+     一個要不要深入的決定 —— 跟整個遊戲其他部分講的是同一件事。 */
   if(tzReady()&&G.tzAmmo<=0&&rand()<CFG.tzAmmoChance){
-    var as=grab(spots,null);
-    if(as)spawnItem(BY_ID.tz_ammo,as.x,rand()<0.5?0:as.y,as.z);
+    var as=grab(back,null);
+    if(as)spawnItem(BY_ID.tz_ammo,as.x,as.y,as.z);
   }
 
   /* 剩下的位置才填一般商品。
@@ -4041,7 +4234,7 @@ function buildItems(seed){
    門與收銀機都是「按住不放」的互動。灰盒裡最便宜的張力就是這個：
    不需要新的謎題系統，只需要讓玩家在一個固定的點站滿幾秒鐘。
    店員的威脅會自己把那幾秒變得難熬。 */
-var officeOpen=false, officeDoorObj=null, regObj=null, noteObj=null, officeProps=[];
+var officeOpen=false, officeDoorObj=null, regObj=null, noteObj=null, rifleObj=null, officeProps=[];
 function buildOffice(){
   officeOpen=false;
   if(OFFICE_DOOR.mesh)OFFICE_DOOR.mesh.visible=true;
@@ -4114,6 +4307,47 @@ function buildOffice(){
   nt.userData.item=noteObj;
   nt.traverse(function(c){c.userData.item=noteObj;});
   itemMeshes.push(noteObj);
+  /* 字條上的「！」。
+     字條是一塊 30 公分的白色小方塊躺在桌上 —— 在這個亮度下，
+     沒有標記的話玩家會直接走過去。而這張字條現在不只是劇情，
+     它是「牆上那把槍要幹嘛」的唯一說明。
+     用跟店員頭上同一套驚嘆號，所以不用教玩家這個符號是什麼意思。 */
+  var ex=new THREE.Sprite(new THREE.SpriteMaterial({
+    map:markTex('!','#FF6A5A'), transparent:true, depthTest:false}));
+  ex.scale.set(0.42,0.42,1); ex.position.set(-36.1,1.42,2.7);
+  ex.renderOrder=10; scene.add(ex); officeProps.push(ex);
+
+  /* ---------- 雷電長槍 ----------
+     放在西牆的槍架上，一進門就看得到 —— 它必須是你推開門那一刻
+     第一個注意到的東西，否則 $5000 的決定會變成一個你沒發現的選項。
+     $5000 是當場從現金扣的，不是升級畫面買的：
+     在升級畫面花錢是安全的、可以慢慢算的；在這裡花錢的時候，
+     你人在全場最深的房間裡，而且門已經開著。那是兩種完全不同的決定。 */
+  var rk=new THREE.Group();
+  rk.add(P(GEO.box,0x3A3F3A,[0.10,0.06,0.70],[0, 0.00,0]));      // 上掛勾
+  rk.add(P(GEO.box,0x3A3F3A,[0.10,0.06,0.70],[0,-0.66,0]));      // 下掛勾
+  // 槍身：槍管、機匣、槍托、能量管
+  rk.add(P(GEO.box,0x24282B,[0.07,0.07,1.26],[0,-0.30,0.12]));
+  rk.add(P(GEO.box,0x33383C,[0.11,0.17,0.46],[0,-0.30,-0.26]));
+  rk.add(P(GEO.box,0x1C2024,[0.09,0.13,0.34],[0,-0.33,-0.62]));
+  rk.add(P(GEO.box,0x9BE8FF,[0.08,0.08,0.30],[0,-0.17,-0.18],2.2)); // 會發光的電池
+  rk.add(P(GEO.box,0x9BE8FF,[0.05,0.05,0.10],[0,-0.30,0.76],2.2));  // 槍口
+  /* rotation.y 必須是 0，不是 π/2。
+     槍身是「X 很薄、Z 很長」的形狀。掛在西牆上時，薄的那一軸要對著
+     牆的法線（世界 +X），長的那一軸才會沿著牆躺平。
+     轉 90 度的話長軸會直接插進牆裡 —— 槍托整個埋掉、槍管從牆上戳出來。 */
+  rk.position.set(-39.50,1.75,-2.2); rk.rotation.y=0;
+  scene.add(rk);
+  rifleObj={mesh:rk,rifle:true,taken:false,
+    def:{name:'雷電長槍',tier:'door',slots:0,v:0}};
+  rk.userData.item=rifleObj;
+  rk.traverse(function(c){c.userData.item=rifleObj;});
+  itemMeshes.push(rifleObj);
+  /* 已經買過就收掉。visible=false 還不夠 ——
+     three.js 的射線不檢查 visible，而 pickTarget 的距離預篩只看 taken。
+     只設 visible 的話，之後每一局走進辦公室都會對著空牆跳出一個互動提示，
+     按下去還會回你一句「你已經有一把了」。兩個都要設。 */
+  if(G.hasRifle){ rk.visible=false; rifleObj.taken=true; }
 
   // 辦公椅（純裝飾，沒有碰撞）
   var ch=new THREE.Group();
@@ -4176,9 +4410,15 @@ function finishOfficeDoor(){
 function readNote(){
   if(!STATS.noteRead){ STATS.noteRead=1; save(); }
   SFX.scan(); ev('note_read');
+  /* 字條分兩段，順序是刻意的。
+     先維持原本那個翻轉（「在店裡走動的那個不是我」），再講那把槍 ——
+     因為那把槍只有在你已經接受「他不是人」之後才成立。
+     反過來先講槍，玩家會把它當成一件裝備；先講真相，它才是一個答案。 */
   showBeat('店長留的字條',
-    '我是店長。最近附近有外星人入侵，所以午夜時刻我把這家店關了。',
-    '如果你看到店裡有人走動 —— 那一定不是我。',9000);
+    '我是店長。最近附近有外星人入侵，所以午夜時刻我把這家店關了。'+
+    '如果你看到店裡有人走動 —— 那一定不是我。',
+    '牆上那把是雷電長槍。電擊槍只能讓它們躺一下，'+
+    '只有這把真的解決得掉。六發，$'+CFG.rifleCost+'。',11000);
 }
 /* ---------- 拉霸 ----------
    全自動：按下去之後你什麼都不用做，只能站在那裡看三個滾輪停下來。
@@ -4588,6 +4828,7 @@ window.addEventListener('keydown',function(e){
   }
   if(k==='e'&&G.phase==='play')tryInteract();
   if(k==='q'&&G.phase==='play')useTaser();
+  if(k==='g'&&G.phase==='play')fireRifle();
   if(k==='r'&&G.phase==='play')useShrink();
   if(k==='x'&&G.phase==='play')useStop();
   if(k==='enter'){
@@ -4771,6 +5012,7 @@ function setupTouch(){
   }
   tap('btnJump',function(){ tJumpQueued=true; });
   tap('btnTaser',useTaser);
+  tap('btnRifle',fireRifle);
   tap('btnShrink',useShrink);
   tap('btnStop',useStop);
 
@@ -4951,7 +5193,10 @@ function pickTarget(){
     /* 瞄準輔助的目標高度。門與收銀機的 Group 原點在地板上（y=0），
        用預設的 0.20 會瞄到腳邊，15 度的容差就永遠輸給旁邊的商品。 */
     // 拉霸機的 Group 已經在 y=1.0，所以這裡只要再加機身的一半
-    var aimY = o.officeDoor?1.10 : o.register?0.65 : o.note?0.80 : o.safe?0.46 : 0.20;
+    // 長槍的 Group 原點在 y=1.75，但槍身重心大約在 1.45 —— 不修正的話
+    // 站著平視會差超過 15 度，只有細細的射線打得到，輔助角等於沒作用
+    var aimY = o.officeDoor?1.10 : o.register?0.65 : o.note?0.80 :
+               o.safe?0.46 : o.rifle?-0.30 : 0.20;
     _to.set(c.x-camera.position.x,
             (c.y+aimY)-camera.position.y,
             c.z-camera.position.z);
@@ -5055,6 +5300,19 @@ function updateAim(){
       if(IS_TOUCH)pr.innerHTML=pr.innerHTML.replace('<kbd>E</kbd>','<kbd>拿</kbd>');
       cross.className=ok?'hot':''; return;
     }
+    /* 長槍：價格一定要出現在提示上。
+       沒有這一段的話它會掉進一般商品那條分支，顯示成「雷電長槍 $0 — 0 格」——
+       $5000 是這件道具的全部意義，而玩家要按下去、買不起、被拒絕之後
+       才會第一次看到那個數字。那不是抉擇，那是陷阱。 */
+    if(aim.rifle){
+      var afford=G.cash>=CFG.rifleCost;
+      pr.className='on'+(afford?'':' forbid');
+      pr.innerHTML='<kbd>E</kbd>'+(afford?'買下雷電長槍':'雷電長槍（錢不夠）')+
+        '<span class="s">$'+CFG.rifleCost+' · '+CFG.rifleAmmo+' 發 · '+
+        '你有 $'+G.cash+'</span>';
+      if(IS_TOUCH)pr.innerHTML=pr.innerHTML.replace('<kbd>E</kbd>','<kbd>拿</kbd>');
+      cross.className=afford?'hot':'forbid'; return;
+    }
     if(d.tier==='special'){
       pr.className='on';
       pr.innerHTML='<kbd>E</kbd>'+d.name+
@@ -5112,6 +5370,28 @@ function tryInteract(){
     return;
   }
   if(aim.note){ readNote(); return; }
+  /* 長槍：當場扣現金。
+     這是全遊戲唯一一個「在局內花錢」的地方 —— 升級畫面的錢是安全的，
+     這裡的錢不是：你人在最深的房間，門開著，而且付完之後你的現金歸零，
+     這一局被抓就什麼都沒有。那個落差就是這件道具的全部意義。 */
+  if(aim.rifle){
+    if(G.hasRifle){ toast('你已經有一把了'); return; }
+    if(G.cash<CFG.rifleCost){
+      SFX.deny();
+      toast('不夠 · 需要 $'+CFG.rifleCost+' · 你有 $'+G.cash);
+      return;
+    }
+    G.cash-=CFG.rifleCost;
+    G.hasRifle=true; G.rifleAmmo=CFG.rifleAmmo;
+    aim.taken=true; aim.mesh.visible=false;
+    SFX.unlock(); makeNoise(CFG.hearWalk*0.6);
+    ev('rifle_bought',{cost:CFG.rifleCost,cash:G.cash});
+    showBeat('雷電長槍 · '+CFG.rifleAmmo+' 發',
+      K('按 G 發射','按「雷」發射')+' · 命中的東西不會再站起來',
+      '花了 $'+CFG.rifleCost+'。被抓一樣會沒收。',5200);
+    syncItemButtons(); updateHUD(); updateAim();
+    return;
+  }
   if(aim.hide){
     if(aim.stuffed){ toast('裡面塞著一個人'); return; }
     enterHide(aim); return;
@@ -5146,13 +5426,15 @@ function tryInteract(){
         syncItemButtons();
       }else{
         /* 一局最多只會出現一個部件（生成時就決定了），
-           所以撿到之後要明講「這一局不會再有了」——
-           不然玩家會在店裡繼續找一個根本不存在的東西，那是白白的風險。 */
+           所以撿到之後要明講兩件事：
+           這一局不會再有第二個（不然玩家會繼續找一個不存在的東西，白白冒險），
+           以及**接下來每一局都保證會有**（這是給他下一局的理由）。
+           第二句比第一句重要 —— 收集系統最容易死在「我不知道還要等多久」。 */
         SFX.scan();
         showBeat('電擊槍部件 '+n+'/'+TZ_PARTS.length,
           '還缺 '+tzMissing().map(function(id){
             return BY_ID[id].name.replace('電擊槍・','');}).join('、'),
-          '這一局不會再出現第二個 —— 下一關才有機會。',4200);
+          '這一局不會再有第二個 —— 但從下一局開始，每一局都一定有一個。',5200);
       }
     }
     updateHUD(); updateAim(); return;
@@ -5434,6 +5716,10 @@ function clerkTail(c,dt){
   else setMark(c,null);
 }
 function stepClerk(c,dt){
+  /* 變身演出期間：不跑 AI，只跑演出。
+     這一行要在 DORMANT 判斷之前 —— 中槍的瞬間它還不是 DORMANT，
+     但它也不該再追你、不該再抓到你。那兩秒它是一段過場，不是一個角色。 */
+  if(c.alienT>0){ stepAlien(c,dt); return; }
   if(c.ai.state==='DORMANT'||!G.run)return;
   clerkFSM(c,dt);
   // caught() 會在迴圈中途結束這一局；之後就不要再動任何店員的外觀
@@ -5751,6 +6037,128 @@ function poseName(){
   return crouchNow?'潛行':(sprintFlag?'衝刺':'站立');
 }
 
+/* ---------- 可見的電子彈 ----------
+   原本開槍完全沒有畫面：只有一聲音效和一行 toast。
+   在一個以黑暗為機制的遊戲裡，這表示你不知道自己打到哪裡 ——
+   打空的時候尤其糟，你連「偏左還是偏右」都看不出來，下一發只能再猜一次。
+   一條會發光的軌跡同時解決三件事：命中回饋、瞄準校正、以及
+   「這把槍是電的」這個質感。成本是一個共用的 Mesh 加一個計時器。 */
+var boltMesh=null, boltT=0, BOLT_LIFE=0.16;
+function spawnBolt(toX,toY,toZ){
+  if(!boltMesh){
+    boltMesh=new THREE.Mesh(GEO.box,new THREE.MeshBasicMaterial({
+      color:0x9BE8FF, transparent:true, opacity:1,
+      blending:THREE.AdditiveBlending, depthWrite:false}));
+    boltMesh.renderOrder=8;
+    scene.add(boltMesh);
+  }
+  /* 從畫面中央偏右下發射，不是從鏡頭正中心 ——
+     正中心射出來的東西在第一人稱裡會是一個點，看不出方向。 */
+  var right=new THREE.Vector3().crossVectors(fwd,new THREE.Vector3(0,1,0)).normalize();
+  var from=camera.position.clone()
+    .add(right.multiplyScalar(0.22)).add(new THREE.Vector3(0,-0.16,0));
+  var to=new THREE.Vector3(toX,toY,toZ);
+  var d=new THREE.Vector3().subVectors(to,from);
+  var len=Math.max(0.05,d.length());
+  boltMesh.position.copy(from).addScaledVector(d,0.5);
+  boltMesh.lookAt(to);                      // 物件的 +Z 會朝向目標
+  boltMesh.scale.set(0.05,0.05,len);
+  boltMesh.material.opacity=1;
+  boltMesh.visible=true; boltT=BOLT_LIFE;
+}
+function stepBolt(dt){
+  if(boltT<=0)return;
+  boltT-=dt;
+  if(boltT<=0){ boltMesh.visible=false; return; }
+  var k=boltT/BOLT_LIFE;
+  boltMesh.material.opacity=k;
+  // 同時把它變細，看起來像在消散而不是整條淡掉
+  boltMesh.scale.x=boltMesh.scale.y=0.05*(0.35+k*0.65);
+}
+
+/* ---------- 外星人：中了長槍之後的那兩秒 ----------
+   變身不是特效，是這個遊戲唯一一次回答「他到底是什麼」。
+   所以它要慢到看得清楚：皮膚變綠、眼睛變紅、多出來的兩隻手揮舞，
+   然後才倒下消失。字條說的事情在這裡被證實一次。 */
+var ALIEN_SHOW=2.0;
+function alienize(c){
+  /* 正在拖的那一個被打中：一定要先放手。
+     clerkFSM 之後再也不會跑（先是變身演出、然後 DORMANT），
+     所以 stepDrag 不會再執行 —— draggedClerk 會一直指著一個
+     已經消失的東西，玩家被卡在「拖行中」直到自己按 E。
+     rotation.z 也要清，昏迷時的傾倒不清會留在 pool 裡。 */
+  if(draggedClerk===c)dropDrag('它不見了');
+  c.rotation.z=0;
+  c.alienT=ALIEN_SHOW;
+  // 頭：五面皮膚換成綠色，臉換成紅眼。材質是共用的，所以只換參照不改內容
+  c.head.material=[alienSkinMat,alienSkinMat,alienSkinMat,
+                   alienSkinMat,alienSkinMat,c.faceMat];
+  c.faceMat.map=faceAlien; c.faceMat.needsUpdate=true;
+  c.armL2.visible=true; c.armR2.visible=true;
+  c.cap.material=itemMat(0x2E5A33); c.brim.material=itemMat(0x2E5A33);
+  setMark(c,null);
+  // 追逐音樂與嗡鳴是看 ai.state 的 —— 不清掉的話那兩秒的演出會一直配著追逐音效
+  c.ai.state='SEARCH'; c.ai.aware=0; c.ai.path=[]; c.ai.chaseT=0;
+  c.halo.material.color.setHex(0x4ADE80);   // 紅光換成綠光
+  c.halo.material.opacity=0.7;
+}
+function stepAlien(c,dt){
+  if(c.alienT<=0)return;
+  c.alienT-=dt;
+  var k=c.alienT/ALIEN_SHOW;                 // 1 → 0
+  var w=(1-k)*9;
+  // 四隻手一起揮，兩對錯開半個相位
+  c.armL.rotation.x=-1.1+Math.sin(w)*0.8;
+  c.armR.rotation.x=-1.1-Math.sin(w)*0.8;
+  c.armL2.rotation.x=-0.8+Math.sin(w+1.6)*0.9;
+  c.armR2.rotation.x=-0.8-Math.sin(w+1.6)*0.9;
+  c.armL2.rotation.z= 0.5; c.armR2.rotation.z=-0.5;
+  c.halo.material.opacity=0.7*k;
+  if(c.alienT<=0){
+    // 演完就永遠出局。DORMANT 是最乾淨的退場：stepClerk 直接 return，
+    // anyChasing / maxAware / nearestChaser 也都自然忽略它
+    c.visible=false; c.ai.state='DORMANT'; c.ai.aware=0; c.ai.path=[];
+    c.dead=true;
+  }
+}
+function fireRifle(){
+  var r=G.run; if(!r||G.phase!=='play')return;
+  if(!G.hasRifle){ toast('你沒有長槍 · 辦公室牆上那把要 $'+CFG.rifleCost); return; }
+  if(G.rifleAmmo<=0){ toast('長槍空了 · 沒有補給'); return; }
+  G.rifleAmmo--;
+  SFX.taser(); makeNoise(CFG.hearSprint);    // 比電擊槍吵得多
+  camera.getWorldDirection(fwd);
+  var hit=null, hitAlong=1e9;
+  for(var i=0;i<CLERKS.length;i++){
+    var c=CLERKS[i]; if(!c.visible||c.alienT>0)continue;
+    var to=new THREE.Vector3(c.position.x-camera.position.x,
+                             1.2-camera.position.y,
+                             c.position.z-camera.position.z);
+    var along=to.dot(fwd);
+    if(along<=0||along>=CFG.rifleRange||along>=hitAlong)continue;
+    var perp=to.clone().sub(fwd.clone().multiplyScalar(along)).length();
+    var allow=Math.max(1.0, along*Math.tan(CFG.rifleSpread*Math.PI/180));
+    if(perp<allow&&!blocked(camera.position.x,camera.position.z,
+                            c.position.x,c.position.z,1.0)){
+      hit=c; hitAlong=along;
+    }
+  }
+  if(hit){
+    spawnBolt(hit.position.x,1.2,hit.position.z);
+    alienize(hit);
+    ev('rifle_hit',{c:CLERKS.indexOf(hit),left:G.rifleAmmo});
+    var others=CLERKS.filter(function(c){
+      return c!==hit&&c.visible&&c.ai.state==='CHASE';}).length;
+    toast('它不是人 · 剩 '+G.rifleAmmo+' 發'+(others?' · 還有 '+others+' 個':''));
+  }else{
+    spawnBolt(camera.position.x+fwd.x*CFG.rifleRange,
+              camera.position.y+fwd.y*CFG.rifleRange,
+              camera.position.z+fwd.z*CFG.rifleRange);
+    toast('打空了 · 剩 '+G.rifleAmmo+' 發'); ev('rifle_miss');
+  }
+  updateHUD();
+}
+
 /* ---------- 一次性道具 ---------- */
 function useTaser(){
   var r=G.run; if(!r||G.phase!=='play')return;
@@ -5798,10 +6206,15 @@ function useTaser(){
        stuffClerk 本來就有清 aware，這裡漏掉純粹是不一致。 */
     ha.aware=0; ha.hideT=0;
     ev('taser_hit',{c:CLERKS.indexOf(hit)});
+    spawnBolt(hit.position.x,1.2,hit.position.z);
     var others=CLERKS.filter(function(c){return c!==hit&&c.ai.state==='CHASE';}).length;
     toast('命中 · 他癱了 '+CFG.taserStun+' 秒 · 剩 '+G.tzAmmo+' 發'+
           (others?' · 還有 '+others+' 個在追你':''));
   }else{
+    // 打空也要畫 —— 看得到偏到哪裡，下一發才有得修正
+    spawnBolt(camera.position.x+fwd.x*CFG.taserRange,
+              camera.position.y+fwd.y*CFG.taserRange,
+              camera.position.z+fwd.z*CFG.taserRange);
     toast('打空了 · 剩 '+G.tzAmmo+' 發'); ev('taser_miss');
   }
   updateHUD();
@@ -6343,6 +6756,10 @@ function updateHUD(){
   var it='';
   /* 電擊槍：還沒組好就顯示進度（那是你這局的第二個目標），
      組好之後顯示子彈數。兩種狀態都要一直看得見。 */
+  // 長槍擺在電擊槍上面 —— 它是更貴也更狠的那一把，順序本身就是資訊
+  if(G.hasRifle)
+    it+='<div class="'+(G.rifleAmmo>0?'ready':'empty')+'">'+
+        K('G','雷')+' 長槍 '+G.rifleAmmo+' 發</div>';
   if(tzReady())
     it+='<div class="'+(G.tzAmmo>0?'ready':'empty')+'">'+
         K('Q','電')+' 電擊 '+G.tzAmmo+' 發</div>';
@@ -6822,6 +7239,7 @@ function wipeSave(){
   G.cash=0; G.upgrades={}; G.shift=0;
   G.stopRuns=0; G.lastStopExpired=false; G.lastLost=[];
   G.tzParts={}; G.tzAmmo=0;
+  G.hasRifle=false; G.rifleAmmo=0;
   CFG.capacity=DEF.capacity;
   // 五軸的最佳值也要一起清，漏掉會變成 undefined 印在收據上
   STATS={runs:0,extracted:0,caught:0,forbiddenSeen:0,forbiddenPicked:0,
@@ -6890,10 +7308,18 @@ function syncTaserBtn(){
     b.classList.add('dry');           // 還不能用，壓暗
   }
 }
+function syncRifleBtn(){
+  if(!IS_TOUCH)return;
+  var b=$('btnRifle');
+  b.hidden=!G.hasRifle;
+  if(!G.hasRifle)return;
+  b.innerHTML='雷<small>'+G.rifleAmmo+'發</small>';
+  b.classList.toggle('dry',G.rifleAmmo<=0);
+}
 function syncItemButtons(){
   if(!IS_TOUCH)return;
   $('btnJump').hidden=!G.upgrades.jump;
-  syncTaserBtn();
+  syncTaserBtn(); syncRifleBtn();
   $('btnShrink').hidden=!G.upgrades.shrink;
   $('btnStop').hidden=stopRunsLeft()<=0;
 }
@@ -7264,6 +7690,11 @@ function frame(now){
   }
   // 稀有品浮動 + 價格標依距離淡入（越裡面的數字越大，這是貪婪迴圈的核心提示）
   // 動畫用自己的累積時鐘，午夜鐘期間不推進 —— 不然「全店靜止」時商品還在轉
+  // 電子彈軌跡。擺在 play 判斷之外 —— 被抓特寫的時候也該看得到最後那一發
+  stepBolt(dt);
+  // 鏡子：一張 96×128 的 canvas，重畫一次大約幾十微秒。
+  // 人形只有在 7 公尺內才畫（見 drawMirror），遠一點就只剩空鏡面
+  if(G.phase==='play'&&!(SIM.on&&SIM.skipDraw))drawMirror();
   if(stopT<=0)animT+=dt;
   var t=animT;
   /* 日光燈閃爍。停電期間讓給上面那段警報閃爍，兩套同時跑會互相覆蓋。
@@ -7674,6 +8105,7 @@ function simOneRun(P,maxT){
    因為貪心的代價是「偶爾整條命歸零」。 */
 function simLife(P,maxShift){
   G.cash=0; G.upgrades={}; G.shift=0; G.tzParts={}; G.tzAmmo=0; G.stopRuns=0;
+  G.hasRifle=false; G.rifleAmmo=0;   // 不清的話長槍會跨「命」帶過去，整批統計全歪
   var rows=[],lost=0;
   startGame();
   for(var s=0;s<(maxShift||12);s++){
