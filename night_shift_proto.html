@@ -1174,7 +1174,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v12.9';
+var BUILD='v13.0';
 
 /* ================================================================
    目錄與凍結狀態
@@ -1303,7 +1303,7 @@ var DEF = {
      $5000 刻意訂在「要存好幾局」的位置 —— 它不該是順手買的。 */
   rifleCost:5000, rifleAmmo:6, rifleRange:30, rifleSpread:5,
   /* 三槍一個，每槍間隔一秒。六發 = 兩個。
-     血剩 1/3（也就是中了兩槍）之後它現形並加速到 1.2 倍。 */
+     **中第一槍就現形**並加速到 1.2 倍，之後你還欠它兩槍。 */
   rifleHp:3, rifleCd:1.0, rageSpeed:1.2,
   /* 拿到非賣品之後，店員「晚幾秒」才知道你在哪。0 = 立刻（舊行為）。
      燈、聲音、廣播都還是當下就發生，只有位置情報延後 —— 所以玩家
@@ -5531,7 +5531,7 @@ function tryInteract(){
     showBeat('雷電長槍 · '+CFG.rifleAmmo+' 發',
       K('按 G 發射','按「雷」發射')+' · '+CFG.rifleCd+' 秒一發 · '+
       CFG.rifleHp+' 發解決一個',
-      '打到剩 '+rageAt()+'/'+CFG.rifleHp+' 血它會現形並且變快。'+
+      '中第一槍它就會現形並且變快（剩 '+rageAt()+'/'+CFG.rifleHp+'）。'+
       '這 '+CFG.rifleAmmo+' 發剛好 '+Math.floor(CFG.rifleAmmo/CFG.rifleHp)+' 個。'+
       '花了 $'+CFG.rifleCost+'，被抓一樣會沒收。',6400);
     syncItemButtons(); updateHUD(); updateAim();
@@ -6298,17 +6298,23 @@ function setHpBar(c){
   c.hpbar.material.needsUpdate=true;
   // 真正的顯示/隱藏交給 clerkTail 每幀決定（見那裡的註解）
 }
-// 重傷門檻：血量剩三分之一。用 ceil 而不是寫死 1，這樣 rifleHp 調成 1 或 2 也合理
-function rageAt(){ return Math.max(1,Math.ceil(CFG.rifleHp/3)); }
+/* 現形門檻：**中一槍就現形**，不是打到剩三分之一。
+   這個差別比看起來大。等到剩 1/3 才現形的話，前面兩槍你是在對著
+   一個普通店員開槍 —— 那只是在扣血。第一槍就現形，整個互動變成：
+   你開了一槍、它轉過來不是人了、而且更快了，而你還要再打兩槍，
+   中間各隔一秒。那三秒才是這把槍真正賣的東西。
+   寫成 rifleHp-1 而不是寫死 2，調參面板改血量時門檻會跟著走。 */
+function rageAt(){ return Math.max(1,CFG.rifleHp-1); }
 /* 中一槍。回傳 true 表示這一槍打死了它。 */
 function rifleHurt(c){
   c.hp--;
   setHpBar(c);
   if(c.hp<=0)return true;
   if(c.hp<=rageAt()&&c.rage<=1){
-    /* 血剩三分之一：現形、加速、四隻手揮舞。
+    /* 中一槍就現形：綠皮紅眼、四隻手揮舞、速度上去。
        加速只有 1.2 倍 —— 聽起來很少，但店員追擊是 4.5、玩家衝刺 6.8，
-       1.2 倍把差距從 2.3 壓到 1.4，那是「跑得掉」變成「剛好跑得掉」。 */
+       1.2 倍把差距從 2.3 壓到 1.4，那是「跑得掉」變成「剛好跑得掉」。
+       而你還欠它兩槍，每槍之間隔一秒。 */
     c.rage=CFG.rageSpeed;
     alienLook(c);
     c.halo.material.color.setHex(0x4ADE80);
