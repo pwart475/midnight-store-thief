@@ -838,7 +838,13 @@
   body.touch #beat .b1{font-size:18px}
   body.touch #beat .b2{font-size:12px}
   body.touch #beat .b3{font-size:11px}
-  body.touch #toast{bottom:46%;max-width:46vw}
+  /* bottom:46% 就是畫面正中央 —— 準心的位置，也就是你正在瞄的地方。
+     長槍命中的那一行偏偏是「你正在開槍」的時候跳出來的，
+     於是提示剛好蓋住你要打的那個人。訊息不能長在準心上。
+
+     往上貼齊 beat 方塊的下緣（top+48 加上三行約 75px）。
+     籃子在左、狀態在右，中間這條只有 56vw，三者不會互相壓到。 */
+  body.touch #toast{top:calc(var(--sat) + 126px);bottom:auto;max-width:56vw}
   body.touch #toast div{text-align:center}
   /* 廣播放在搖桿與按鍵之間的空檔。
      按鍵重排之後道具區往左延伸到了畫面中線附近，40vw 的置中橫幅會壓到
@@ -919,8 +925,12 @@
     <div>時間 <b id="clock">0:00</b></div>
     <div>所得 <b id="cashhud">$0</b></div>
     <div>連續 <b id="streakhud">0</b> 次沒被抓</div>
-    <div>姿勢 <b id="posehud">站立</b></div>
-    <div>佈局 <b id="layouthud">A</b></div>
+    <!-- 「姿勢」與「佈局」拿掉了。
+         姿勢：你蹲不蹲下自己最清楚 —— 視高跟移動速度已經把它講完了，
+               那行字只是把一個身體感覺翻譯成文字再印一次。
+         佈局：純 debug。貨架每局重組，但「現在是 A 還是 B」
+               對玩家不構成任何決定，它只對我在比對模擬數據時有用。
+         兩個 id 都保留在下面的 JS 裡會噴錯，所以 updateHUD 那邊也一起改。 -->
     <div id="exitchip">出口鎖定</div>
   </div>
   <div id="prompt"></div>
@@ -1237,7 +1247,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v14.1';
+var BUILD='v14.3';
 
 /* ================================================================
    目錄與凍結狀態
@@ -6442,10 +6452,10 @@ function poseHeight(){          // 店員視線判定用的玩家高度
   // 跳起來越過貨架偷看的同時，他也看得到你 —— 情報是雙向的
   return (crouchNow?1.05:1.45)+jumpY;
 }
-function poseName(){
-  if(shrinkT>0)return '縮小 '+Math.ceil(shrinkT)+'s';
-  return crouchNow?'潛行':(sprintFlag?'衝刺':'站立');
-}
+/* poseName() 拿掉了 —— 它唯一的用途是右上角那行「姿勢」。
+   裡面的縮小倒數沒有跟著消失：那個數字有自己的位置（#shrinknum），
+   而且它是真的要看的（還剩幾秒他抓得到你），跟「我現在是站著還是蹲著」
+   不是同一種資訊。 */
 
 /* ---------- 可見的電子彈 ----------
    原本開槍完全沒有畫面：只有一聲音效和一行 toast。
@@ -6622,8 +6632,12 @@ function fireRifle(){
         return c!==hit&&c.visible&&c.ai.state==='CHASE';}).length;
       toast('解決掉了 · 剩 '+G.rifleAmmo+' 發'+(others?' · 還有 '+others+' 個':''));
     }else{
-      // 命中音已經在 rifleHurt 裡面播了 —— 這裡再播一次是兩聲
-      toast('命中 · 它退了一步 · 還剩 '+hit.hp+'/'+CFG.rifleHp+' · 你剩 '+G.rifleAmmo+' 發');
+      /* 命中音已經在 rifleHurt 裡面播了 —— 這裡再播一次是兩聲。
+         文字也砍短：原本四段（命中／它退了一步／還剩 N/3／你剩 M 發）
+         在手機上要折三行，而這四件事裡有三件畫面上已經有了 ——
+         他頭上有血條、HUD 有彈數、後退你看得到。
+         剩下那一件（打中了沒）才是這一行存在的理由。 */
+      toast('命中 · 剩 '+hit.hp+'/'+CFG.rifleHp);
     }
   }else{
     spawnBolt(camera.position.x+fwd.x*CFG.rifleRange,
@@ -7239,7 +7253,8 @@ function updateHUD(){
       it+='<div class="ready" style="border-color:#E87A2B;color:#E87A2B">機器人 '+hv+'/'+ps.length+'</div>';
   }
   $('items').innerHTML=it;
-  $('layouthud').textContent=layoutName;
+  // 佈局代號不再顯示給玩家。layoutName 本身留著 —— exportData 會帶出去，
+  // 比對模擬數據的時候要知道那一局跑的是哪張圖
   /* 整排按鈕一起刷。手機上那四顆按鈕是彈數／次數的唯一顯示位置
      （左上角的重複行已經拿掉），所以只要 HUD 更新就要跟著更新它們。 */
   syncItemButtons();
@@ -7578,8 +7593,10 @@ function renderMetrics(){
   $('metrics').innerHTML=html;
 }
 function exportData(){
+  /* layout 從右上角的 HUD 拿掉了（對玩家沒用），但分析數據的時候
+     「這一局跑的是哪張圖」是一定要知道的 —— 所以它搬到這裡。 */
   return JSON.stringify({config:CFG,stats:STATS,cash:G.cash,upgrades:G.upgrades,
-    lastRunLog:G.run?G.run.log:[]},null,2);
+    layout:layoutName, lastRunLog:G.run?G.run.log:[]},null,2);
 }
 function copyData(){
   var t=exportData();
@@ -8178,7 +8195,7 @@ function frame(now){
       updateAim();
       var mm=Math.floor(G.run.t/60),ss=Math.floor(G.run.t%60);
       $('clock').textContent=mm+':'+String(ss).padStart(2,'0');
-      $('posehud').textContent=poseName();
+      // 姿勢不再顯示給玩家（視高與速度已經講完了）
       // 停電閃爍
       if(G.run.danger&&stopT<=0){
         /* 閃爍：亮的那一格拉高、暗的那一格不再是全黑，
