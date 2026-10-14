@@ -40,23 +40,24 @@
     font-family:'Noto Sans TC','Microsoft JhengHei',system-ui,sans-serif;font-size:14px}
   #err b{color:#DCEBD8;display:block;margin-bottom:10px;font-size:17px}
   #err code{font-family:ui-monospace,monospace;color:#FFC93C}
+  #err button{margin-top:18px;padding:9px 18px;font:inherit;font-size:13px;
+    color:#DCEBD8;background:transparent;border:1px solid #2A362B;cursor:pointer}
+  #err button:hover{background:#141A14}
+  /* 「還在載入」不是錯誤，不要長得像錯誤 */
+  #err.wait b{color:#FFC93C}
 </style>
 </head>
 <body>
 <iframe id="game"
         allow="pointer-lock; fullscreen; autoplay"
         title="午夜超商小偷"></iframe>
-<div id="err">
-  <div>
-    <b>找不到遊戲檔案</b>
-    請確認 <code>night_shift_proto.html</code> 和這支 <code>index.html</code> 放在同一個資料夾。
-  </div>
-</div>
+<div id="err"><div id="errmsg"></div></div>
 <script>
   /* 一定要帶時間戳載入遊戲檔。
      手機瀏覽器的 HTML 快取非常頑固，改版後常常還在跑舊檔案，
      結果看起來像「新版沒修好」，其實是根本沒載到新版。 */
-  document.getElementById('game').src='night_shift_proto.html?t='+Date.now();
+  var SRC='night_shift_proto.html?t='+Date.now();
+  document.getElementById('game').src=SRC;
 
   // 手機瀏覽器的網址列會吃掉高度，用實際可視高度校正
   function fit(){
@@ -66,12 +67,49 @@
   window.addEventListener('orientationchange',function(){setTimeout(fit,250);});
   fit();
 
-  // 載入失敗時給一句有用的話，而不是一片黑
+  /* 載入失敗時給一句有用的話，而不是一片黑。
+
+     舊版是「5 秒內 iframe 還沒 load 就說找不到檔案」。那句話有兩個問題：
+     一、遊戲檔 350KB，而且 load 事件要等整支腳本跑完（建貼圖、建整間店）
+         加上 three.js 與字型兩個外部 CDN —— 冷快取或網路慢一點，
+         5 秒本來就不夠，於是檔案明明在，它卻說檔案不見了。
+     二、它根本沒有去確認檔案到底在不在，只是在猜。
+
+     現在分三段，而且先去問檔案在不在再下結論：
+       8 秒  —— 還在載入（這不是錯誤，顏色也不一樣）
+       14 秒 —— 真的去 fetch 一次：
+                 200 → 檔案在，只是慢，叫人再等或重載
+                 404 → 檔案真的不見了，這時才講那句話
+                 fetch 本身失敗 → file:// 或離線，老實說「無法確認」
+                                  而不是硬講一個可能是錯的原因 */
   var f=document.getElementById('game'), ok=false;
-  f.addEventListener('load',function(){ ok=true; });
+  var box=document.getElementById('err'), msg=document.getElementById('errmsg');
+  f.addEventListener('load',function(){ ok=true; box.style.display='none'; });
+  function say(title,body,wait){
+    if(ok)return;
+    msg.innerHTML='<b>'+title+'</b>'+body+
+      '<div><button onclick="location.reload()">重新載入</button></div>';
+    box.className=wait?'wait':'';
+    box.style.display='flex';
+  }
   setTimeout(function(){
-    if(!ok){ f.style.display='none'; document.getElementById('err').style.display='flex'; }
-  },5000);
+    say('還在載入…','遊戲檔約 350KB，另外還要抓 Three.js 與字型。'+
+        '第一次開或網路較慢的話要等一下。',true);
+  },8000);
+  setTimeout(function(){
+    if(ok)return;
+    fetch(SRC,{cache:'no-store'}).then(function(r){
+      if(r.ok) say('載入得有點久','檔案是在的（HTTP '+r.status+'），只是還沒跑完。'+
+                   '再等一下，或按下面重載。',true);
+      else say('找不到遊戲檔案','伺服器回 HTTP '+r.status+'。請確認 '+
+               '<code>night_shift_proto.html</code> 和這支 '+
+               '<code>index.html</code> 放在同一個資料夾。',false);
+    }).catch(function(){
+      say('載入沒完成','沒辦法確認檔案在不在 —— 用 file:// 直接開啟時瀏覽器不讓我問。'+
+          '請確認 <code>night_shift_proto.html</code> 就在這支 '+
+          '<code>index.html</code> 旁邊；如果在，多半只是還沒載完。',true);
+    });
+  },14000);
 </script>
 </body>
 </html>
