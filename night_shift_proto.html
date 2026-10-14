@@ -407,8 +407,13 @@
   .topcash{margin-left:auto;display:flex;align-items:baseline;gap:9px}
   .topcash span{font-family:var(--f-mono);font-size:10px;letter-spacing:.16em;
     color:var(--dimmer);text-transform:uppercase}
-  .topcash b{font-family:var(--f-num);font-size:24px;color:var(--price);
+  .topcash b{font-family:var(--f-num);font-size:30px;color:var(--price);
     font-variant-numeric:tabular-nums}
+  /* $0 一定要自己解釋為什麼是 0。沒有這一行的話，被抓過的玩家
+     和剛重新整理過的玩家看到的是同一個畫面：一個沒有理由的 0。 */
+  .cashwhy{display:none;font-size:13px;color:var(--danger);line-height:1.7;
+    margin:-2px 0 14px}
+  .cashwhy.on{display:block}
   .eyebrow{font-family:var(--f-mono);font-size:11px;letter-spacing:.26em;color:var(--dimmer);
     text-transform:uppercase;margin-bottom:12px}
   h1{font-family:var(--f-num);font-size:clamp(36px,7vw,60px);line-height:.94;margin:0 0 4px;
@@ -684,6 +689,14 @@
   #dev .mini button{flex:1;padding:7px;font-size:11px;font-weight:700;background:transparent;
     border:1px solid var(--line-hi);cursor:pointer}
   #dev .mini button:hover{background:#1B231C}
+  /* 作弊鈕：綠框綠字，跟旋鈕那一片灰明顯不一樣。
+     點一下就直接改遊戲狀態，不該跟「拉一個數值」長得一樣。 */
+  .cheats{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:4px}
+  .cheats button{flex:1 1 46%;padding:8px 6px;font-size:11px;font-weight:700;
+    background:rgba(92,240,138,.07);color:#5CF08A;
+    border:1px solid rgba(92,240,138,.45);cursor:pointer}
+  .cheats button:hover{background:rgba(92,240,138,.16)}
+  .cheats button:active{background:rgba(92,240,138,.3)}
   /* z-index 23：要在觸控按鍵（#touch，22）之上、密碼鍵盤（24）之下 */
   #devtoggle{position:fixed;right:14px;bottom:14px;z-index:23;pointer-events:auto;padding:7px 12px;
     font-family:var(--f-mono);font-size:11px;letter-spacing:.1em;background:rgba(9,12,9,.9);
@@ -1112,24 +1125,21 @@
        兩次下手之間唯一要做的決定是「買什麼」，那就該是第一個看到的東西；
        戰績與歷史是回顧，放後面。 -->
   <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:20px;flex-wrap:wrap">
-      <div>
-        <div class="eyebrow">藏身處 · 兩次下手之間</div>
-        <h1 style="font-size:clamp(26px,4.4vw,38px)">買<em>裝備</em></h1>
-      </div>
-      <div style="text-align:right"><div class="eyebrow" style="margin:0 0 2px">手上的錢</div>
-        <div class="cash" id="shopcash">$0</div></div>
+    <div>
+      <div class="eyebrow">藏身處 · 兩次下手之間</div>
+      <h1 style="font-size:clamp(26px,4.4vw,38px)">買<em>裝備</em></h1>
     </div>
-    <!-- 現金放進 .cardtop 裡面，不是另外做一條。
-         .cardtop 本身已經是 position:sticky;top:0 而且不透明 ——
-         另外做一條黏在同一個 top:0 的話會被它整個蓋掉，
-         那個數字會在「開始往下捲去看裝備」的那一刻消失，
-         剛好是它最需要在的時候。
-         「我買不買得起」這個問題在整個商店畫面裡每一秒都成立。 -->
+    <!-- 現金只有一個，就在 .cardtop 裡面。
+         原本標題右邊還有一個大的 #shopcash，等於同一個數字印兩次 ——
+         而且 .cardtop 是 sticky top:0 且不透明，往下捲一點點
+         就會從上面切過那個大數字：畫面上同時有兩行「手上的錢」，
+         上面那行被切掉一半，下面那行完整。那看起來就是「錢不見了」。
+         一個畫面一個錢。它跟著 sticky 條永遠在，所以不會消失。 -->
     <div class="cardtop">
       <button class="btn" id="btn-shift">再幹一次 <kbd>Enter</kbd></button>
       <div class="topcash"><span>手上的錢</span><b id="shopcash2">$0</b></div>
     </div>
+    <div class="cashwhy" id="cashwhy"></div>
     <div class="shopgoal" id="shopgoal"></div>
     <div class="shopgrid" id="shopgrid"></div>
     <h4 class="sh">現有裝備</h4>
@@ -1188,6 +1198,18 @@
   <h4 data-sec="k-econ">經濟與節奏</h4><div id="k-econ"></div>
   <h4 data-sec="k-item">道具與互動</h4><div id="k-item"></div>
   <h4 data-sec="k-audio">音量</h4><div id="k-audio"></div>
+  <!-- 作弊。調參面板裡唯一會直接改遊戲狀態（而不是改參數）的一區，
+       所以用不同的顏色，而且字面上就寫「作弊」—— 調一個數值跟
+       「我現在憑空多一把 $5000 的槍」不是同一件事，不該長得一樣。
+       存在的理由：要測長槍打店員的手感，正規路徑是存 $5000 再走到
+       辦公室開門，每測一次調整都要重跑那一整段。 -->
+  <h4 data-sec="k-cheat">作弊（測試用）</h4>
+  <div id="k-cheat" class="cheats">
+    <button id="cheat-rifle">給我長槍（滿彈）</button>
+    <button id="cheat-ammo">+1 發長槍子彈</button>
+    <button id="cheat-taser">給我電擊槍（滿彈）</button>
+    <button id="cheat-cash">+$5000</button>
+  </div>
   <h4>本局事件</h4>
   <div id="devlog"></div>
   <div class="mini"><button id="dev-reset">重置參數</button><button id="dev-copy">複製全部數據</button></div>
@@ -1215,7 +1237,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v14.0';
+var BUILD='v14.1';
 
 /* ================================================================
    目錄與凍結狀態
@@ -1349,6 +1371,10 @@ var DEF = {
   /* 中槍的硬直秒數。要大於 rifleCd，否則「三發打完一個」在被追的時候
      做不到 —— 那把槍就只能拿來偷襲，不能拿來自保。 */
   rifleStagger:1.2,
+  /* 中槍往後退幾公尺。純粹是為了「讀得出來」——
+     靜止不動在混亂中看不出來，位置變了看得出來。
+     0 = 完全不退（舊行為），可以直接 A/B 兩種手感。 */
+  rifleKnock:0.9,
   /* 拿到非賣品之後，店員「晚幾秒」才知道你在哪。0 = 立刻（舊行為）。
      燈、聲音、廣播都還是當下就發生，只有位置情報延後 —— 所以玩家
      感覺到的是警報在醞釀，不是遊戲放水。 */
@@ -1574,6 +1600,11 @@ var KNOBS = [
   // 下限刻意不是 1：等於 1 的話 c.rage<=1，現形那套會被 animClerk 每幀蓋回去
   ['k-clerk','rageSpeed','重傷後的速度倍率',1.05,2,.05,'×'],
   ['k-clerk','rifleStagger','中槍硬直',0.2,3,.1,' s'],
+  /* 上限 1.6 不是 3：店員半徑 0.5，最薄的牆 0.8m ——
+     一步超過 1.8m 就有可能被 resolve 從牆的另一邊彈出去。
+     1.6 留了安全邊界。 */
+  ['k-clerk','rifleKnock','中槍後退距離',0,1.6,.1,' m'],
+  ['k-clerk','rifleAmmo','長槍彈數',1,12,1,' 發'],
   ['k-econ','riskBonus','每件非賣品的整袋加成',0,1,.05,''],
   ['k-econ','extractItems','解鎖撤離所需件數',1,10,1,' 件'],
   ['k-item','stopTime','午夜鐘停止秒數',2,20,.5,' s'],
@@ -3852,6 +3883,15 @@ function noiseBurst(dur,freq,vol,q,dest){
 var SFX={
   scan:function(){beep(2050,0.05,'square',0.1); setTimeout(function(){beep(2750,0.07,'square',0.1);},58);},
   deny:function(){beep(220,0.14,'square',0.09);},
+  /* 長槍命中。以前這裡放的是 deny —— 也就是「你不能這樣做」的錯誤音。
+     玩家開槍、打中了、然後聽到遊戲裡代表「無效」的那個聲音，
+     而且因為 rifleHurt 跟 fireRifle 各叫了一次，是連響兩下。
+     命中要有重量：低頻的悶撞 + 一小撮高頻碎裂，跟 deny 完全不一樣。 */
+  rifleHit:function(){
+    beep(96,0.20,'sawtooth',0.26,34);
+    noiseBurst(0.09,900,0.22,1.1);
+    setTimeout(function(){ noiseBurst(0.16,180,0.18,0.8); },40);
+  },
   forbidden:function(){beep(150,1.5,'sawtooth',0.16,42); noiseBurst(0.7,260,0.15,0.7);},
   chime:function(){beep(784,0.4,'sine',0.1); setTimeout(function(){beep(587,0.65,'sine',0.1);},300);},
   register:function(){beep(1320,0.07,'square',0.11);
@@ -4239,7 +4279,8 @@ function newRun(){
        成本是一次矩形判定，值得。 */
     if(inOfficeZone(hm.x,hm.z))hm=c.home;
     c.position.set(hm.x,0,hm.z);
-    c.rotation.y=(c.home.ry===undefined?Math.PI:c.home.ry); c.rotation.z=0;
+    c.rotation.y=(c.home.ry===undefined?Math.PI:c.home.ry);
+    c.rotation.z=0; c.rotation.x=0; c.staggerT0=0;
     c.walkT=0; c.armLift=0;          // 步態相位也要歸零，不然新局第一步是接續的
     c.halo.material.opacity=0;
     c.stuffedIn=null;
@@ -6087,7 +6128,8 @@ function clerkFSM(c,dt){
     a.stunT-=dt;
     c.rotation.z=Math.sin(now2()*22)*0.06;   // 抽動
     if(a.stunT<=0){
-      c.rotation.z=0; a.state='SEARCH'; a.searchT=0; a.path=[];
+      c.rotation.z=0; c.rotation.x=0;
+      a.state='SEARCH'; a.searchT=0; a.path=[];
       a.calm=1.5; ev('taser_recovered',{c:CLERKS.indexOf(c)});
     }
     return;
@@ -6101,10 +6143,19 @@ function clerkFSM(c,dt){
      跟電擊的差別：硬直**不中斷追逐**。狀態留在 CHASE，他只是停住，
      時間到了繼續朝你衝。所以它買到的是「下一發的時間」，不是脫身。
      脫身仍然只有電擊槍、縮小劑跟你的腿。 */
+  /* 演出：後仰 + 雙手往上甩 + 抖。
+     原本只有 rotation.z 擺動 0.05 弧度（不到三度）——
+     那個幅度在一個正在衝過來的人身上看不出來，玩家的結論就是
+     「我射他，他沒反應」。而他其實真的停住了 1.2 秒。
+     機制有效但讀不出來，跟機制壞掉對玩家是同一件事。
+     k 從 1 掉到 0，用 k*k 讓後仰「被打到的瞬間最大、然後彈回來」。 */
   if(a.stagger>0){
     a.stagger-=dt;
-    c.rotation.z=Math.sin(now2()*26)*0.05;
-    if(a.stagger<=0)c.rotation.z=0;
+    var k=Math.max(0,a.stagger/(c.staggerT0||CFG.rifleStagger));
+    c.rotation.x=-0.45*k*k;
+    c.rotation.z=Math.sin(now2()*30)*0.10*k;
+    c.armL.rotation.x=-1.6*k; c.armR.rotation.x=-1.6*k;
+    if(a.stagger<=0){ c.rotation.x=0; c.rotation.z=0; }
     return;
   }
   var r=G.run;
@@ -6471,7 +6522,20 @@ function rifleHurt(c){
      打中之後你一定來得及開下一發，但只差 0.2 秒 —— 打空就補不回來。
      這就是這把槍的手感：穩定、但不容許失誤。 */
   c.ai.stagger=CFG.rifleStagger;
+  c.staggerT0=CFG.rifleStagger;     // 演出要知道「硬直走了幾成」
   c.ai.path=[];                     // 重新起步，不要接著舊路徑滑行
+  /* 往後退一步。
+     1.2 秒的靜止在被追的時候讀不出來 —— 你正在倒退跑、畫面在晃，
+     一個「原地不動」的人跟一個「慢慢逼近」的人看起來差不多。
+     位移才是明確的：他離你遠了一點，而那是你那一槍做到的。
+     方向就是子彈飛過去的方向（你→他），一樣走 resolve，
+     所以不會把人推進牆裡或推出店外。 */
+  var kx=c.position.x-camera.position.x, kz=c.position.z-camera.position.z;
+  var kd=Math.hypot(kx,kz)||1;
+  var kp={x:c.position.x+kx/kd*CFG.rifleKnock, z:c.position.z+kz/kd*CFG.rifleKnock};
+  resolve(kp,0.5);
+  c.position.x=kp.x; c.position.z=kp.z;
+  SFX.rifleHit();
   if(c.hp<=0)return true;
   if(c.hp<=rageAt()&&c.rage<=1){
     /* 中一槍就現形：綠皮紅眼、四隻手揮舞、速度上去。
@@ -6484,13 +6548,12 @@ function rifleHurt(c){
     SFX.forbidden();
     toast('它不是人 —— 而且它變快了');
     ev('clerk_enraged',{c:CLERKS.indexOf(c)});
-  }else{
-    SFX.deny();
   }
   return false;
 }
 function alienize(c){
-  c.rotation.z=0;        // 昏迷時的傾倒要清，不清會留在 pool 裡帶到下一局
+  c.rotation.z=0; c.rotation.x=0;  // 昏迷/硬直的傾倒要清，不清會留在 pool 裡帶到下一局
+  c.ai.stagger=0;
   c.alienT=ALIEN_SHOW;
   alienLook(c);                       // 第三槍才到這裡的話多半已經現形了，再做一次無妨
   c.hpbar.material.opacity=0;
@@ -6559,8 +6622,8 @@ function fireRifle(){
         return c!==hit&&c.visible&&c.ai.state==='CHASE';}).length;
       toast('解決掉了 · 剩 '+G.rifleAmmo+' 發'+(others?' · 還有 '+others+' 個':''));
     }else{
-      SFX.deny();
-      toast('命中 · 它停住了 · 還剩 '+hit.hp+'/'+CFG.rifleHp+' · 你剩 '+G.rifleAmmo+' 發');
+      // 命中音已經在 rifleHurt 裡面播了 —— 這裡再播一次是兩聲
+      toast('命中 · 它退了一步 · 還剩 '+hit.hp+'/'+CFG.rifleHp+' · 你剩 '+G.rifleAmmo+' 發');
     }
   }else{
     spawnBolt(camera.position.x+fwd.x*CFG.rifleRange,
@@ -7269,8 +7332,18 @@ function renderReceipt(){
    全部攤開之後，那條由便宜到 $3000 的價目表本身就是一份目標清單：
    你會看著自己買不起的那幾張卡決定今晚要多貪一點。 */
 function renderShop(){
-  $('shopcash').textContent='$'+G.cash;
-  $('shopcash2').textContent='$'+G.cash;   // 黏在頂端的那條
+  $('shopcash2').textContent='$'+G.cash;   // 全畫面唯一的現金顯示
+  /* $0 自己解釋。兩個完全不同的原因會讓它是 0，而玩家看到的畫面一樣：
+     被抓（店員把錢全拿走了），或是重新整理過（現金本來就不存檔）。
+     不講的話那個 0 看起來就是個 bug。 */
+  var why=$('cashwhy'), msg='';
+  if(G.cash<=0){
+    if(G.lastLost&&G.lastLost.length)
+      msg='上一次被抓 —— 店員把你身上的錢全部拿走了。';
+    else if(G.shift<=1)
+      msg='現金不存檔：關掉或重新整理頁面就是全新的一輪，從 $0 開始。';
+  }
+  why.textContent=msg; why.classList.toggle('on',!!msg);
   renderCard();
   var g=$('shopgrid'); g.innerHTML='';
   var list=UPGRADES.slice().sort(function(a,b){return a.cost-b.cost;});
@@ -7812,6 +7885,40 @@ $('btn-copy').addEventListener('click',copyData);
 $('btn-brag').addEventListener('click',copyBrag);
 $('dev-copy').addEventListener('click',copyData);
 
+/* ---------- 作弊鈕 ----------
+   全部走跟正規取得完全一樣的那幾個欄位（G.hasRifle / G.rifleAmmo /
+   G.tzParts / G.tzAmmo），然後呼叫 syncItemButtons + updateHUD。
+   不要另外開一條路 —— 作弊鈕如果用自己的方式設狀態，測出來的手感
+   就不保證是玩家會遇到的那個手感，那這個鈕等於在說謊。
+
+   每一顆都可以重複按：測打店員就是「打完三槍、再給我六發、再打一次」。
+   刻意不扣錢也不播 showBeat，它不是一次取得的演出，是一個開關。 */
+/* msg 是 function 不是字串：訊息必須在按下去的當下才算。
+   寫成 '長槍 '+CFG.rifleAmmo+' 發' 的話，那個數字是頁面載入時的值，
+   而 rifleAmmo 是旋鈕 —— 調過之後拿到的是新的、講出來的是舊的。 */
+function cheat(fn,msg){
+  return function(){
+    fn();
+    syncItemButtons(); updateHUD();
+    try{ updateAim(); }catch(e){}
+    if(G.phase==='shop')renderShop();   // 商店裡現金才會當場跳
+    toast('作弊 · '+(typeof msg==='function'?msg():msg));
+  };
+}
+$('cheat-rifle').addEventListener('click',cheat(function(){
+  G.hasRifle=true; G.rifleAmmo=CFG.rifleAmmo;
+},function(){ return '長槍 · '+CFG.rifleAmmo+' 發'; }));
+$('cheat-ammo').addEventListener('click',cheat(function(){
+  G.hasRifle=true; G.rifleAmmo=(G.rifleAmmo||0)+1;
+},function(){ return '長槍子彈 +1 · 共 '+G.rifleAmmo+' 發'; }));
+$('cheat-taser').addEventListener('click',cheat(function(){
+  TZ_PARTS.forEach(function(id){ G.tzParts[id]=true; });
+  G.tzAmmo=Math.max(G.tzAmmo||0,CFG.tzAmmoPer);
+},function(){ return '電擊槍 · '+G.tzAmmo+' 發'; }));
+$('cheat-cash').addEventListener('click',cheat(function(){
+  G.cash+=5000;
+},function(){ return '+$5000 · 共 $'+G.cash; }));
+
 /* ============================================================
    16. 調參面板
    ============================================================ */
@@ -7828,7 +7935,11 @@ function filterKnobs(q){
   var secs=document.querySelectorAll('#dev h4[data-sec]');
   for(var i=0;i<secs.length;i++){
     var box=document.getElementById(secs[i].dataset.sec);
-    var any=box&&box.querySelector('.knob:not([style*="none"])');
+    /* 作弊那一區裡面是按鈕不是 .knob，用原本的判斷會永遠被收起來。
+       規則：沒有任何旋鈕的分區＝沒在搜尋的時候才顯示。 */
+    var any=box&&(box.querySelector('.knob')
+      ? box.querySelector('.knob:not([style*="none"])')
+      : !q);
     secs[i].style.display=any?'':'none';
     if(box)box.style.display=any?'':'none';
   }
