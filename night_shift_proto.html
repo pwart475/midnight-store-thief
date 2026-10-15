@@ -36,6 +36,18 @@
   .layer.screen{pointer-events:auto;display:flex;align-items:center;justify-content:center;
     background:radial-gradient(120% 90% at 50% 0%,rgba(20,26,20,.94),rgba(6,8,6,.98));z-index:30}
   .layer.hidden{display:none}
+  /* 選單打開的時候，遊戲 HUD 與觸控按鍵一律收掉。
+     為什麼需要這條：.layer.screen 的底是 rgba(...,.94) / rgba(...,.98) ——
+     不是全不透明。所以標題、商店、說明這幾頁的底下，提袋、右上狀態、
+     搖桿、黃色的「拿」按鈕全部都會透出來。桌機看不太出來（那些東西
+     在四個角落），但手機橫向 740×360 上整片都是鬼影，標題頁看起來
+     像是壞掉的遊戲畫面。
+     改背景透明度只能蓋住顏色，蓋不住「它本來就不該在那裡」。 */
+  /* 全螢幕與調參也一起收。它們的 z-index 是 23，選單層是 30 ——
+     也就是說在選單上它們看得到、但點不到。一顆按得到的按鈕擋住畫面
+     只是礙眼，一顆看得到卻按不動的按鈕會讓人以為遊戲壞了。 */
+  body.menu #hud, body.menu #touch, body.menu #hudtop,
+  body.menu #fsbtn, body.menu #devtoggle{display:none}
 
   /* ---------- 三件組完成的慶祝 ----------
      湊齊機器人是這個遊戲裡唯一「跨越好幾分鐘的目標」達成的那一刻，
@@ -863,14 +875,19 @@
   /* 這兩顆排成一橫排擺在提袋面板**上面**，不是下面。
      擺下面的時候它們的位置是寫死的 top+84 / top+122，而面板會隨著
      道具清單變長 —— 清單一多就被蓋住。擺上面就跟面板高度無關了。 */
+  /* padding 從 5px 加到 11px：量出來的高度原本是 26px，
+     手指可靠按到的最小尺寸是 44。26px 的按鈕在走路的時候按十次中八次，
+     而其中一次誤觸「調參」會直接把整個面板蓋在畫面上。 */
   body.touch #fsbtn{left:calc(var(--sal) + 10px);top:calc(var(--sat) + 6px);
-    bottom:auto;transform:none;margin:0;padding:5px 9px;font-size:10px;
+    bottom:auto;transform:none;margin:0;padding:11px 10px;font-size:10px;
     background:rgba(9,12,9,.45)}
   /* 96 不是 82：⛶ 那個字在不同裝置上會掉到 emoji 字型，寬度差很多。
      量出來的寬度在 71～83 之間，82 會貼上去甚至疊到。 */
   body.touch #devtoggle{left:calc(var(--sal) + 96px);top:calc(var(--sat) + 6px);
-    right:auto;bottom:auto;padding:5px 9px;font-size:10px;
+    right:auto;bottom:auto;padding:11px 10px;font-size:10px;
     background:rgba(9,12,9,.45)}
+  /* 提袋面板跟著往下讓 —— 上面那兩顆長高了 12px */
+  body.touch #basket{top:calc(var(--sat) + 52px)}
 
   #rotate{position:fixed;inset:0;z-index:44;display:none;align-items:center;justify-content:center;
     background:var(--ink);padding:30px;text-align:center;font-size:15px;line-height:1.9;color:var(--dim);
@@ -1247,7 +1264,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v14.3';
+var BUILD='v14.7';
 
 /* ================================================================
    目錄與凍結狀態
@@ -3137,7 +3154,12 @@ function drawMirror(){
    「如果你看到店裡有人走動 —— 那一定不是我」。
    海報用的就是店員那張臉的貼圖 —— 同一張臉貼滿整間店，
    然後那張臉在走道盡頭動了起來。 */
-function posterTex(){
+/* 程序化的那張現在是**備援**，不是正式的。
+   正式的海報是 tex/poster.png（跟 47 張商品圖同一條管線、同一個資料夾）。
+   為什麼還留著這一支：圖沒放進去、或是路徑打錯的時候，牆上要有東西。
+   退回一張空白的 plane 比退回一張畫得醜的海報糟得多 ——
+   空白的你不會發現它壞了，只會覺得那面牆怪怪的。 */
+function posterTexFallback(){
   var c=document.createElement('canvas'); c.width=192; c.height=256;
   var g=c.getContext('2d');
   g.fillStyle='#C9B88A'; g.fillRect(0,0,192,256);
@@ -3177,10 +3199,45 @@ function posterTex(){
   return t;
 }
 var POSTER_TEX=null;
+/* 海報一律 3:4（寬:高 = 1:1.333），不管來源圖是什麼比例。
+
+   為什麼寫死而不是跟著圖走：牆上有七張海報，而且它們的位置是按
+   「這面牆上掛得下多大一塊」挑的。比例跟著圖跑的話，換一張圖
+   = 七個位置全部要重新確認有沒有穿牆、有沒有壓到鏡子。
+   版型固定、圖去配合版型，這是海報本來的做法。
+
+   圖用拉的填滿，不是裁切 —— 裁切會把下緣那行標語切掉，
+   而那行字是這張圖在講的話。 */
+var POSTER_AR=1.333;
+/* 載 tex/poster.png。載到之前（以及載不到的時候）牆上掛的是備援那張。
+
+   不開 mipmap、minFilter 用 Linear：WebGL1 對非 2 的次方尺寸開 mipmap
+   會直接給你一張全黑的貼圖，而「圖的寬高剛好是 2 的次方」不是一個
+   可以對美術提的要求。
+   畫布固定 384×512，本身就是 3:4 而且是 2 的次方 —— 來源圖多大都一樣。 */
+function loadPosterTex(){
+  var t=posterTexFallback();
+  var img=new Image();
+  img.onload=function(){
+    var c=document.createElement('canvas'); c.width=384; c.height=512;
+    var g=c.getContext('2d'); g.imageSmoothingEnabled=true;
+    g.drawImage(img,0,0,img.width,img.height,0,0,384,512);   // 強制拉成 3:4
+    t.image=c;
+    t.magFilter=THREE.LinearFilter; t.minFilter=THREE.LinearFilter;
+    t.generateMipmaps=false; t.needsUpdate=true;
+  };
+  img.onerror=function(){
+    console.warn('[tex] 找不到 '+TEX_DIR+'poster.png —— 店長海報沿用程序化備援');
+  };
+  img.src=TEX_DIR+'poster.png?v='+BUILD;
+  return t;
+}
 function addPoster(x,y,z,ry,w){
-  var p=new THREE.Mesh(new THREE.PlaneGeometry(w||0.9,(w||0.9)*1.333),
+  var pw=w||0.9;
+  var p=new THREE.Mesh(new THREE.PlaneGeometry(pw,pw*POSTER_AR),
     new THREE.MeshLambertMaterial({map:POSTER_TEX}));
-  p.position.set(x,y,z); p.rotation.y=ry; scene.add(p); return p;
+  p.position.set(x,y,z); p.rotation.y=ry; scene.add(p);
+  return p;
 }
 /* 擺位原則：**不要擺在玩家正面會看到的地方**。
    海報的作用是餘光 —— 轉身的時候瞥到一張臉，而不是正對著一張臉。
@@ -3191,7 +3248,7 @@ function addPoster(x,y,z,ry,w){
    寫成在這裡直接執行的話，posterTex 會拿到 undefined.image，
    drawImage 當場丟例外，整個遊戲連畫面都不會出現。 */
 function buildDecor(){
-  POSTER_TEX=posterTex();
+  POSTER_TEX=loadPosterTex();
   addPoster(-19.53,1.95, 6.0, Math.PI/2);          // 西牆（靠出口那段）
   addPoster(-19.53,1.95,-5.0, Math.PI/2);          // 西牆（深處）
   addPoster( 19.53,1.95, 2.0,-Math.PI/2);          // 東牆
@@ -3202,8 +3259,14 @@ function buildDecor(){
      下面出口那張用 π 是對的，因為那面牆的房間在 −Z 側。 */
   addPoster(  6.0, 1.95,-9.53, 0);                 // 後場隔牆，面向賣場
   addPoster( -5.0, 1.95,15.53, Math.PI);           // 出口旁 —— 離開前最後看到的東西
-  // z 要離下面那面鏡子夠遠：鏡框佔 z[-20.11,-19.09]，擺在 -19.0 會被蓋掉四成
-  addPoster(-19.53,1.95,-18.2, Math.PI/2, 1.1);    // 後場西牆深處，大一點
+  /* 這張原本貼在冷凍室裡間的西牆（x −19.53, z −18.2）。
+     那面牆現在站了一個立櫃（HIDES，z −18.96~−17.84，高 2.05）——
+     櫃子會把這張 1.1m 的海報從下面遮掉一大半，只露出頂端一截。
+     西牆那條帶子已經排了鏡子（z −20.11~−19.09）跟立櫃，塞不下第三樣東西，
+     所以改貼內隔牆的北面：你從東側缺口走進裡間、一轉頭就正對著它。
+     rotation.y = π —— PlaneGeometry 的法線是 +Z，而房間在這面牆的 −Z 側。
+     y 壓到 1.8：隔牆只有 2.6m 高，1.95 的話海報頂端會凸出牆外。 */
+  addPoster(-16.0,1.80,-17.42, Math.PI, 1.1);      // 冷凍室裡間 · 內隔牆北面
   /* 鏡子：賣場一面、後場一面。後場那面才是真正會嚇到人的那一面。
      後場這面的 z 要避開冷凍室的內隔間（z −17.4…−16.6，而且高 2.6m）——
      擺在 −16.5 的話鏡框有四成會埋進那道牆裡。 */
@@ -4789,12 +4852,34 @@ function stepSlot(dt){
    (sin a, cos a)。所以：0=朝南(+z)、π/2=朝東(+x)、-π/2=朝西(-x)、π=朝北(-z)。
    每一個都必須朝向房間內部 —— 倉庫那個原本寫 Math.PI，
    門正對著 2m 外的北牆，躲進去只看得到牆，整個機制等於沒有。 */
+/* 後場裡間那兩個是後來補的，原因是量出來的：
+   跑 96 局機器人，四種玩家性格裡只有「探索者」（深入後場、被追就躲）
+   整個垮掉 —— 脫身率 25% / 13% / 0%，24 局裡 0 次帶著非賣品脫身。
+   其他三種都在 38~88%。
+
+   查出來不是 AI 太強，是**立櫃最深只到 z −14.9，而裡間在 z < −16.6**。
+   也就是說整個最危險的區域一個櫃子都沒有：你帶著非賣品站在店最深處，
+   警報響了，而「躲」這個應對在那裡根本不存在。
+   深入＋躲＝死，深入＋跑才活得下來 —— 那不是兩種打法，那是一種。
+
+   補在兩間裡間的側牆角落，不是入口旁：
+   躲藏點的價值來自「你知道它在哪而他不知道你在裡面」，
+   擺在入口正對面的話，他一進門就站在你的門縫前。 */
 var HIDES=[
   {x:-19.0, z:6.2,  ry:Math.PI/2},    // 西側逃生走道 · 朝東進賣場
   {x:19.0,  z:6.2,  ry:-Math.PI/2},   // 東側走道 · 朝西進賣場
   {x:-19.0, z:-4.0, ry:Math.PI/2},    // 西側靠北 · 朝東
   {x:8.2,   z:-14.9,ry:0},            // 倉庫北牆 · 朝南，正對倉庫入口
-  {x:-8.6,  z:-14.6,ry:0}             // 冷凍室門邊 · 朝南
+  {x:-8.6,  z:-14.6,ry:0},            // 冷凍室門邊 · 朝南
+  /* 冷凍室裡間 · 西牆角 · 朝東。
+     z −18.4 是算出來的，不是挑的：北牆那排貨架佔 z −20.6~−19.8、
+     內隔牆佔 −17.4~−16.6，中間剩 2.40m 的橫向走道；
+     櫃體深 0.66，擺在 −18.4 兩邊各留 0.8m 以上，玩家與店員都過得去。
+     再往北就會撞到西牆上那面鏡子的框（z −20.11~−19.09）。 */
+  {x:-19.1, z:-18.4,ry:Math.PI/2},
+  /* 倉庫裡段 · 東牆角 · 朝西。
+     x 19.1 貼著東牆，離入口（貨架牆的缺口在 x 5~9）最遠的那一角。 */
+  {x:19.1,  z:-18.4,ry:-Math.PI/2}
 ];
 var hideObjs=[];
 function buildHides(){
@@ -7670,10 +7755,12 @@ function setupUiTouchProxy(){
 function show(id){
   releaseTouch();
   SCREENS.forEach(function(s){ $(s).classList.toggle('hidden',s!==id); });
+  document.body.classList.add('menu');
 }
 function hideAll(){
   releaseTouch();
   SCREENS.forEach(function(s){ $(s).classList.add('hidden'); });
+  document.body.classList.remove('menu');
 }
 
 function gotoTitle(){
@@ -7896,6 +7983,11 @@ $('s-shop').addEventListener('scroll',function(){
 },{passive:true});
 setupUiTouchProxy();
 $('vertag').textContent='灰盒驗證原型 '+BUILD;
+/* 開機就是標題頁，而標題頁是靠 markup 裡沒有 hidden 來顯示的 ——
+   show() 從來沒被呼叫過，所以 body.menu 也不會被加上。
+   少了這一行，第一次看到的標題頁底下還是會透出 HUD；
+   要等玩過一局回到標題才會正常，那正是最不該出問題的那一次。 */
+document.body.classList.add('menu');
 $('btn-next').addEventListener('click',gotoShop);
 $('btn-shift').addEventListener('click',nextShift);
 $('btn-copy').addEventListener('click',copyData);
