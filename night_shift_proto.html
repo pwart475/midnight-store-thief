@@ -1,4 +1,26 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
 <meta charset="utf-8">
+<!-- 這三行是補的，不是裝飾：
+
+     1. doctype —— 沒有它整支檔案跑在 quirks mode（實測 document.compatMode
+        是 'BackCompat'）。整個 CSS 都是照標準模式寫的，卻從來沒跑在
+        標準模式上：盒模型、百分比高度、inline-block 的基線、
+        表格的字型繼承，每一條規則都在一組不同的規則下被解讀。
+        量過之後這份檔案剛好沒有踩到致命的那幾個（.mtable 自己設了字型），
+        但「剛好沒踩到」不是一個可以一直賭下去的狀態。
+
+     2. viewport —— 沒有它，手機上這份文件的版面寬度是預設的 980px，
+        再整個縮小塞進 iframe。也就是說所有用 px 寫的觸控按鈕、面板、
+        字級，在真機上都被等比縮過一輪，跟你在桌機看到的不一樣。
+        加了之後 1 CSS px = 1 裝置獨立像素，手機上的 UI 會比現在大一些 ——
+        那才是這些數值本來就該有的大小。
+
+     3. viewport-fit=cover —— 沒有它，env(safe-area-inset-*) 全部回傳 0。
+        CSS 裡那一整組 --sal/--sar/--sat/--sab 從第一天起就是死的，
+        所以 iPhone 橫向持握時 HUD 會壓在凹口底下。 -->
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>午夜超商小偷</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
@@ -350,8 +372,11 @@
     align-items:center}
   /* 關閉鍵一定要有：按密碼時動作鍵是收起來的，
      沒有這顆手機上就出不了鍵盤，會直接卡死在櫃子前面。 */
+  /* 26×26 太小了。手指可靠按到的下限是 44 ——
+     而這顆是「按密碼時唯一的出口」，上面那段註解自己就寫了
+     「沒這顆手機上會卡死在櫃子前面」。按不到跟沒有是同一件事。 */
   #kpclose{background:transparent;border:1px solid var(--line);color:var(--dim);
-    width:26px;height:26px;font-size:13px;line-height:1;cursor:pointer;padding:0}
+    width:44px;height:44px;font-size:15px;line-height:1;cursor:pointer;padding:0}
   #kpclose:hover{border-color:var(--danger);color:var(--danger)}
   #kpval{font-family:var(--f-num);font-size:38px;line-height:1;color:#7FE3F5;
     letter-spacing:.10em;text-align:center;margin-bottom:6px;
@@ -910,6 +935,18 @@
        只寫 animation:none 的話會掉回基準的 opacity:0 —— 整個慶祝就永遠看不到了。
        .on 還是會在 2.8 秒後被 JS 移掉，所以它一樣會自己消失。 */
     #setfx.on{animation:none;opacity:1;transform:none}
+    /* 漏掉的四個。原則跟上面一樣：閃爍與彈跳收掉，但那個元素
+       本來要傳達的狀態一定要留在畫面上，不能跟著動畫一起消失。
+       縮小快結束、密碼打錯、被抓、還有「下面還有東西」——
+       這四件事對一個設了 reduce 的玩家一樣重要。 */
+    body.shrunk.shrink-end #shrinkfx{animation:none;
+      box-shadow:inset 0 0 130px 22px rgba(255,59,48,.44)}
+    #kpval.bad{animation:none;opacity:1}
+    /* punch 用的是 animation-fill-mode:both，所以只寫 animation:none
+       會停在關鍵影格外的基準狀態。transform / opacity 要自己補回來，
+       不然「被抓了」那三個字會整個不見。 */
+    #caught b{animation:none;transform:none;opacity:1}
+    #morehint.on{animation:none;transform:translate(-50%,0)}
   }
 </style>
 
@@ -1264,7 +1301,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v14.8';
+var BUILD='v14.9';
 
 /* ================================================================
    目錄與凍結狀態
