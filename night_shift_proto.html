@@ -1264,7 +1264,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v14.7';
+var BUILD='v14.8';
 
 /* ================================================================
    目錄與凍結狀態
@@ -3232,8 +3232,12 @@ function loadPosterTex(){
   img.src=TEX_DIR+'poster.png?v='+BUILD;
   return t;
 }
+/* 全部海報一起放大 20%。
+   寫成一個係數而不是把七個呼叫的數字各改一次 ——
+   下次再調就只有這一行，而且七張永遠維持同一個相對大小。 */
+var POSTER_SCALE=1.2;
 function addPoster(x,y,z,ry,w){
-  var pw=w||0.9;
+  var pw=(w||0.9)*POSTER_SCALE;
   var p=new THREE.Mesh(new THREE.PlaneGeometry(pw,pw*POSTER_AR),
     new THREE.MeshLambertMaterial({map:POSTER_TEX}));
   p.position.set(x,y,z); p.rotation.y=ry; scene.add(p);
@@ -3249,7 +3253,10 @@ function addPoster(x,y,z,ry,w){
    drawImage 當場丟例外，整個遊戲連畫面都不會出現。 */
 function buildDecor(){
   POSTER_TEX=loadPosterTex();
-  addPoster(-19.53,1.95, 6.0, Math.PI/2);          // 西牆（靠出口那段）
+  /* z 從 6.0 往南挪到 4.2：西側走道 z 6.2 站著一個立櫃，
+     櫃體沿 z 佔 5.71~6.69、高 2.05 —— 原本那張海報有八成躲在它後面。
+     這是放大之前就有的問題，放大 20% 只會讓它更明顯。 */
+  addPoster(-19.53,1.95, 4.2, Math.PI/2);          // 西牆（靠出口那段）
   addPoster(-19.53,1.95,-5.0, Math.PI/2);          // 西牆（深處）
   addPoster( 19.53,1.95, 2.0,-Math.PI/2);          // 東牆
   addPoster( 19.53,1.95,-6.5,-Math.PI/2);          // 東牆（深處）
@@ -3265,8 +3272,9 @@ function buildDecor(){
      西牆那條帶子已經排了鏡子（z −20.11~−19.09）跟立櫃，塞不下第三樣東西，
      所以改貼內隔牆的北面：你從東側缺口走進裡間、一轉頭就正對著它。
      rotation.y = π —— PlaneGeometry 的法線是 +Z，而房間在這面牆的 −Z 側。
-     y 壓到 1.8：隔牆只有 2.6m 高，1.95 的話海報頂端會凸出牆外。 */
-  addPoster(-16.0,1.80,-17.42, Math.PI, 1.1);      // 冷凍室裡間 · 內隔牆北面
+     y 壓到 1.68：隔牆只有 2.6m 高，而這張放大後是 1.32 × 1.76，
+     半高 0.88 —— y 要 ≤ 1.72 頂端才不會凸出牆外。 */
+  addPoster(-16.0,1.68,-17.42, Math.PI, 1.1);      // 冷凍室裡間 · 內隔牆北面
   /* 鏡子：賣場一面、後場一面。後場那面才是真正會嚇到人的那一面。
      後場這面的 z 要避開冷凍室的內隔間（z −17.4…−16.6，而且高 2.6m）——
      擺在 −16.5 的話鏡框有四成會埋進那道牆裡。 */
