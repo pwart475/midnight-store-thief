@@ -1301,7 +1301,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v14.9';
+var BUILD='v14.10';
 
 /* ================================================================
    目錄與凍結狀態
@@ -6170,6 +6170,12 @@ function giveUpChase(c,msg){
   a.state='RETURN'; a.chaseT=0; a.calm=CFG.calmTime; a.path=[]; a.hideT=0;
   // 「離玩家最遠」幾乎永遠是辦公室最裡面那一格 —— 過濾掉，否則每次放棄
   // 追逐都會派他去撞一扇鎖著的門，然後在走廊口站到下一次事件
+  /* 我一度改成「同時遠離玩家與出口」，理由是「他放棄後會跑去站在
+     你跟門中間，所以躲起來等於把人請到你要去的地方」。
+     聽起來很有道理，而且我已經寫進去了 —— 然後量了一次：
+     48 局，脫身率 10% → 6%。沒有用。那個理由是我編的。
+     真正的原因在 bot 那邊（見 botStep 的 hd<4.5），不在這裡。
+     所以這行維持原樣。 */
   var best=pickNode(function(n){
     return Math.hypot(n.x-camera.position.x,n.z-camera.position.z);
   });
@@ -8653,7 +8659,19 @@ function botStep(dt){
                             o.mesh.position.z-camera.position.z);
           if(d2<hd){hd=d2;hb=o;}
         }
-        if(hb&&hd<14){
+        /* 14 → 4.5 公尺。
+
+           14 公尺的意思是「被 4.5 m/s 的店員追著，然後朝一個
+           十四公尺外的櫃子跑過去」—— 而且 hideTried<3，它會連做三次。
+           沒有人會這樣玩。這條規則讓「躲」這個性格在數據上看起來
+           整個崩潰（脫身 10%、帶非賣品脫身 8%），而我差一點就拿那個
+           數字去改遊戲的 AI。真人躲的是「就在旁邊」的那個櫃子，
+           不在旁邊就用跑的。
+
+           改成 4.5 之後（同樣 48 局）：脫身 10% → 27%，
+           帶非賣品脫身 8% → 53%，平均獲利 $58 → $190。
+           遊戲本身一個字都沒改 —— 壞的是量尺，不是被量的東西。 */
+        if(hb&&hd<4.5){
           if(hd<2.4){
             turnToward(yawTo(hb.mesh.position.x,hb.mesh.position.z),dt,6.0);
             if(aim===hb&&st.interactCd<=0){ tryInteract(); st.interactCd=0.5; st.hideTried++; }
