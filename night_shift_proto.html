@@ -165,13 +165,24 @@
      跟提示是同一類資訊，疊在一起反而讀得順。 */
   #beat{position:absolute;left:50%;top:21%;bottom:auto;transform:translateX(-50%);
     box-sizing:border-box;width:min(76vw,460px);text-align:center;
-    /* .82 太透明了。這個框會出現在貨架前面，而貨架是有花紋、有亮點的 ——
-       82% 底下透出來的東西剛好把字的邊緣打散，整段變得很難讀。
-       backdrop-filter 一併拿掉：它是整頁的合成器回讀，手機上很貴，
-       而且底夠不透明之後它本來就沒有作用了。 */
-    background:rgba(7,10,7,.95);
+    /* 半透明，.48。
+
+       上一次試 .82 失敗過，當時的結論是「太透明，字會被貨架的花紋打散」，
+       於是整個推到 .95 —— 一塊幾乎不透明的黑板擋在畫面正中上方。
+       但那次失敗的原因診斷錯了：被打散的是**字的邊緣**，不是底板不夠黑。
+       所以這次降透明度的同時給字加描邊式的 text-shadow（見下面 .b1/.b2/.b3）——
+       字自己扛可讀性，底板只負責「這是一塊 UI」的暗示。
+       這樣 52% 的畫面透得回來，而字比 .95 的時候還清楚。
+
+       backdrop-filter 仍然不加：整頁合成器回讀，手機上很貴。 */
+    background:rgba(7,10,7,.48);
     border-top:2px solid var(--price);border-bottom:2px solid var(--price);
     padding:13px 18px;opacity:0;transition:opacity .3s}
+  /* 字的描邊。四個方向各一層 1px 的暗影 = 便宜的 outline，
+     再加一圈大範圍的暈開，把底下高對比的亮點壓掉。 */
+  #beat .b1,#beat .b2,#beat .b3{
+    text-shadow:0 1px 0 #050705,0 -1px 0 #050705,1px 0 0 #050705,-1px 0 0 #050705,
+                0 0 12px rgba(4,6,4,.95),0 2px 10px rgba(4,6,4,.9)}
   #beat.on{opacity:1}
   #beat .b1{font-family:var(--f-num);font-size:22px;color:var(--tube);letter-spacing:.02em}
   #beat .b2{font-size:13.5px;color:var(--price);margin-top:6px;line-height:1.55}
@@ -250,8 +261,13 @@
 
   #toast{position:absolute;left:50%;bottom:120px;transform:translateX(-50%);display:flex;
     flex-direction:column;align-items:center;gap:4px}
+  /* 同樣的做法：底板降到 .38，字自己帶描邊。
+     這一條只活 2.1 秒，但它出現的時機幾乎都是「你正在做事」—— 開槍、
+     撿東西、開門 —— 也就是最不該有東西擋在前面的那幾秒。 */
   #toast div{font-family:var(--f-mono);font-size:12px;color:var(--price);
-    background:rgba(8,11,8,.8);padding:4px 10px;animation:rise 2.1s ease-out forwards}
+    background:rgba(8,11,8,.38);padding:4px 10px;animation:rise 2.1s ease-out forwards;
+    text-shadow:0 1px 0 #050705,0 -1px 0 #050705,1px 0 0 #050705,-1px 0 0 #050705,
+                0 0 10px rgba(4,6,4,.95)}
   @keyframes rise{0%{opacity:0;transform:translateY(10px)}14%{opacity:1;transform:none}
     72%{opacity:1}100%{opacity:0;transform:translateY(-12px)}}
 
@@ -1301,7 +1317,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v14.10';
+var BUILD='v14.12';
 
 /* ================================================================
    目錄與凍結狀態
@@ -3656,13 +3672,29 @@ function animClerk(c,dt,moved,chasing){
   c.armL.rotation.z=chasing? 0.12:0;  c.armR.rotation.z=chasing?-0.12:0;
   /* 張牙舞爪：現形之後那兩隻手不跟著步態走，自己用更快的頻率亂揮。
      跟正常手臂的 sw 錯開，所以四隻手看起來不同步 —— 那個不同步
-     才是「它不是人」的訊號，動作本身反而不重要。 */
+     才是「它不是人」的訊號，動作本身反而不重要。
+
+     方向整個改掉了。原本是 rotation.x=-1.0（往前上方舉）加上
+     rotation.z=+0.45 / -0.45 —— 而 +z 會把**左**手往 +x 也就是身體中線
+     那邊帶。兩隻手其實是往內交叉的，從正面看像抱胸，不像張牙舞爪。
+     正負號本身就寫反了。
+
+     現在以 z 為主軸、往兩側攤開：左手 −1.35、右手 +1.35（約 77 度，
+     接近水平），再各自用不同頻率擺 ±0.38。x 只留一點點抖動，
+     所以動作是「橫向張開並揮舞」，不是「往後擺」。
+
+     攤開之後手會穿進貨架裡 —— 不處理。它本來就不是人，
+     而且在走道另一頭先看到的是那對橫向揮動的手，不是身體。 */
   if(c.rage>1&&c.armL2.visible){
     var rw=c.walkT*2.1+animT*7;
-    c.armL2.rotation.x=-1.0+Math.sin(rw)*0.9;
-    c.armR2.rotation.x=-1.0-Math.sin(rw*1.17)*0.9;
-    c.armL2.rotation.z= 0.45+Math.sin(rw*0.8)*0.2;
-    c.armR2.rotation.z=-0.45-Math.sin(rw*0.8)*0.2;
+    c.armL2.rotation.z=-(1.35+Math.sin(rw)*0.38);
+    c.armR2.rotation.z= (1.35+Math.sin(rw*1.17)*0.38);
+    c.armL2.rotation.x=Math.sin(rw*1.4)*0.30;
+    c.armR2.rotation.x=Math.sin(rw*1.4+2.1)*0.30;
+    /* 本來那一對也跟著往外開一點 —— 但開得比較少（0.55 對 1.35），
+       所以兩對手還是分得出來，不會糊成一團。 */
+    c.armL.rotation.z=-0.55-Math.sin(rw*0.9)*0.18;
+    c.armR.rotation.z= 0.55+Math.sin(rw*0.9)*0.18;
   }
   c.head.rotation.x=chasing?0.12:Math.sin(c.walkT*0.5)*0.04;
   /* 現形之後不要再被這兩行蓋回去。
@@ -6717,9 +6749,12 @@ function stepAlien(c,dt){
   // 四隻手一起揮，兩對錯開半個相位
   c.armL.rotation.x=-1.1+Math.sin(w)*0.8;
   c.armR.rotation.x=-1.1-Math.sin(w)*0.8;
-  c.armL2.rotation.x=-0.8+Math.sin(w+1.6)*0.9;
-  c.armR2.rotation.x=-0.8-Math.sin(w+1.6)*0.9;
-  c.armL2.rotation.z= 0.5; c.armR2.rotation.z=-0.5;
+  /* 跟 animClerk 同一個修正：+z 是把左手往身體中線帶，
+     兩隻一起往內等於抱胸。倒下的這兩秒也要往外張。 */
+  c.armL2.rotation.x=Math.sin(w+1.6)*0.5;
+  c.armR2.rotation.x=-Math.sin(w+1.6)*0.5;
+  c.armL2.rotation.z=-(1.2+Math.sin(w)*0.4);
+  c.armR2.rotation.z= (1.2+Math.sin(w*1.2)*0.4);
   c.halo.material.opacity=0.7*k;
   if(c.alienT<=0){
     // 演完就永遠出局。DORMANT 是最乾淨的退場：stepClerk 直接 return，
