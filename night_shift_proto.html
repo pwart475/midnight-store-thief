@@ -1317,7 +1317,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v14.12';
+var BUILD='v14.20';
 
 /* ================================================================
    目錄與凍結狀態
@@ -1847,11 +1847,18 @@ var UPGRADES = [
          早就不需要一個逃命鍵了
        · 功能重疊 —— 電擊槍、長槍、縮小劑已經是三個「被追的時候按這個」
      員工通道反過來：它不救你，它改變你的路線規劃，而且是永久的。 */
+  /* 這是全店唯一一件「你早就看過實物」的商品：那扇門從第一局就在
+     冷凍室裡間的北牆上，暗的、鎖著、紅燈。所以文案不必描述它長什麼樣，
+     要講的是「對，就是那一扇，這裡可以打開它」。 */
   {id:'backdoor', name:'員工通道', cost:2000, secret:1,
-    desc:'後場北牆上多一扇門，直接通到外面。'+
-         '解鎖撤離之後，從那裡走出去跟從後門走出去一樣算脫身 —— '+
-         '但你不必再帶著整袋贓物穿過那條 33 公尺、沒有掩體的直線。',
-    hint:'帶著非賣品脫身 '+DEF.stopNeed+' 次，架上才會出現它。'}
+    desc:'冷凍室裡間北牆上那扇鎖著的門 —— 把它打開。'+
+         '解鎖撤離之後，從那裡走出去跟從後門走出去一樣算脫身，'+
+         '你不必再帶著整袋贓物穿過那條 33 公尺、沒有掩體的直線。',
+    /* hint 用 function 不是字串：寫成字串的話那個數字是模組載入時的
+       DEF.stopNeed，而門檻是旋鈕（CFG.stopNeed）。調過之後卡片上寫的
+       跟標題頁、跟實際判定的會是兩個不同的數字。 */
+    hint:function(){ return '你應該已經看過那扇門了（冷凍室最裡面，北牆，紅燈那個）。'+
+         '帶著非賣品脫身 '+CFG.stopNeed+' 次，這裡才會給你鑰匙。'; }}
 ];
 /* 隱藏技能的解鎖條件刻意綁在「膽量」而不是「時數」上：
    你必須真的拿過非賣品並活著出去，不是玩得夠久就好。
@@ -3251,7 +3258,7 @@ function posterTexFallback(){
   t.magFilter=THREE.NearestFilter;
   return t;
 }
-var POSTER_TEX=null;
+// 單張 POSTER_TEX 換成 POSTER_TEXS 陣列（見下面的 POSTER_FILES）
 /* 海報一律 3:4（寬:高 = 1:1.333），不管來源圖是什麼比例。
 
    為什麼寫死而不是跟著圖走：牆上有七張海報，而且它們的位置是按
@@ -3268,7 +3275,7 @@ var POSTER_AR=1.333;
    會直接給你一張全黑的貼圖，而「圖的寬高剛好是 2 的次方」不是一個
    可以對美術提的要求。
    畫布固定 384×512，本身就是 3:4 而且是 2 的次方 —— 來源圖多大都一樣。 */
-function loadPosterTex(){
+function loadPosterTex(file){
   var t=posterTexFallback();
   var img=new Image();
   img.onload=function(){
@@ -3280,19 +3287,36 @@ function loadPosterTex(){
     t.generateMipmaps=false; t.needsUpdate=true;
   };
   img.onerror=function(){
-    console.warn('[tex] 找不到 '+TEX_DIR+'poster.png —— 店長海報沿用程序化備援');
+    console.warn('[tex] 找不到 '+TEX_DIR+file+'.png —— 這張沿用程序化備援');
   };
-  img.src=TEX_DIR+'poster.png?v='+BUILD;
+  /* encodeURIComponent 是必要的：促銷海報的檔名是中文。
+     直接串進 src 的話，空白與非 ASCII 字元在某些伺服器上會 404，
+     而 404 的症狀是「牆上掛了一張店長海報」—— 看起來像擺錯圖，
+     不像載入失敗，會查很久。 */
+  img.src=TEX_DIR+encodeURIComponent(file)+'.png?v='+BUILD;
   return t;
 }
 /* 全部海報一起放大 20%。
    寫成一個係數而不是把七個呼叫的數字各改一次 ——
    下次再調就只有這一行，而且七張永遠維持同一個相對大小。 */
 var POSTER_SCALE=1.2;
-function addPoster(x,y,z,ry,w){
+/* 四張圖，兩種用途。
+
+   0 = 店長海報。它是伏筆：牆上到處是他的臉，而你後來會讀到
+       「如果你看到店裡有人走動 —— 那一定不是我」。所以它只掛在
+       深處、轉角、出口旁 —— 你一個人的時候會看到的地方。
+
+   1~3 = 促銷海報。它們是「這是一間真的便利商店」的佈景，
+       掛在賣場的側牆上。它們存在的理由跟店長海報相反：
+       店長海報要讓你不安，促銷海報要讓你忘記不安，
+       所以它們必須是亮的、吵的、到處都是的。
+       兩者混在同一面牆上，那張臉才不會變成「遊戲在提示我」。 */
+var POSTER_FILES=['poster','01_紅黃熱賣','02_藍白精選','03_紫金促銷'];
+var POSTER_TEXS=[];
+function addPoster(x,y,z,ry,w,k){
   var pw=(w||0.9)*POSTER_SCALE;
   var p=new THREE.Mesh(new THREE.PlaneGeometry(pw,pw*POSTER_AR),
-    new THREE.MeshLambertMaterial({map:POSTER_TEX}));
+    new THREE.MeshLambertMaterial({map:POSTER_TEXS[k||0]}));
   p.position.set(x,y,z); p.rotation.y=ry; scene.add(p);
   return p;
 }
@@ -3305,20 +3329,47 @@ function addPoster(x,y,z,ry,w){
    寫成在這裡直接執行的話，posterTex 會拿到 undefined.image，
    drawImage 當場丟例外，整個遊戲連畫面都不會出現。 */
 function buildDecor(){
-  POSTER_TEX=loadPosterTex();
+  for(var pi=0;pi<POSTER_FILES.length;pi++)
+    POSTER_TEXS[pi]=loadPosterTex(POSTER_FILES[pi]);
+  /* 第六個參數＝用哪一張。0 店長、1~3 促銷。
+     每一張的 z（或 x）都是避開立櫃、鏡子與門框算出來的，
+     旁邊註記的是那面牆上已經有什麼。 */
+
+  // ---- 西牆（x −19.53，朝東）。已有：立櫃 z 5.71~6.69 與 −4.49~−3.51、鏡子 z 9.99~11.01
+  addPoster(-19.53,1.95,13.0, Math.PI/2, 0.9, 2);  // 鏡子北側
+  addPoster(-19.53,1.95, 8.3, Math.PI/2, 0.9, 1);  // 立櫃與鏡子之間
   /* z 從 6.0 往南挪到 4.2：西側走道 z 6.2 站著一個立櫃，
      櫃體沿 z 佔 5.71~6.69、高 2.05 —— 原本那張海報有八成躲在它後面。
      這是放大之前就有的問題，放大 20% 只會讓它更明顯。 */
-  addPoster(-19.53,1.95, 4.2, Math.PI/2);          // 西牆（靠出口那段）
-  addPoster(-19.53,1.95,-5.0, Math.PI/2);          // 西牆（深處）
-  addPoster( 19.53,1.95, 2.0,-Math.PI/2);          // 東牆
-  addPoster( 19.53,1.95,-6.5,-Math.PI/2);          // 東牆（深處）
+  /* z 4.2 → 5.0：原本那張正好蓋住「← 辦公室」那塊牌子（z 2.30~4.50，
+     而且只差 0.02m 的深度，遠看還會 z-fighting）。那塊牌子是指路用的，
+     被海報蓋掉等於玩家不知道西邊那條走廊通到哪。
+     5.0 這個位置離 z 5.71 的立櫃還有 0.17m。 */
+  addPoster(-19.53,1.95, 5.0, Math.PI/2, 0.9, 3);  // 西牆（靠出口那段）
+  /* −5.0 → −6.9：原本跟 z −4.49 的立櫃差 0.03m，而往回挪到 −6.2 又會
+     擦到 z −5.0 那台監視器的外框（z −5.68~−4.32）。−6.9 兩邊都讓開。 */
+  addPoster(-19.53,1.95,-6.9, Math.PI/2, 0.9, 0);  // 西牆（深處）· 店長
+
+  // ---- 東牆（x 19.53，朝西）。已有：立櫃 z 5.71~6.69
+  addPoster( 19.53,1.95,13.5,-Math.PI/2, 0.9, 1);
+  addPoster( 19.53,1.95, 9.0,-Math.PI/2, 0.9, 3);
+  addPoster( 19.53,1.95, 2.0,-Math.PI/2, 0.9, 2);  // 東牆
+  addPoster( 19.53,1.95,-2.5,-Math.PI/2, 0.9, 1);
+  addPoster( 19.53,1.95,-6.5,-Math.PI/2, 0.9, 0);  // 東牆（深處）· 店長
+
   /* 這一張的 rotation 是 0 不是 π。PlaneGeometry 的法線是 +Z，
      而這面牆的賣場側在 +Z —— 轉 π 會讓它面向牆裡面，
      Lambert 預設 FrontSide，從賣場看過去就是整張消失。
      下面出口那張用 π 是對的，因為那面牆的房間在 −Z 側。 */
-  addPoster(  6.0, 1.95,-9.53, 0);                 // 後場隔牆，面向賣場
-  addPoster( -5.0, 1.95,15.53, Math.PI);           // 出口旁 —— 離開前最後看到的東西
+  // ---- 後場隔牆（z −9.53，朝南）。牆段：x −19.6~−15.5、−12.5~8、11~19.6
+  addPoster(-17.5, 1.95,-9.53, 0, 0.9, 2);
+  addPoster(  6.0, 1.95,-9.53, 0, 0.9, 0);         // 後場隔牆 · 店長
+  addPoster( 14.5, 1.95,-9.53, 0, 0.9, 3);
+
+  // ---- 南牆（z 15.53，朝北）。出口在 x −3.5~3.5
+  addPoster(-12.0, 1.95,15.53, Math.PI, 0.9, 1);
+  addPoster( -5.0, 1.95,15.53, Math.PI, 0.9, 0);   // 出口旁 —— 離開前最後看到的東西
+  addPoster(  7.5, 1.95,15.53, Math.PI, 0.9, 2);
   /* 這張原本貼在冷凍室裡間的西牆（x −19.53, z −18.2）。
      那面牆現在站了一個立櫃（HIDES，z −18.96~−17.84，高 2.05）——
      櫃子會把這張 1.1m 的海報從下面遮掉一大半，只露出頂端一截。
@@ -3327,7 +3378,7 @@ function buildDecor(){
      rotation.y = π —— PlaneGeometry 的法線是 +Z，而房間在這面牆的 −Z 側。
      y 壓到 1.68：隔牆只有 2.6m 高，而這張放大後是 1.32 × 1.76，
      半高 0.88 —— y 要 ≤ 1.72 頂端才不會凸出牆外。 */
-  addPoster(-16.0,1.68,-17.42, Math.PI, 1.1);      // 冷凍室裡間 · 內隔牆北面
+  addPoster(-16.0,1.68,-17.42, Math.PI, 1.1, 0);   // 冷凍室裡間 · 內隔牆北面 · 店長
   /* 鏡子：賣場一面、後場一面。後場那面才是真正會嚇到人的那一面。
      後場這面的 z 要避開冷凍室的內隔間（z −17.4…−16.6，而且高 2.6m）——
      擺在 −16.5 的話鏡框有四成會埋進那道牆裡。 */
@@ -4322,11 +4373,30 @@ var G={
    第一版門開在 x -13.0，有一半被第二排貨架擋住，
    玩家只能從西側那條 1.2m 的縫擠進觸發區。 */
 var EXIT2={x0:-16.2,z0:-21.0,x1:-13.0,z1:-19.6};
+/* 門從第一局就在那裡，只是鎖著。
+
+   原本是買了才生出來 —— 那等於把一個「你每局都會走過去、而且走過去
+   就會想起自己打不開它」的東西，藏到玩家已經買得起之後才給他看。
+   商店裡那張「？？？」的卡片因此沒有對照物：你不知道那是什麼，
+   也不知道自己要存的錢換得到什麼。
+
+   現在倒過來：你第一次走進冷凍室裡間就看到北牆有一扇門，上面寫著
+   員工通道，而它是暗的、鎖著的。那扇門每一局都在提醒你它可以被打開。
+   這是整個商店裡唯一一件「先看到實物、才看到價格」的商品。 */
 var backDoor=new THREE.Group();
 backDoor.add(P(GEO.box,0x18311F,[3.0,2.3,0.12],[0,1.15,0]));          // 門板
-backDoor.add(P(GEO.box,0x5CF08A,[3.2,0.16,0.14],[0,2.30,0],1.1));     // 上緣燈條
-backDoor.add(P(GEO.box,0x5CF08A,[0.16,2.3,0.14],[-1.52,1.15,0],1.1)); // 左燈條
-backDoor.add(P(GEO.box,0x5CF08A,[0.16,2.3,0.14],[ 1.52,1.15,0],1.1)); // 右燈條
+/* 三條燈條與鎖的指示燈都要能換材質，所以留下參考。
+   itemMat 是用 color|emis 記憶化的 —— 絕對不能去改它回傳的材質，
+   那會把場上所有同色的東西一起改掉。只能重新指派。 */
+var backLit=[
+  P(GEO.box,0x5CF08A,[3.2,0.16,0.14],[0,2.30,0],1.1),      // 上緣燈條
+  P(GEO.box,0x5CF08A,[0.16,2.3,0.14],[-1.52,1.15,0],1.1),  // 左燈條
+  P(GEO.box,0x5CF08A,[0.16,2.3,0.14],[ 1.52,1.15,0],1.1)   // 右燈條
+];
+backLit.forEach(function(m){ backDoor.add(m); });
+// 鎖的指示燈。鎖著是紅的，開了變綠 —— 跟辦公室門同一套語言
+var backLock=P(GEO.box,0xFF3B30,[0.16,0.16,0.16],[1.30,1.15,0.10],1.6);
+backDoor.add(backLock);
 backDoor.position.set(-14.6,0,-20.94);
 scene.add(backDoor);
 var backPad=new THREE.Mesh(new THREE.PlaneGeometry(3.0,1.2),
@@ -4335,12 +4405,18 @@ backPad.rotation.x=-Math.PI/2; backPad.position.set(-14.6,0.06,-20.4);
 scene.add(backPad);
 var backSign=textPlane('員工通道',2.0,0.5,'#5CF08A',72,'rgba(6,22,12,.96)');
 backSign.position.set(-14.6,2.72,-20.86); scene.add(backSign);
-var backParts=[backDoor,backPad,backSign];
 // 停電時這扇門也要跟著閃 —— 它是出口，閃爍就是「這裡是路」的語言
 signs.push(backPad);
 function syncBackDoor(){
   var on=!!G.upgrades.backdoor;
-  for(var i=0;i<backParts.length;i++)backParts[i].visible=on;
+  /* 鎖著的時候：燈條熄成暗綠（還看得出是一扇門，但不會被當成出口）、
+     鎖燈紅、地上那塊綠光整個收掉 —— 地燈是「這裡可以出去」的語言，
+     門還沒開就亮著的話，那是在對玩家說謊。 */
+  for(var i=0;i<backLit.length;i++)
+    backLit[i].material = on ? itemMat(0x5CF08A,1.1) : itemMat(0x24412F,0);
+  backLock.material = on ? itemMat(0x5CF08A,1.6) : itemMat(0xFF3B30,1.6);
+  backPad.visible = on;
+  backSign.material.color.setHex(on?0xFFFFFF:0x5E6B60);   // 貼圖本身的色乘上去
 }
 syncBackDoor();
 var STATS={runs:0,extracted:0,caught:0,forbiddenSeen:0,forbiddenPicked:0,
@@ -4381,7 +4457,17 @@ function newRun(){
      清紀錄、模擬重置都會動 G.upgrades —— 在這裡算一次就涵蓋全部，
      不必去追每一個會改 upgrades 的地方。 */
   syncBackDoor();
-  shrinkT=0; stopT=0; doorPingT=0; forbidAlertT=0; rifleCdT=0;
+  shrinkT=0; stopT=0; doorPingT=0; forbidAlertT=0; rifleCdT=0; backHintT=-99;
+  /* 飛到一半的電漿彈要收掉。stepBolt 擺在 play 判斷之外（被抓特寫時
+     也要看得到最後那一發），所以不清的話，上一局最後那一發會留在
+     新的一局的天空中慢慢飛完。 */
+  if(PLASMA){
+    PLASMA.core.visible=false; PLASMA.halo.visible=false;
+    PLASMA.trail.visible=false; PLASMA.hit.visible=false;
+    PLASMA.muzzle.visible=false; PLASMA.muzzleT=0; PLASMA.boomT=0;
+  }
+  // 手上那兩把：後座歸零，發光件照這一局開始的彈數重設
+  viewKickR=0; viewKickT=0; viewLastP.copy(camera.position); viewAmmoLook();
   document.body.classList.remove('shrunk','shrink-end');
   /* 拉霸的狀態一定要在這裡清掉。
      不清的話：拉到一半被抓 → slot 還留著 done:false →
@@ -6097,6 +6183,7 @@ function unlockExit(){
    escape 才變成技術，而不是擲骰子。
    0 = 完全沿用舊行為，所以這個參數可以直接 A/B。 */
 var forbidAlertT=0;
+var backHintT=-99;   // 上一次提示「員工通道鎖著」的局內時間
 function triggerForbidden(){
   var r=G.run;
   flashScreen();
@@ -6631,37 +6718,234 @@ function poseHeight(){          // 店員視線判定用的玩家高度
    打空的時候尤其糟，你連「偏左還是偏右」都看不出來，下一發只能再猜一次。
    一條會發光的軌跡同時解決三件事：命中回饋、瞄準校正、以及
    「這把槍是電的」這個質感。成本是一個共用的 Mesh 加一個計時器。 */
-var boltMesh=null, boltT=0, BOLT_LIFE=0.16;
-function spawnBolt(toX,toY,toZ){
-  if(!boltMesh){
-    boltMesh=new THREE.Mesh(GEO.box,new THREE.MeshBasicMaterial({
-      color:0x9BE8FF, transparent:true, opacity:1,
-      blending:THREE.AdditiveBlending, depthWrite:false}));
-    boltMesh.renderOrder=8;
-    scene.add(boltMesh);
+/* 電漿砲版本。
+
+   舊版是一條瞬間出現的細線，0.16 秒淡掉 —— 那是「雷射筆」，
+   不是一把要三發才解決得掉一個東西的槍。問題不在亮度，在**時間**：
+   線是瞬間的，所以它只告訴你「打過了」，沒有任何一刻讓你覺得
+   有東西飛出去。
+
+   電漿砲的四個元素，缺一個就不成立：
+     1. 砲口閃光 —— 開槍的那一下，證明能量是從你手上出去的
+     2. 會飛的彈體 —— 核心白熱、外面一圈綠暈，大小會脈動
+     3. 拖尾 —— 從砲口連到彈體，飛越遠拖得越長，而且會收窄
+     4. 命中爆閃 —— 到了之後炸開一圈再消散
+   飛行時間跟距離成正比（約 90 m/s，夾在 0.07~0.3 秒）——
+   固定時間的話，近距離看起來是瞬移，遠距離看起來是慢動作。 */
+var PLASMA=null;
+function initPlasma(){
+  if(PLASMA)return PLASMA;
+  /* depthTest 要分開給：
+       彈體與它的光暈 —— **要**做深度測試。不然貨架後面飛過去的那一發
+         會整顆浮在貨架前面，看起來像 UI 不像一個在空間裡的東西。
+       砲口閃光與命中爆閃 —— 不做。它們是演出不是物體，而且砲口那一團
+         就貼在鏡頭前，做了深度測試反而容易被近平面切掉半邊。 */
+  function glow(size,color,op,dt){
+    var s=new THREE.Sprite(new THREE.SpriteMaterial({map:HALO,color:color,
+      transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,
+      depthTest:dt,opacity:op}));
+    s.scale.set(size,size,1); s.renderOrder=9; s.visible=false; scene.add(s); return s;
   }
+  var core=new THREE.Mesh(GEO.sph,new THREE.MeshBasicMaterial({
+    color:0xEAFFF2,transparent:true,blending:THREE.AdditiveBlending,
+    depthWrite:false}));
+  core.renderOrder=10; core.visible=false; scene.add(core);
+  var trail=new THREE.Mesh(GEO.box,new THREE.MeshBasicMaterial({
+    color:0x5CF08A,transparent:true,blending:THREE.AdditiveBlending,
+    depthWrite:false}));
+  trail.renderOrder=8; trail.visible=false; scene.add(trail);
+  PLASMA={core:core, trail:trail,
+          halo:glow(1.1,0x5CF08A,1,true),
+          muzzle:glow(1.4,0x9CFFC0,1,false),
+          hit:glow(1,0xBFFFD6,1,false),
+          from:new THREE.Vector3(), to:new THREE.Vector3(), dir:new THREE.Vector3(),
+          len:0, t:0, fly:0, boomT:0, muzzleT:0};
+  return PLASMA;
+}
+var BOOM_LIFE=0.26, MUZZLE_LIFE=0.07;
+/* 兩把槍共用這一套系統，但絕對不能長得一樣。
+
+   電擊槍是細、藍、快的一道電 —— 它只讓人躺五秒。
+   長槍是粗、綠、慢的一團電漿 —— 它永久解決掉一個東西。
+   開槍的那一瞬間你就該知道自己按到的是哪一顆按鈕，
+   尤其是在被追、而兩顆按鈕只差 54px 的手機上。 */
+var BOLT_KIND={
+  rifle:{core:0xEAFFF2, aura:0x5CF08A, size:0.17, trail:0.085, tl:3.2,
+         speed:90,  boom:2.6, muzzle:1.4},
+  taser:{core:0xF2FBFF, aura:0x9BE8FF, size:0.07, trail:0.035, tl:5.0,
+         speed:240, boom:1.1, muzzle:0.8}
+};
+function spawnBolt(toX,toY,toZ,kind){
+  var P=initPlasma();
+  var K=BOLT_KIND[kind||'rifle']; P.K=K;
+  P.core.material.color.setHex(K.core);
+  P.halo.material.color.setHex(K.aura);
+  P.trail.material.color.setHex(K.aura);
+  P.muzzle.material.color.setHex(K.aura);
+  P.hit.material.color.setHex(K.core);
   /* 從畫面中央偏右下發射，不是從鏡頭正中心 ——
      正中心射出來的東西在第一人稱裡會是一個點，看不出方向。 */
   var right=new THREE.Vector3().crossVectors(fwd,new THREE.Vector3(0,1,0)).normalize();
-  var from=camera.position.clone()
+  P.from.copy(camera.position)
     .add(right.multiplyScalar(0.22)).add(new THREE.Vector3(0,-0.16,0));
-  var to=new THREE.Vector3(toX,toY,toZ);
-  var d=new THREE.Vector3().subVectors(to,from);
-  var len=Math.max(0.05,d.length());
-  boltMesh.position.copy(from).addScaledVector(d,0.5);
-  boltMesh.lookAt(to);                      // 物件的 +Z 會朝向目標
-  boltMesh.scale.set(0.05,0.05,len);
-  boltMesh.material.opacity=1;
-  boltMesh.visible=true; boltT=BOLT_LIFE;
+  P.to.set(toX,toY,toZ);
+  P.dir.subVectors(P.to,P.from);
+  P.len=Math.max(0.05,P.dir.length());
+  P.dir.normalize();
+  P.fly=Math.max(0.05,Math.min(0.30,P.len/K.speed));
+  P.t=0; P.boomT=0;
+  P.muzzle.position.copy(P.from); P.muzzle.visible=true; P.muzzleT=MUZZLE_LIFE;
+  P.core.visible=true; P.halo.visible=true; P.trail.visible=true;
+  P.hit.visible=false;
 }
 function stepBolt(dt){
-  if(boltT<=0)return;
-  boltT-=dt;
-  if(boltT<=0){ boltMesh.visible=false; return; }
-  var k=boltT/BOLT_LIFE;
-  boltMesh.material.opacity=k;
-  // 同時把它變細，看起來像在消散而不是整條淡掉
-  boltMesh.scale.x=boltMesh.scale.y=0.05*(0.35+k*0.65);
+  var P=PLASMA; if(!P)return;
+  var K=P.K||BOLT_KIND.rifle;
+  // ---- 砲口閃光
+  if(P.muzzleT>0){
+    P.muzzleT-=dt;
+    var mk=Math.max(0,P.muzzleT/MUZZLE_LIFE);
+    P.muzzle.material.opacity=mk;
+    P.muzzle.scale.setScalar(K.muzzle*(0.5+mk*0.9));
+    if(P.muzzleT<=0)P.muzzle.visible=false;
+  }
+  // ---- 彈體飛行
+  if(P.core.visible){
+    P.t+=dt;
+    var k=Math.min(1,P.t/P.fly);                 // 0→1
+    var d=P.len*k;
+    var px=P.from.x+P.dir.x*d, py=P.from.y+P.dir.y*d, pz=P.from.z+P.dir.z*d;
+    // 核心會脈動，所以它看起來是「活的」而不是一顆珠子
+    var pulse=K.size*(1+Math.sin(P.t*70)*0.15);
+    P.core.position.set(px,py,pz); P.core.scale.setScalar(pulse);
+    P.halo.position.set(px,py,pz);
+    P.halo.scale.setScalar(K.size*5.6*(1+Math.sin(P.t*55)*0.12));
+    P.halo.material.opacity=0.85;
+    // 拖尾：從砲口到彈體，越飛越細
+    var tl=Math.min(K.tl,d);
+    if(tl>0.08){
+      var tw=K.trail*(1-k*0.45);
+      P.trail.visible=true;
+      P.trail.position.set(px-P.dir.x*tl*0.5,py-P.dir.y*tl*0.5,pz-P.dir.z*tl*0.5);
+      P.trail.lookAt(px,py,pz);                  // 物件的 +Z 朝向彈體
+      P.trail.scale.set(tw,tw,tl);
+      P.trail.material.opacity=0.55*(1-k*0.5);
+    }else P.trail.visible=false;
+    if(k>=1){
+      // ---- 命中：炸開一圈
+      P.core.visible=false; P.halo.visible=false; P.trail.visible=false;
+      P.hit.position.copy(P.to); P.hit.visible=true; P.boomT=BOOM_LIFE;
+    }
+  }
+  // ---- 爆閃
+  if(P.boomT>0){
+    P.boomT-=dt;
+    var bk=Math.max(0,P.boomT/BOOM_LIFE);
+    P.hit.scale.setScalar(0.6+(1-bk)*K.boom);    // 擴張
+    P.hit.material.opacity=bk*bk;                 // 收得比擴張快，才像爆不像吹氣球
+    if(P.boomT<=0)P.hit.visible=false;
+  }
+}
+
+/* ---------- 第一人稱手持武器 ----------
+   在這之前，玩家身上帶著一把 $5000 的槍，而畫面上完全看不到它。
+   那把槍只存在於三個地方：HUD 上一行字、一顆按鈕、以及開槍時的光。
+   也就是說「我有沒有槍」這件事你要去讀介面才知道 —— 而這是一個
+   以黑暗和聽覺為主的遊戲，玩家的視線本來就不在介面上。
+
+   兩把一起顯示，不做切換：右手長槍、左手電擊槍。
+   遊戲沒有「選擇武器」這個動作（Q 電擊、G 長槍，各按各的），
+   所以畫面上也不該有一把被收起來。你有什麼，手上就有什麼。
+
+   掛在 camera 底下，所以它自動跟著視角走 —— 但 camera 必須先進 scene，
+   否則 renderer 從 scene 開始走訪，根本走不到 camera 的子樹。
+   它不會被 pickTarget 射到：那支函式只對 itemMeshes 做 intersectObjects。 */
+var VIEW=null, viewKickR=0, viewKickT=0, viewBob=0, viewLastP=new THREE.Vector3();
+function buildView(){
+  if(VIEW)return VIEW;
+  /* camera 本來就已經在 scene 裡（第 2246 行），所以這行其實是多餘的。
+     留著是因為「子物件要被畫出來，父節點必須在 scene 裡」這個條件
+     不該靠別處的某一行來滿足 —— 哪天有人把那行搬走，壞掉的會是這裡，
+     而症狀是「槍不見了」，不是「相機壞了」，很難連回去。 */
+  scene.add(camera);
+  function part(col,s,p,e){ return P(GEO.box,col,s,p,e); }
+  // --- 右手：雷電長槍。尺寸是牆上那把的六成，不然會佔掉半個畫面
+  var R=new THREE.Group();
+  R.add(part(0x24282B,[0.045,0.045,0.72],[0,0,-0.30],0.35));   // 槍管
+  R.add(part(0x33383C,[0.075,0.11,0.30],[0,-0.01,0.08],0.35)); // 機匣
+  R.add(part(0x1C2024,[0.06,0.09,0.22],[0,-0.03,0.30],0.35));  // 槍托
+  /* 發光強度是 0.95，不是牆上那把的 3.0。
+     3.0 在牆上是對的 —— 那是一個要從走廊另一頭就看得到的訊號，
+     而且它在畫面上只有幾十個像素。同樣的 3.0 放到手上，
+     那塊電池佔掉幾百個像素，整個飽和成一塊純白：綠色消失，
+     變成「螢幕上黏了一張白紙」。顏色才是這把槍的身分，不是亮度。
+     實際 render 比對過 3.0 與 0.95 兩版才定下來的。 */
+  var rBat=part(0x5CF08A,[0.065,0.065,0.24],[0,0.05,0.02],0.95);// 電池
+  var rMuz=part(0x5CF08A,[0.05,0.05,0.09],[0,0,-0.66],0.95);    // 槍口
+  R.add(rBat); R.add(rMuz);
+  /* z −0.60 而不是 −0.52：相機近平面是 0.08，而槍托後緣在本地 +0.41。
+     擺在 −0.52 的話，後座到底時槍托會越過相機平面（−0.52+0.13+0.41 > 0）。
+     它在畫面外切掉所以看不出來，但那是「剛好看不出來」。 */
+  R.position.set(0.25,-0.22,-0.60); R.rotation.set(0.04,0.05,0.03);
+  // --- 左手：電擊槍。小一號、青色，跟長槍一眼分得出來
+  var T=new THREE.Group();
+  T.add(part(0x24303A,[0.055,0.07,0.26],[0,0,-0.08],0.35));    // 槍身
+  T.add(part(0x1C2430,[0.05,0.14,0.07],[0,-0.09,0.07],0.35));  // 握把
+  var tCell=part(0x9BE8FF,[0.045,0.045,0.09],[0,0.045,-0.02],0.85);
+  var tPro =part(0x9BE8FF,[0.032,0.032,0.09],[0,0,-0.22],0.85);
+  T.add(tCell); T.add(tPro);
+  /* yaw 往外（−0.07）而不是往內（原本 +0.14）。
+     兩把都朝畫面中央夾的話，兩根槍管會在準心下方交叉，
+     看起來像被綁在一起。往外開一點，中間那條視線才是空的 ——
+     而準心底下那塊區域正是你要看東西的地方。 */
+  T.position.set(-0.24,-0.25,-0.42); T.rotation.set(0.06,-0.07,-0.04);
+  camera.add(R); camera.add(T);
+  VIEW={rifle:R, taser:T, rBat:rBat, rMuz:rMuz, tCell:tCell, tPro:tPro,
+        rBase:R.position.clone(), tBase:T.position.clone()};
+  viewLastP.copy(camera.position);
+  /* 建好的當下就要對一次彈數。
+     彈數是跨局的，而 newRun 裡那個 viewAmmoLook 在 VIEW 還是 null 的時候
+     是空轉的 —— 所以「這一局才剛組好電擊槍、而且身上 0 發」這種情況，
+     組好的那一瞬間發光件會是亮的，要到下一局才修正。 */
+  viewAmmoLook();
+  return VIEW;
+}
+/* 沒子彈的時候把發光件壓暗。
+   這是唯一一個「不用看介面就知道還有沒有彈」的管道，而被追的時候
+   你本來就不會去看介面。注意是重新指派材質，不是改材質 ——
+   itemMat 是用 color|emis 記憶化的共用物件。 */
+function viewAmmoLook(){
+  var V=VIEW; if(!V)return;
+  var rOn=G.rifleAmmo>0;
+  V.rBat.material=itemMat(rOn?0x5CF08A:0x2A4435, rOn?0.95:0.15);
+  V.rMuz.material=itemMat(rOn?0x5CF08A:0x2A4435, rOn?0.95:0.15);
+  var tOn=G.tzAmmo>0;
+  V.tCell.material=itemMat(tOn?0x9BE8FF:0x2C3E47, tOn?0.85:0.15);
+  V.tPro.material =itemMat(tOn?0x9BE8FF:0x2C3E47, tOn?0.85:0.15);
+}
+function stepView(dt){
+  if(!G.hasRifle&&!tzReady()){
+    if(VIEW){ VIEW.rifle.visible=false; VIEW.taser.visible=false; }
+    return;
+  }
+  var V=buildView();
+  /* 躲在櫃子裡、被抓特寫、不在遊玩中：收起來。
+     櫃子那一格特別重要 —— 相機在櫃體裡面，槍會整支穿出櫃門。 */
+  var show=G.phase==='play'&&!hiding;
+  V.rifle.visible=show&&G.hasRifle;
+  V.taser.visible=show&&tzReady();
+  if(!show)return;
+  // 走路晃動：用相機實際位移推，不另外接一個速度變數進來
+  var moved=camera.position.distanceTo(viewLastP); viewLastP.copy(camera.position);
+  viewBob+=moved*6.2;
+  var bx=Math.sin(viewBob)*0.012, by=Math.abs(Math.cos(viewBob))*0.010;
+  // 後座：開槍當下往後推並抬槍口，再彈回來
+  viewKickR=Math.max(0,viewKickR-dt*6.5);
+  viewKickT=Math.max(0,viewKickT-dt*9.0);
+  V.rifle.position.set(V.rBase.x+bx, V.rBase.y-by, V.rBase.z+viewKickR*0.13);
+  V.rifle.rotation.x=0.04-viewKickR*0.38;
+  V.taser.position.set(V.tBase.x-bx*0.7, V.tBase.y-by*0.8, V.tBase.z+viewKickT*0.07);
+  V.taser.rotation.x=0.06-viewKickT*0.30;
 }
 
 /* ---------- 外星人：中了長槍之後的那兩秒 ----------
@@ -6776,6 +7060,7 @@ function fireRifle(){
      那一秒就是這個機制的全部。 */
   rifleCdT=CFG.rifleCd;
   G.rifleAmmo--;
+  viewKickR=1; viewAmmoLook();
   SFX.taser(); makeNoise(CFG.hearSprint);    // 比電擊槍吵得多
   camera.getWorldDirection(fwd);
   var hit=null, hitAlong=1e9;
@@ -6831,6 +7116,7 @@ function useTaser(){
     return;
   }
   G.tzAmmo--;
+  viewKickT=1; viewAmmoLook();
   SFX.taser();
   makeNoise(CFG.hearWalk*0.8);
   /* 從準心射出去：算店員到視線的垂直距離，夠近就算命中。
@@ -6868,7 +7154,7 @@ function useTaser(){
        stuffClerk 本來就有清 aware，這裡漏掉純粹是不一致。 */
     ha.aware=0; ha.hideT=0;
     ev('taser_hit',{c:CLERKS.indexOf(hit)});
-    spawnBolt(hit.position.x,1.2,hit.position.z);
+    spawnBolt(hit.position.x,1.2,hit.position.z,'taser');
     var others=CLERKS.filter(function(c){return c!==hit&&c.ai.state==='CHASE';}).length;
     toast('命中 · 他癱了 '+CFG.taserStun+' 秒 · 剩 '+G.tzAmmo+' 發'+
           (others?' · 還有 '+others+' 個在追你':''));
@@ -6876,7 +7162,7 @@ function useTaser(){
     // 打空也要畫 —— 看得到偏到哪裡，下一發才有得修正
     spawnBolt(camera.position.x+fwd.x*CFG.taserRange,
               camera.position.y+fwd.y*CFG.taserRange,
-              camera.position.z+fwd.z*CFG.taserRange);
+              camera.position.z+fwd.z*CFG.taserRange,'taser');
     toast('打空了 · 剩 '+G.tzAmmo+' 發'); ev('taser_miss');
   }
   updateHUD();
@@ -7088,9 +7374,21 @@ function stepPlayer(dt){
 
   // 撤離判定
   var inExit = p.x>EXIT.x0&&p.x<EXIT.x1&&p.z>EXIT.z0&&p.z<EXIT.z1;
-  // 員工通道：買了才算數，而且一樣要先解鎖撤離（湊滿件數）
-  if(!inExit&&G.upgrades.backdoor)
-    inExit = p.x>EXIT2.x0&&p.x<EXIT2.x1&&p.z>EXIT2.z0&&p.z<EXIT2.z1;
+  /* 員工通道：門一直在，但沒買就是鎖的。
+     站上去的時候要講一句話 —— 門就在眼前、燈是紅的、什麼都沒發生，
+     那幾秒是這件商品唯一的廣告時間。不講的話玩家只會覺得這扇門壞了。
+     六秒一次，不然沿著北牆走過去會被洗版。 */
+  var atBack = p.x>EXIT2.x0&&p.x<EXIT2.x1&&p.z>EXIT2.z0&&p.z<EXIT2.z1;
+  if(atBack&&!G.upgrades.backdoor){
+    if(G.run.t-backHintT>6){
+      backHintT=G.run.t;
+      SFX.deny();
+      toast(secretOpen()
+        ? '員工通道 · 鎖著 · 藏身處買得到它'
+        : '員工通道 · 鎖著');
+    }
+  }
+  if(!inExit&&atBack&&G.upgrades.backdoor)inExit=true;
   if(inExit&&G.run.unlocked)extract();
 }
 
@@ -7550,7 +7848,7 @@ function renderShop(){
     if(locked){
       // 鎖著也要看得見價格。看不到名字會好奇，看不到價格只會被忽略。
       d.innerHTML='<h3>？？？ <em class="tagc">隱藏</em></h3>'+
-        '<p>'+u.hint+'</p>'+
+        '<p>'+(typeof u.hint==='function'?u.hint():u.hint)+'</p>'+
         '<div class="cost">$'+u.cost+'</div>'+
         '<div class="need">進度 '+Math.min(STATS.forbiddenSurvived,CFG.stopNeed)+
           ' / '+CFG.stopNeed+'</div>';
@@ -7590,8 +7888,8 @@ function renderShop(){
       G.upgrades[u.id]=true;
       if(u.id==='light')applyFlashlight();
       if(u.id==='backdoor'){
-        syncBackDoor();          // 那扇門是靜態幾何，買了才顯示
-        toast('員工通道開了 · 後場北牆，綠色那扇');
+        syncBackDoor();          // 門一直都在，這裡只是把它從紅燈換成綠燈
+        toast('員工通道解鎖了 · 那扇門的燈變綠了');
       }
       ev('upgrade_bought',{id:u.id}); SFX.register(); renderShop(); save();
     });
@@ -7866,7 +8164,7 @@ function renderMenuFoot(){
        所以它必須是玩家一開遊戲就看得到的那個目標。 */
     (secretOpen()
       ? '<br><span style="color:#5CF08A">員工通道已解鎖 · 存到 $2000 就能買下它</span>'
-      : '<br><span style="color:#8A7A46">隱藏商品 ？？？ · 帶著非賣品脫身 '+
+      : '<br><span style="color:#8A7A46">冷凍室那扇鎖著的門 · 帶著非賣品脫身 '+
         Math.min(s.forbiddenSurvived,CFG.stopNeed)+' / '+CFG.stopNeed+'</span>');
 }
 /* 清除犯案紀錄：兩段式確認。
@@ -8404,6 +8702,7 @@ function frame(now){
   // 動畫用自己的累積時鐘，午夜鐘期間不推進 —— 不然「全店靜止」時商品還在轉
   // 電子彈軌跡。擺在 play 判斷之外 —— 被抓特寫的時候也該看得到最後那一發
   stepBolt(dt);
+  stepView(dt);          // 手上的槍：跟著 stepBolt 一起，被抓特寫時也會自己收掉
   // 鏡子：一張 96×128 的 canvas，重畫一次大約幾十微秒。
   // 人形只有在 7 公尺內才畫（見 drawMirror），遠一點就只剩空鏡面
   if(G.phase==='play'&&!(SIM.on&&SIM.skipDraw))drawMirror();
