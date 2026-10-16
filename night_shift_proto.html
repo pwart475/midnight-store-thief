@@ -796,15 +796,24 @@
 
   /* 浮動搖桿：左下整塊區域都能起手，不必精準戳到那個圈 */
   #stickzone{position:absolute;left:0;bottom:0;width:48%;height:62%;pointer-events:auto}
+  /* 搖桿平常是隱形的，碰到才浮出來。
+
+     那個 132px 的圈原本常駐在左下角，但它不是一個「按鈕」——
+     整個左下 48%×62% 都能起手（見 #stickzone），圈畫在哪裡根本不影響
+     怎麼操作。也就是說它佔掉了畫面最大的一塊，卻沒有在講任何事情。
+     手指一碰 .on 就會亮起來並跟到手指底下，那一刻它才有資訊
+     （你推多遠、有沒有進到衝刺的外圈）。
+
+     opacity 而不是 display:none —— display 會讓 .on 那一瞬間
+     沒有東西可以淡入，變成硬跳出來。 */
   #stickbase{position:absolute;width:132px;height:132px;border-radius:50%;margin:0;
     border:2px solid rgba(220,235,216,.16);background:rgba(8,11,8,.26);
     left:calc(var(--sal) + 20px);bottom:calc(var(--sab) + 20px);
-    opacity:.5;transition:opacity .12s;pointer-events:none}
+    opacity:0;transition:opacity .12s;pointer-events:none}
   #stickbase.on{opacity:1;bottom:auto;transform:translate(-50%,-50%)}
-  #stickbase::after{content:'移動';position:absolute;left:50%;top:50%;
-    transform:translate(-50%,-50%);font-size:11px;letter-spacing:.18em;
-    color:rgba(126,143,128,.45)}
-  #stickbase.on::after{content:''}
+  /* 「移動」那行字拿掉了。圈平常是隱形的（opacity:0），而唯一會讓它
+     現身的 .on 本來就把字清空 —— 也就是說那行字再也不可能被看到。
+     操作說明裡已經寫了「左下按住任一點就是搖桿」，那才是它該待的地方。 */
   /* 外圈 = 衝刺，推到那裡整個圈會亮起來 */
   #stickring{position:absolute;left:50%;top:50%;width:100%;height:100%;
     transform:translate(-50%,-50%);border-radius:50%;
@@ -841,6 +850,21 @@
   #btnJump{width:64px;height:64px;font-size:17px;
     right:calc(var(--sar) + 16px);bottom:calc(var(--sab) + 114px);
     border-color:var(--fresh);color:var(--fresh)}
+  /* 開火鍵：左側、垂直置中。
+     它落在搖桿區（左下 48%×62%）裡面，這是刻意的 —— 左拇指不必跨區。
+     它跟 #stickzone 是兄弟不是子孫，所以按它的觸控根本不會進到搖桿的
+     事件路徑裡 —— 不是靠 stopPropagation 擋下來的。
+     滑開的話交棒給搖桿（pressTap 的 handoff='stick'），不是交給轉頭：
+     左手在移動區滑動，要得到的是移動。
+     垂直中線比底部高一截：推搖桿的時候拇指自然落在更低的位置，
+     擺在正中間才不會變成「想走路卻開了一槍」。 */
+  #btnFire{width:66px;height:66px;font-size:19px;flex-direction:column;line-height:1;
+    left:calc(var(--sal) + 14px);top:46%;transform:translateY(-50%);
+    border-width:3px;background:rgba(10,14,10,.44)}
+  #btnFire small{display:block;margin-top:3px;font-size:10px;font-weight:700}
+  #btnFire.rifle{border-color:#5CF08A;color:#5CF08A}
+  #btnFire.taser{border-color:#9BE8FF;color:#9BE8FF}
+  #btnFire.dry{opacity:.42}
   /* --- 道具區：2×2，小一號、更淡 --- */
   .tbtn.item{width:54px;height:54px;font-size:15px;flex-direction:column;line-height:1;
     border-width:2px;opacity:.82;background:rgba(10,14,10,.28)}
@@ -1305,6 +1329,12 @@
   <button class="tbtn item" id="btnRifle" hidden>雷</button>
   <button class="tbtn item" id="btnShrink" hidden>縮</button>
   <button class="tbtn item" id="btnStop" hidden>鐘</button>
+  <!-- 左側中間的開火鍵。
+       右手在轉鏡頭（整個右半邊都是視角區），所以右邊那兩顆道具鍵
+       在「正在瞄準」的時候其實按不到 —— 你一放開右手，準心就不動了。
+       開火要讓左手按。左手平常只負責移動，而移動是「推住」，
+       拇指本來就在左邊，抬起來戳一下就回去。 -->
+  <button class="tbtn" id="btnFire" hidden>射<small></small></button>
 </div>
 
 <div id="rotate"><b>請把手機轉成橫向</b>這是第一人稱遊戲，橫向持握才看得清楚。</div>
@@ -1317,7 +1347,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v14.22';
+var BUILD='v14.27';
 
 /* ================================================================
    目錄與凍結狀態
@@ -3345,11 +3375,16 @@ function buildDecor(){
   /* z 從 6.0 往南挪到 4.2：西側走道 z 6.2 站著一個立櫃，
      櫃體沿 z 佔 5.71~6.69、高 2.05 —— 原本那張海報有八成躲在它後面。
      這是放大之前就有的問題，放大 20% 只會讓它更明顯。 */
-  /* z 4.2 → 5.0：原本那張正好蓋住「辦公室 →」那塊牌子（z 2.30~4.50，
+  /* z 4.2 → 5.1。原本那張正好蓋住「辦公室 →」那塊牌子（z 2.30~4.50，
      而且只差 0.02m 的深度，遠看還會 z-fighting）。那塊牌子是指路用的，
      被海報蓋掉等於玩家不知道西邊那條走廊通到哪。
-     5.0 這個位置離 z 5.71 的立櫃還有 0.17m。 */
-  addPoster(-19.53,1.95, 5.0, Math.PI/2, 0.9, 3);  // 西牆（靠出口那段）
+
+     第一次我改到 5.0，算起來「離立櫃還有 0.17m」就收工了 ——
+     但沒算另一邊：5.0 的海報佔 z 4.46~5.54，跟牌子的 4.50 還疊了 0.04m。
+     render 出來兩塊就是貼在一起，而它們深度只差 2cm。
+     5.1 是牌子北緣（4.50）與立櫃南緣（5.71）之間那段 1.21m 的正中央，
+     兩邊各留 0.06m。這面牆已經排到極限了，下一塊要再塞就得先搬東西。 */
+  addPoster(-19.53,1.95, 5.1, Math.PI/2, 0.9, 3);  // 西牆（靠出口那段）
   /* −5.0 → −6.9：原本跟 z −4.49 的立櫃差 0.03m，而往回挪到 −6.2 又會
      擦到 z −5.0 那台監視器的外框（z −5.68~−4.32）。−6.9 兩邊都讓開。 */
   addPoster(-19.53,1.95,-6.9, Math.PI/2, 0.9, 0);  // 西牆（深處）· 店長
@@ -5590,7 +5625,13 @@ function setupTouch(){
      16px 在 390px 高的手機上太嚴格，一戳就被判成拖曳，然後整顆按鈕像壞掉。
      26px 還是遠小於一次真正的轉頭拖曳。 */
   var TAP_SLOP=26;
-  function pressTap(id,fn){
+  /* handoff：這顆鈕滑開之後要交棒給誰。
+       'look'（預設）—— 交給轉頭。右半邊的按鈕都是這個，
+                        因為右半邊本來就是轉頭區。
+       'stick' —— 交給搖桿。只有左側的開火鍵用這個：它長在搖桿區裡面，
+                  滑開之後交給轉頭的話，左手會在「移動區」轉起鏡頭來，
+                  跟整個左右分工相反。 */
+  function pressTap(id,fn,handoff){
     var el=$(id), tid=null, sx=0, sy=0, moved=false;
     el.addEventListener('touchstart',function(e){
       e.preventDefault(); e.stopPropagation();
@@ -5618,7 +5659,15 @@ function setupTouch(){
            只檢查一次的話它就永遠變成一根廢掉的手指 ——
            那根手指按著不放的時候，你會覺得畫面轉不動。
            lookId 不是 null 時這段自然跳過，所以不會把自己的起點一直重設。 */
-        if(lookId===null&&!devOpen()&&G.phase==='play'){
+        if(handoff==='stick'){
+          // 交棒給搖桿：搖桿就長在手指現在的位置，跟直接在空地起手一樣
+          if(stickId===null&&!devOpen()&&G.phase==='play'){
+            stickId=tid; stickOX=t.clientX; stickOY=t.clientY;
+            base.style.left=stickOX+'px'; base.style.top=stickOY+'px';
+            base.classList.add('on');
+            applyStick(stickOX,stickOY);
+          }
+        }else if(lookId===null&&!devOpen()&&G.phase==='play'){
           lookId=tid; lookLX=t.clientX; lookLY=t.clientY;
         }
       }
@@ -5628,6 +5677,8 @@ function setupTouch(){
       for(var i=0;i<e.changedTouches.length;i++){
         if(e.changedTouches[i].identifier!==tid)continue;
         el.classList.remove('act');
+        // 交棒給搖桿的那一指放開時，搖桿也要跟著放開
+        if(handoff==='stick'&&stickId===tid)clearStick();
         /* 密碼鍵盤在這一指按著的期間被另一指打開了：按鈕已經被 CSS 藏起來，
            放開的時候不該還執行。那會變成「我明明在輸密碼，電擊槍自己射了」。 */
         if(!moved&&G.phase==='play'&&!document.body.classList.contains('keypad-in'))fn();
@@ -5643,6 +5694,14 @@ function setupTouch(){
   pressTap('btnRifle',fireRifle);
   pressTap('btnShrink',useShrink);
   pressTap('btnStop',useStop);
+  /* 左側開火鍵打的是「手上那一把」。
+     右邊的「雷」「電」兩顆現在是換手用的（按下去那把會舉起來），
+     左邊這顆才是扣扳機 —— 選跟射分開，而且分在兩隻手上。 */
+  pressTap('btnFire',function(){
+    var w=viewWant();
+    if(w==='rifle')fireRifle();
+    else if(w==='taser')useTaser();
+  },'stick');
 
   /* 密碼鍵盤的按鍵用委派：整塊 kpbox 收 touchend（含右上的關閉鍵），
      這樣不必為十三個按鈕各裝一次，也不會被 document 的 touchmove 攔掉。 */
@@ -6784,8 +6843,16 @@ var BOOM_LIFE=0.26, MUZZLE_LIFE=0.07;
 var BOLT_KIND={
   rifle:{core:0xEAFFF2, aura:0x5CF08A, size:0.17, trail:0.085, tl:3.2,
          speed:90,  boom:2.6, muzzle:1.4},
-  taser:{core:0xF2FBFF, aura:0x9BE8FF, size:0.07, trail:0.035, tl:5.0,
-         speed:240, boom:1.1, muzzle:0.8}
+  /* 電擊槍原本是 size 0.07 / speed 240。算起來很合理 —— 它是細的、快的 ——
+     但實際上等於沒有效果：24 公尺的射程配 240 m/s 是 0.1 秒，
+     而彈體只有 7 公分、拖尾 3.5 公分。玩家回報「小槍沒有子彈射出效果」，
+     他說得對，那不是沒做，是做到看不見。
+
+     「細而快」是對的方向，但細跟快是有下限的，低於那個下限就不是
+     風格而是消失。110 m/s、彈體 10 公分、拖尾加粗並拉長到 6 公尺 ——
+     它仍然明顯比長槍細、比長槍快，只是這次看得到。 */
+  taser:{core:0xF2FBFF, aura:0x9BE8FF, size:0.10, trail:0.055, tl:6.0,
+         speed:110, boom:1.5, muzzle:1.0}
 };
 function spawnBolt(toX,toY,toZ,kind){
   var P=initPlasma();
@@ -6865,14 +6932,36 @@ function stepBolt(dt){
    也就是說「我有沒有槍」這件事你要去讀介面才知道 —— 而這是一個
    以黑暗和聽覺為主的遊戲，玩家的視線本來就不在介面上。
 
-   兩把一起顯示，不做切換：右手長槍、左手電擊槍。
-   遊戲沒有「選擇武器」這個動作（Q 電擊、G 長槍，各按各的），
-   所以畫面上也不該有一把被收起來。你有什麼，手上就有什麼。
+   手上同時只拿一把（見下一段）。長槍在右手、電擊槍在左手，
+   所以「哪一邊」本身也是一個辨識訊號，不只靠顏色和大小。
 
    掛在 camera 底下，所以它自動跟著視角走 —— 但 camera 必須先進 scene，
    否則 renderer 從 scene 開始走訪，根本走不到 camera 的子樹。
    它不會被 pickTarget 射到：那支函式只對 itemMeshes 做 intersectObjects。 */
-var VIEW=null, viewKickR=0, viewKickT=0, viewBob=0, viewLastP=new THREE.Vector3();
+/* 手上同時只拿一把。按哪一顆按鈕，手上就換成哪一把。
+
+   原本兩把一起顯示，理由是「遊戲沒有選擇武器這個動作」——
+   那個理由本身沒錯，但結論推錯了：沒有切換動作，不代表畫面上要同時
+   擺兩把。兩把並排的結果是畫面下緣被佔掉兩塊，而且你還是分不出
+   自己剛剛按到的是哪一顆。
+
+   現在 Q / G 就是切換：按下去那一把舉起來，另一把收走。
+   刻意在「有沒有真的開成槍」之前就切 —— 沒子彈的時候按 Q，
+   電擊槍一樣要舉起來給你看，而且發光件是暗的。
+   那一眼就回答了「為什麼沒反應」。
+
+   viewSel 不在 newRun 歸零：它是玩家的選擇，不是這一局的狀態。
+   還沒按過任何一顆時退回「有長槍就拿長槍」，所以第一次拿到槍的
+   那一局，你不用先開一槍才看得到它。 */
+var VIEW=null, viewSel=null, viewKickR=0, viewKickT=0, viewBob=0,
+    viewLastP=new THREE.Vector3();
+function viewWant(){
+  var s=viewSel;
+  if(s==='rifle'&&!G.hasRifle)s=null;
+  if(s==='taser'&&!tzReady())s=null;
+  if(!s)s=G.hasRifle?'rifle':(tzReady()?'taser':null);
+  return s;
+}
 function buildView(){
   if(VIEW)return VIEW;
   /* camera 本來就已經在 scene 裡（第 2246 行），所以這行其實是多餘的。
@@ -6902,9 +6991,9 @@ function buildView(){
      第一版 (0.25,−0.22) 在 16:9 下，發光的電池從畫面中心一路長到右邊 ——
      也就是說它壓在準心底下，而那正是你要看東西的地方。
      往右下推到 0.42 / −0.32（距中心約 52% / 71%），再整體縮到 0.8，
-     兩把槍就退回左右下角，中間那條視線空出來了。 */
-  R.position.set(0.42,-0.32,-0.60); R.rotation.set(0.04,0.05,0.03);
-  R.scale.setScalar(0.80);
+     那把槍就退回右下角，中間那條視線空出來了。 */
+  R.position.set(0.44,-0.34,-0.62); R.rotation.set(0.04,0.05,0.03);
+  R.scale.setScalar(0.95);
   // --- 左手：電擊槍。小一號、青色，跟長槍一眼分得出來
   var T=new THREE.Group();
   T.add(part(0x24303A,[0.055,0.07,0.26],[0,0,-0.08],0.35));    // 槍身
@@ -6916,8 +7005,12 @@ function buildView(){
      兩把都朝畫面中央夾的話，兩根槍管會在準心下方交叉，
      看起來像被綁在一起。往外開一點，中間那條視線才是空的 ——
      而準心底下那塊區域正是你要看東西的地方。 */
-  T.position.set(-0.40,-0.34,-0.44); T.rotation.set(0.06,-0.07,-0.04);
-  T.scale.setScalar(0.80);
+  /* 兩把的大小差距要一眼看得出來：長槍 0.95、電擊槍 0.58。
+     原本兩把都是 0.80，差別只剩顏色 —— 而顏色在停電那幾秒是最不可靠的
+     那一種訊號（整個畫面都在閃紅光）。大小是剪影，剪影在什麼光線下都成立。
+     電擊槍再往左往上一點，兩把之間的畫面空出來。 */
+  T.position.set(-0.46,-0.30,-0.38); T.rotation.set(0.06,-0.07,-0.04);
+  T.scale.setScalar(0.58);
   camera.add(R); camera.add(T);
   VIEW={rifle:R, taser:T, rBat:rBat, rMuz:rMuz, tCell:tCell, tPro:tPro,
         rBase:R.position.clone(), tBase:T.position.clone()};
@@ -6951,8 +7044,9 @@ function stepView(dt){
   /* 躲在櫃子裡、被抓特寫、不在遊玩中：收起來。
      櫃子那一格特別重要 —— 相機在櫃體裡面，槍會整支穿出櫃門。 */
   var show=G.phase==='play'&&!hiding;
-  V.rifle.visible=show&&G.hasRifle;
-  V.taser.visible=show&&tzReady();
+  var want=show?viewWant():null;
+  V.rifle.visible=want==='rifle';
+  V.taser.visible=want==='taser';
   if(!show)return;
   // 走路晃動：用相機實際位移推，不另外接一個速度變數進來
   var moved=camera.position.distanceTo(viewLastP); viewLastP.copy(camera.position);
@@ -7069,6 +7163,8 @@ function stepAlien(c,dt){
 var rifleCdT=0;
 function fireRifle(){
   var r=G.run; if(!r||G.phase!=='play')return;
+  // 按了就換手，不管這一下有沒有真的打出去（沒槍／沒彈的理由要看得見）
+  if(G.hasRifle){ viewSel='rifle'; syncItemButtons(); }
   if(!G.hasRifle){ toast('你沒有長槍 · 辦公室牆上那把要 $'+CFG.rifleCost); return; }
   if(rifleCdT>0)return;                 // 充能中，連點沒有用
   if(G.rifleAmmo<=0){ toast('長槍空了 · 沒有補給'); return; }
@@ -7126,6 +7222,8 @@ function fireRifle(){
 /* ---------- 一次性道具 ---------- */
 function useTaser(){
   var r=G.run; if(!r||G.phase!=='play')return;
+  // 按了就換手。組好了才換 —— 還沒組好的話手上沒有那個東西
+  if(tzReady()){ viewSel='taser'; syncItemButtons(); }
   if(!tzReady()){
     toast('電擊槍還沒組好 · '+tzHave()+'/'+TZ_PARTS.length+' 件');
     return;
@@ -7743,7 +7841,7 @@ function updateHUD(){
   $('items').innerHTML=it;
   // 佈局代號不再顯示給玩家。layoutName 本身留著 —— exportData 會帶出去，
   // 比對模擬數據的時候要知道那一局跑的是哪張圖
-  /* 整排按鈕一起刷。手機上那四顆按鈕是彈數／次數的唯一顯示位置
+  /* 整排按鈕一起刷。手機上那幾顆按鈕是彈數／次數的唯一顯示位置
      （左上角的重複行已經拿掉），所以只要 HUD 更新就要跟著更新它們。 */
   syncItemButtons();
   updateExitChip();
@@ -8307,6 +8405,19 @@ function syncItemButtons(){
     var tn=r?r.stop:0;
     tb.innerHTML='鐘<small>'+tn+'</small>';
     tb.classList.toggle('dry',tn<=0);
+  }
+  /* 左側開火鍵。它顯示的永遠是「手上那一把」—— 顏色、彈數都跟著換。
+     沒有武器就整顆收掉：一顆按了只會跳「你沒有槍」的按鈕，
+     在被追的時候是負的。 */
+  var fb=$('btnFire'), w=viewWant();
+  fb.hidden=!w;
+  if(w){
+    var fn=w==='rifle'?G.rifleAmmo:G.tzAmmo;
+    fb.innerHTML='射<small>'+fn+'</small>';
+    fb.classList.toggle('rifle',w==='rifle');
+    fb.classList.toggle('taser',w==='taser');
+    // 長槍還有充能時間，充能中也要壓暗 —— 那一秒按了沒反應
+    fb.classList.toggle('dry',fn<=0||(w==='rifle'&&rifleCdT>0));
   }
 }
 function gotoShop(){
