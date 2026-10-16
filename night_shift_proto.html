@@ -1134,6 +1134,13 @@
       <div><b>·</b>冷凍室的壓縮機一直在響，那是店裡唯一固定的聲音地標。
         後門解鎖後會發出低頻脈衝，停電時會變快 —— 燈滅了也走得回去</div>
       <div><b>·</b>被發現不一定會死 —— 他追一段時間抓不到就會放棄</div>
+      <!-- 武器的操作方式放在訣竅裡，不是只放在「操作」那張表。
+           那張表是給一開始看的；而你拿到槍是好幾局之後的事，
+           那時候沒有人會回去重讀操作表。 -->
+      <div><b>·</b><b style="color:var(--price)">手上同時只拿一把槍</b>：
+        電腦版 <b>Q</b> 拿電擊槍、<b>G</b> 拿長槍，<b style="color:var(--price)">滑鼠左鍵開火</b>；
+        手機版右邊的「電」「雷」換手，<b style="color:var(--price)">左邊那顆「射」開火</b>
+        —— 右手在轉鏡頭，開火要讓左手按</div>
       <div><b>·</b><b style="color:var(--danger)">被抓到的代價</b>：現金歸零、關卡回到第 1 次、
         沒收<b>最便宜的兩件</b>裝備 —— 貴的守得住，所以值得買。
         有護身符的話會自動啟用把裝備全部保下來</div>
@@ -1194,9 +1201,12 @@
       <div><b>C</b>潛行 · 幾乎沒聲音</div>
       <div><b>E</b>塞進提袋</div>
       <div><b>空白</b>小跳（需購買）</div>
-      <div><b>Q</b>電擊槍（撿滿三件部件）</div>
+      <!-- 開火排在武器切換前面：玩家先想知道「怎麼射」，
+           才會想知道「射哪一把」。 -->
+      <div><b style="color:var(--price)">滑鼠左鍵</b>開火（手上那一把）</div>
+      <div><b>Q</b>拿出電擊槍（撿滿三件部件）</div>
+      <div><b>G</b>拿出雷電長槍（辦公室 $5000）</div>
       <div><b>R</b>縮小劑（需購買）</div>
-      <div><b>X</b>午夜鐘（需購買）</div>
       <div><b>F</b>全螢幕</div>
       <div><b>M</b>切換視角模式</div>
       <div><b>T</b>調參面板</div>
@@ -1355,7 +1365,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v14.28';
+var BUILD='v14.30';
 
 /* ================================================================
    目錄與凍結狀態
@@ -5461,7 +5471,32 @@ canvas.addEventListener('mousedown',function(e){
   if(G.phase!=='play')return;
   clearBeat();                     // 看完了就點掉，不用等它自己消失
   manualPause=false;
-  if(!locked&&!lockFailed)requestLock();
+  if(!locked&&!lockFailed){ requestLock(); return; }
+  /* 左鍵＝開火，打的是「手上那一把」，跟手機左側那顆開火鍵同一條路。
+
+     在這之前電腦版唯一的開火方式是 Q 和 G 兩顆字母鍵 —— 而這是一個
+     第一人稱射擊的情境：手已經在滑鼠上瞄準了，卻要騰出左手去找一顆
+     字母鍵。玩家問「電腦版怎麼射擊」本身就是答案：找不到的操作等於沒有。
+
+     Q / G 保留，它們現在的角色是**換手**（按下去那把會舉起來），
+     跟手機上右側那兩顆「雷」「電」一致：兩邊都是「右邊選、主手射」。
+
+     這一段一定要在鎖定成功之後才生效 —— 不然「點畫面鎖定滑鼠」
+     那一下會順便打掉一發子彈。上面那個 return 就是在擋這件事。 */
+  /* 觸控裝置一律不走這條。
+
+     手機上 lockFailed 永遠是 true（setupTouch 直接設死），所以上面那個
+     return 擋不住任何東西 —— 而瀏覽器會在「沒有人 preventDefault 的
+     觸控」之後補一個合成的 mousedown。右半邊的轉頭區就是這種：
+     onStart/onEnd 是 passive:true 收不了 preventDefault，只有拖動起來
+     之後的 onMove 才會擋。也就是說在右半邊**輕點一下**（手滑、或想
+     點掉提示），就會憑空射掉一發子彈。
+     手機的開火只有左邊那顆「射」，那條路自己有 preventDefault。 */
+  if(IS_TOUCH)return;
+  if(e.button!==0)return;
+  var w=viewWant();
+  if(w==='rifle')fireRifle();
+  else if(w==='taser')useTaser();
 });
 // 免按鍵自由視角
 window.addEventListener('mousemove',function(e){
@@ -6053,7 +6088,7 @@ function tryInteract(){
     ev('rifle_bought',{cost:CFG.rifleCost,cash:G.cash});
     // 文案全部從 CFG 算出來 —— 寫死的話調參面板一動，說明就開始說謊
     showBeat('雷電長槍 · '+CFG.rifleAmmo+' 發',
-      K('按 G 發射','按「雷」發射')+' · '+CFG.rifleCd+' 秒一發 · '+
+      K('G 拿出來 · 左鍵發射','按「雷」拿出來 · 左邊「射」發射')+' · '+CFG.rifleCd+' 秒一發 · '+
       CFG.rifleHp+' 發解決一個',
       '中第一槍它就會現形並且變快（剩 '+rageAt()+'/'+CFG.rifleHp+'）。'+
       '這 '+CFG.rifleAmmo+' 發剛好 '+Math.floor(CFG.rifleAmmo/CFG.rifleHp)+' 個。'+
@@ -6089,7 +6124,8 @@ function tryInteract(){
         G.tzAmmo=CFG.tzAmmoPer;
         SFX.unlock();
         showBeat('電擊槍組好了',
-          K('按 Q 發射 · 目前 '+G.tzAmmo+' 發','按「電」發射 · 目前 '+G.tzAmmo+' 發'),
+          K('Q 拿出來 · 左鍵發射 · 目前 '+G.tzAmmo+' 發',
+            '按「電」拿出來 · 左邊「射」發射 · 目前 '+G.tzAmmo+' 發'),
           '命中店員讓他當場癱 '+CFG.taserStun+' 秒。被抓會連槍一起沒收。',5000);
         syncItemButtons();
       }else{
