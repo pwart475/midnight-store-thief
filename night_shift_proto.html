@@ -865,6 +865,14 @@
   #btnFire.rifle{border-color:#5CF08A;color:#5CF08A}
   #btnFire.taser{border-color:#9BE8FF;color:#9BE8FF}
   #btnFire.dry{opacity:.42}
+  /* 橫向手機（實測 740×360）上，垂直中線會撞到提袋面板。
+     量出來的：提袋在 y 52~147，而 top:46% 的開火鍵在 y 133~199 ——
+     重疊 14px，而且提袋會隨著道具清單變高，只會越疊越多。
+     矮螢幕改成從底部量：y 202~268，離提袋 55px、離畫面底 92px。
+     還是在左側中段，但不在拇指推搖桿時自然落下的那個位置。 */
+  @media (max-height:420px){
+    #btnFire{top:auto;bottom:calc(var(--sab) + 92px);transform:none}
+  }
   /* --- 道具區：2×2，小一號、更淡 --- */
   .tbtn.item{width:54px;height:54px;font-size:15px;flex-direction:column;line-height:1;
     border-width:2px;opacity:.82;background:rgba(10,14,10,.28)}
@@ -1347,7 +1355,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v14.27';
+var BUILD='v14.28';
 
 /* ================================================================
    目錄與凍結狀態
