@@ -414,11 +414,33 @@
     font-family:var(--f-ui);font-size:12px;font-weight:700}
   #keypad .kpfoot{margin-top:9px;font-size:10px;color:var(--dimmer);text-align:center}
   #keypad .kpfoot b{color:var(--dim)}
+  /* 手機版的鍵盤是**用高度算出來的**，不是調到看起來順。
+
+     橫向手機只有 360 高，扣掉 bottom:5% 剩約 342px 可用。
+     而按鍵一定要 44px（打錯會響警報，這是全遊戲按錯代價最高的按鈕），
+     四列就吃掉 202px。剩下 140px 要塞標題列、數字、提示、底注。
+
+     算下來（寬度 240、內容 218）：
+       上內距 10 ＋ 標題列 44+7 ＋ 數字 24+6 ＋ 提示 15+7
+       ＋ 格子 4×46+3×6 = 202 ＋ 下內距 8  ≈ 323
+     360 − 18（bottom 5%）− 323 = 上緣還有 19px。
+
+     寬度從 186 加到 240 是關鍵的一步：窄的時候提示與底注都會折成兩行，
+     那兩行加起來比加寬省下來的還多。**把盒子變寬反而讓它變矮。** */
   @media (max-width:820px),(max-height:520px){
-    #keypad .kpbox{width:186px;right:4%;bottom:5%;padding:10px 10px 8px}
-    #kpval{font-size:30px}
-    #kphint{font-size:10px;margin-bottom:7px}
-    #keypad .kpgrid button{padding:9px 0;font-size:17px}
+    #keypad .kpbox{width:240px;right:4%;bottom:5%;padding:10px 10px 8px}
+    #kpval{font-size:24px;margin-bottom:6px}
+    #kphint{font-size:10px;margin-bottom:7px;min-height:1.4em}
+    /* padding 9 → 12：原本按鍵高度 9+9+20 = 38px，低於 44 的觸控下限。
+       寬度 (240−20−12)/3 = 69px 本來就夠，只有高度不夠。 */
+    #keypad .kpgrid button{padding:12px 0;font-size:17px}
+  }
+  /* 真·橫向手機（≤420 高）再砍一樣：底注那行。
+     它寫的是「輸完三位數要按確認才送出 · 右上 ✕ 離開」——
+     而那兩件事在畫面上都看得到（確認鍵就在格子裡、✕ 就在右上）。
+     在一個會把關閉鍵擠出畫面的高度上，說明文字是第一個該讓位的東西。 */
+  @media (max-height:420px){
+    #keypad .kpfoot{display:none}
   }
 
   #caught{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
@@ -750,6 +772,16 @@
     border:1px solid rgba(92,240,138,.45);cursor:pointer}
   .cheats button:hover{background:rgba(92,240,138,.16)}
   .cheats button:active{background:rgba(92,240,138,.3)}
+  /* 效能疊層。z-index 31 = 在調參面板（30）之上，在密碼鍵盤（24）之上 ——
+     量效能的時候常常要一邊開著面板調參數一邊看數字。
+     pointer-events:none：它只負責顯示，絕對不能擋到任何操作。 */
+  #perf{position:fixed;left:50%;top:6px;transform:translateX(-50%);z-index:31;
+    pointer-events:none;font-family:var(--f-mono);font-size:11px;line-height:1.5;
+    color:#9BE8FF;background:rgba(4,8,10,.82);border:1px solid rgba(155,232,255,.35);
+    padding:6px 10px;white-space:pre;text-align:left}
+  #perf[hidden]{display:none}
+  #perf b{color:#FFC93C;font-weight:400}
+  #perf .bad{color:#FF6B5E}
   /* z-index 23：要在觸控按鍵（#touch，22）之上、密碼鍵盤（24）之下 */
   #devtoggle{position:fixed;right:14px;bottom:14px;z-index:23;pointer-events:auto;padding:7px 12px;
     font-family:var(--f-mono);font-size:11px;letter-spacing:.1em;background:rgba(9,12,9,.9);
@@ -1309,6 +1341,8 @@
   <div class="s">鎖定後滑鼠不會跑出視窗，轉頭沒有邊界 · Esc 解除</div>
 </div>
 
+<!-- 效能計的疊層。z-index 要在調參面板之上，不然開著面板量不到東西 -->
+<div id="perf" hidden></div>
 <button id="fsbtn">⛶ 全螢幕</button>
 <button id="devtoggle">T · 調參</button>
 <div id="dev">
@@ -1325,6 +1359,13 @@
        「我現在憑空多一把 $5000 的槍」不是同一件事，不該長得一樣。
        存在的理由：要測長槍打店員的手感，正規路徑是存 $5000 再走到
        辦公室開門，每測一次調整都要重跑那一整段。 -->
+  <!-- 效能計。整個專案到現在一次都沒量過 FPS —— 而目標平台是手機。
+       「我覺得還順」不是數據，尤其量它的人用的是桌機。 -->
+  <h4 data-sec="k-perf">效能</h4>
+  <div id="k-perf" class="cheats">
+    <button id="perf-on">開啟效能計</button>
+    <button id="perf-copy">複製效能數據</button>
+  </div>
   <h4 data-sec="k-cheat">作弊（測試用）</h4>
   <div id="k-cheat" class="cheats">
     <button id="cheat-rifle">給我長槍（滿彈）</button>
@@ -1365,7 +1406,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v14.35';
+var BUILD='v14.37';
 
 /* ================================================================
    目錄與凍結狀態
@@ -2310,7 +2351,20 @@ var scene=new THREE.Scene();
 scene.background=new THREE.Color(PAL.bg);
 scene.fog=new THREE.FogExp2(PAL.fog,0.019);
 
-var camera=new THREE.PerspectiveCamera(74,1,0.08,140);
+/* near 從 0.08 拉到 0.12。
+
+   深度緩衝的精度跟 near 成正比 —— 把 near 放大 1.5 倍，整個場景
+   每一個距離上的深度解析度都跟著變成 1.5 倍。這是對付 z-fighting
+   最便宜的一招：不用動任何一塊幾何，全場一起受益。
+   （對照組：把兩個面拉開 1 公分只治得了那一對。）
+
+   為什麼是 0.12 不是更大：手上那把長槍的槍托後緣，在後座到底的
+   那一瞬間離相機平面只有 0.19m（見 buildView 裡 R.position.z = −0.72）。
+   near 再往上拉就會把槍托削掉一角 —— 而那一瞬間正好是你剛開完槍、
+   眼睛一定在看那把槍的時候。0.12 留了 0.07 的餘裕。
+
+   先量槍再定 near，不是先定 near 再去救槍。 */
+var camera=new THREE.PerspectiveCamera(74,1,0.12,140);
 camera.position.set(SPAWN.x,1.65,SPAWN.z);
 scene.add(camera);
 
@@ -7118,15 +7172,19 @@ function buildView(){
   var rBat=part(0x5CF08A,[0.065,0.065,0.16],[0,0.05,0.02],0.95);// 電池
   var rMuz=part(0x5CF08A,[0.05,0.05,0.09],[0,0,-0.66],0.95);    // 槍口
   R.add(rBat); R.add(rMuz);
-  /* z −0.60 而不是 −0.52：相機近平面是 0.08，而槍托後緣在本地 +0.41。
-     擺在 −0.52 的話，後座到底時槍托會越過相機平面（−0.52+0.13+0.41 > 0）。
-     它在畫面外切掉所以看不出來，但那是「剛好看不出來」。 */
   /* 位置與縮放是在真的遊戲畫面裡量出來的，不是在空場景裡挑的。
      第一版 (0.25,−0.22) 在 16:9 下，發光的電池從畫面中心一路長到右邊 ——
      也就是說它壓在準心底下，而那正是你要看東西的地方。
      往右下推到 0.42 / −0.32（距中心約 52% / 71%），再整體縮到 0.8，
      那把槍就退回右下角，中間那條視線空出來了。 */
-  R.position.set(0.44,-0.34,-0.62); R.rotation.set(0.04,0.05,0.03);
+  /* z 往前推到 −0.72（原本 −0.62），是為了讓 near 能拉到 0.12。
+
+     算式：槍托後緣在本地 +0.41，乘上 0.95 的縮放是 +0.39；
+     後座到底時整個 group 再往後 0.13（group 自己的 position 不吃縮放，
+     只有子物件吃），再算進 −0.34 弧度的抬頭，後緣會跑到 +0.391。
+     所以最近點 = 0.72 − 0.13 − 0.391 = 0.199（原本 0.10，會被 near 切到）。
+     往前 10 公分在畫面上幾乎看不出來，換到的是全場 1.5 倍的深度精度。 */
+  R.position.set(0.44,-0.34,-0.72); R.rotation.set(0.04,0.05,0.03);
   R.scale.setScalar(0.95);
   // --- 左手：電擊槍。小一號、青色，跟長槍一眼分得出來
   var T=new THREE.Group();
@@ -7143,6 +7201,7 @@ function buildView(){
      原本兩把都是 0.80，差別只剩顏色 —— 而顏色在停電那幾秒是最不可靠的
      那一種訊號（整個畫面都在閃紅光）。大小是剪影，剪影在什麼光線下都成立。
      電擊槍再往左往上一點，兩把之間的畫面空出來。 */
+  // 電擊槍後座到底時最近點 0.229，離 near 0.12 還有 0.11，不用動
   T.position.set(-0.46,-0.30,-0.38); T.rotation.set(0.06,-0.07,-0.04);
   T.scale.setScalar(0.58);
   camera.add(R); camera.add(T);
@@ -8660,6 +8719,69 @@ $('btn-copy').addEventListener('click',copyData);
 $('btn-brag').addEventListener('click',copyBrag);
 $('dev-copy').addEventListener('click',copyData);
 
+/* ---------- 效能計 ----------
+   要量的是「最差的那幾幀」，不是平均。平均 60fps 但每兩秒掉到 20
+   的遊戲，玩起來比穩定 40fps 糟得多，而平均值會把那件事藏起來。
+   所以這裡記的是 p50 / p95 / 最差，以及一個滾動的最差值。
+
+   draw call 與三角形數直接問 renderer.info —— 那是 three.js 自己算的，
+   不是估的。geometries / textures 是「現在活在 GPU 記憶體裡的數量」，
+   它只會漲不會跌的話就是有東西沒被 dispose。 */
+var PERF={on:false, t:[], last:0, worst:0, frames:0, acc:0, snap:null};
+function perfToggle(){
+  PERF.on=!PERF.on;
+  PERF.t=[]; PERF.worst=0; PERF.frames=0; PERF.acc=0; PERF.last=0;
+  $('perf').hidden=!PERF.on;
+  $('perf-on').textContent=PERF.on?'關閉效能計':'開啟效能計';
+  toast(PERF.on?'效能計開了 · 玩一局再按「複製效能數據」':'效能計關了');
+}
+function perfStep(now){
+  if(!PERF.on)return;
+  if(PERF.last){
+    var ms=now-PERF.last;
+    /* 第一幀與分頁切回來那一幀會是幾百毫秒，那不是效能問題，是沒在跑。
+       超過 250ms 一律丟掉，不然 p95 會被這種假資料綁架。 */
+    if(ms<250){
+      PERF.t.push(ms); PERF.acc+=ms; PERF.frames++;
+      if(ms>PERF.worst)PERF.worst=ms;
+      if(PERF.t.length>600)PERF.t.shift();     // 大約最近十秒
+    }
+  }
+  PERF.last=now;
+  if(PERF.frames%15)return;                     // 每 15 幀才動一次 DOM
+  var a=PERF.t.slice().sort(function(x,y){return x-y;});
+  if(!a.length)return;
+  function q(p){ return a[Math.min(a.length-1,Math.floor(a.length*p))]; }
+  var info=renderer.info, mem=info.memory, rnd=info.render;
+  var p50=q(0.5), p95=q(0.95);
+  var heap=(performance.memory&&performance.memory.usedJSHeapSize)
+    ? (performance.memory.usedJSHeapSize/1048576).toFixed(0)+' MB' : '—';
+  PERF.snap={build:BUILD, fps50:+(1000/p50).toFixed(1), ms50:+p50.toFixed(1),
+    ms95:+p95.toFixed(1), msWorst:+PERF.worst.toFixed(1), samples:a.length,
+    calls:rnd.calls, tris:rnd.triangles, geometries:mem.geometries,
+    textures:mem.textures, programs:info.programs?info.programs.length:-1,
+    heap:heap, dpr:renderer.getPixelRatio(),
+    size:renderer.domElement.width+'x'+renderer.domElement.height,
+    touch:IS_TOUCH, shift:G.shift, clerks:CLERKS.length, items:itemMeshes.length};
+  var s=PERF.snap;
+  $('perf').innerHTML=
+    '<b>'+s.fps50+' fps</b>  中位 '+s.ms50+'ms  p95 '+
+      (p95>33?'<span class="bad">':'<span>')+s.ms95+'ms</span>  最差 '+
+      (PERF.worst>50?'<span class="bad">':'<span>')+s.msWorst+'ms</span>\n'+
+    'draw '+s.calls+'  三角 '+(s.tris/1000).toFixed(1)+'k  '+
+      'geo '+s.geometries+'  tex '+s.textures+'  shader '+s.programs+'\n'+
+    'heap '+s.heap+'  dpr '+s.dpr+'  '+s.size+'  物件 '+s.items;
+}
+$('perf-on').addEventListener('click',perfToggle);
+$('perf-copy').addEventListener('click',function(){
+  if(!PERF.snap){ toast('還沒有數據 · 先開效能計玩一下'); return; }
+  var t=JSON.stringify(PERF.snap,null,2);
+  if(navigator.clipboard&&navigator.clipboard.writeText)
+    navigator.clipboard.writeText(t).then(function(){toast('效能數據已複製');},
+      function(){console.log(t);toast('已輸出到 console');});
+  else { console.log(t); toast('已輸出到 console'); }
+});
+
 /* ---------- 作弊鈕 ----------
    全部走跟正規取得完全一樣的那幾個欄位（G.hasRifle / G.rifleAmmo /
    G.tzParts / G.tzAmmo），然後呼叫 syncItemButtons + updateHUD。
@@ -9031,6 +9153,11 @@ function frame(now){
     beacons[bi2].material.opacity=0.10+Math.sin(t*1.5+bi2*2.1)*0.045;
   // 批次模擬時不畫 —— 畫一幀的成本是整個模擬的大宗，而且沒人在看
   if(!(SIM.on&&SIM.skipDraw))renderer.render(scene,camera);
+  /* 效能取樣擺在 render 之後：renderer.info.render 是這一幀畫完才有值的，
+     擺在前面量到的是上一幀。而且這樣量到的 frame 間距涵蓋了整幀的成本，
+     包含繪製本身 —— 那正是要看的東西。
+     批次模擬時不取樣：那不是在玩，數字沒有意義還會污染 p95。 */
+  if(!SIM.on)perfStep(now);
 }
 
 /* ============================================================
