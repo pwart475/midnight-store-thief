@@ -1365,7 +1365,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v14.32';
+var BUILD='v14.35';
 
 /* ================================================================
    目錄與凍結狀態
@@ -2052,8 +2052,19 @@ box(-20.4,-21.8,-19.6,-1.6,3.2); box(-20.4,1.6,-19.6,16.4,3.2);
 box(19.6,-21.8,20.4,16.4,3.2);
 // 後場隔牆（兩個門口：冷凍室 x-15.5~-12.5，倉庫 x8~11）
 box(-19.6,-10.4,-15.5,-9.6,3.2); box(-12.5,-10.4,8,-9.6,3.2); box(11,-10.4,19.6,-9.6,3.2);
-// 冷凍室 / 倉庫分隔（跟著北牆一起拉長）
-box(-6.4,-21.0,-5.6,-9.6,3.2);
+/* 冷凍室 / 倉庫分隔（跟著北牆一起拉長）。
+
+   南端停在 −10.4，不是 −9.6。
+
+   原本寫 −9.6 的話，這道隔牆會整個穿過上面那道後場隔牆
+   （它佔 z −10.4~−9.6），然後兩塊的南面**落在同一個平面 z = −9.6**，
+   法線也同向。兩個共面的面 = z-fighting，而且是零距離的那種：
+   任何顯示卡、任何距離都會閃。兩塊用的雖然都是 MAT.wall，
+   但 UV 縮放差了 25 倍，所以貼圖對不起來，看起來是一條會抖的直條。
+
+   而那個位置是全店最常被看的一面牆 —— 出生點正對著它，
+   整條中央走道也指著它。玩家回報「某個角度牆壁一直閃」就是這個。 */
+box(-6.4,-21.0,-5.6,-10.4,3.2);
 // 貨架區不在這裡蓋 —— 它每次下手都重組（見 LAYOUTS）
 var XS=[-14,-8.4,-2.8,2.8,8.4,14], SEGS=[[-6.6,-1.2],[1.2,7.2]];
 // 收銀櫃檯（中央留入口通道）
@@ -2108,8 +2119,14 @@ box(15.0,-20.6,18.4,-19.8,1.8,'shelf');
 /* 走廊：從賣場西牆往西 12m，寬 3.2m。
    走廊本身是一條沒有掩體的直線 —— 中間被看到就只能一路衝到底，
    所以「要不要去辦公室」這個決定的代價有一半在這條路上。 */
-box(-32.2,-2.4,-19.6,-1.6,3.2);             // 走廊南牆
-box(-32.2, 1.6,-19.6, 2.4,3.2);             // 走廊北牆
+/* 東端收在 −20.4 不是 −19.6 —— 也就是跟西牆**背靠背**，不是插進去。
+
+   插進去的話，走廊牆的東端面會剛好落在西牆缺口的那兩個邊
+   （z = −1.6 與 z = +1.6）上，兩塊共面、法線同向，整根門框
+   從地板到天花板都在閃。而那兩條邊只有從斜角看得到 ——
+   「只有某個角度會閃」就是這種成對共面的典型症狀。 */
+box(-32.2,-2.4,-20.4,-1.6,3.2);             // 走廊南牆
+box(-32.2, 1.6,-20.4, 2.4,3.2);             // 走廊北牆
 
 /* 辦公室：走廊盡頭，x -39.6~-33.0, z -4.4~4.4。
    放在店的最西邊而不是角落，是為了讓它跟後場（北側）與出口（南側）
@@ -2486,8 +2503,12 @@ var MAT={
    漏掉的話後場裡段會是一片虛空，玩家會直接看穿到場景外面。 */
 var floor=new THREE.Mesh(floorSeg(40,39),MAT.floor);
 floor.rotation.x=-Math.PI/2; floor.position.set(0,0,-3.3); scene.add(floor);
+/* 冷凍室地板整片鋪在主地板上面（主地板沒有被挖掉），
+   所以這 142 平方公尺全部是兩層。0.02 在 16-bit 深度下
+   大約 10 公尺就開始閃，而從賣場穿過冷凍室門口看進去正好是 12~25 公尺。
+   抬到 0.05。 */
 var coldFloor=new THREE.Mesh(floorSeg(13.2,10.8),MAT.cold);
-coldFloor.rotation.x=-Math.PI/2; coldFloor.position.set(-13,0.02,-15.6); scene.add(coldFloor);
+coldFloor.rotation.x=-Math.PI/2; coldFloor.position.set(-13,0.05,-15.6); scene.add(coldFloor);
 /* GridHelper 拿掉了 —— 它本來是拿線框假裝磁磚縫，現在地板貼圖自己有縫。
    兩個疊在一起會出現雙重格線，而且它的格距（2m）跟磁磚（1.8m）對不上。 */
 /* 西翼（走廊＋辦公室）自己鋪地板，不要把主地板整個拉寬 ——
@@ -2495,12 +2516,21 @@ coldFloor.rotation.x=-Math.PI/2; coldFloor.position.set(-13,0.02,-15.6); scene.a
    飄在建築外面的地。 */
 /* 13.4 寬而不是 12.8：要一路蓋到辦公室東牆（x=-33.0），
    短了的話門口會留一條 0.1m 的縫，門打開的瞬間就看得到底下的虛空。
-   y 抬到 0.005 是為了不跟主地板共面 —— 兩塊 y=0 的地板重疊在門口
-   會 z-fighting，出現一條閃爍的條紋。 */
+
+   y 的間距從 0.005 加到 0.04。原本那行註解寫的目的是對的
+   （不要跟主地板共面），但 5 公釐遠遠不夠：
+
+   深度緩衝的精度跟距離平方成反比。16-bit 深度（不少手機與
+   ANGLE 後端會退到這個）在 10 公尺外的最小可分辨間距大約是 19 公釐
+   —— 比 5 公釐大四倍。而地板永遠是以極小的掠角被看到，那是
+   深度精度最差的情況。所以那條「閃爍的條紋」其實一直都在，
+   只是在桌機 24-bit 上看不出來。
+
+   0.04 在 10 公尺是安全的；再大就會變成看得到的台階。 */
 var corrFloor=new THREE.Mesh(floorSeg(13.4,4.0),floorMat(WOOD_C,13.4,4.0,1.1,WOOD_M,0x58412c));
-corrFloor.rotation.x=-Math.PI/2; corrFloor.position.set(-26.3,0.005,0); scene.add(corrFloor);
+corrFloor.rotation.x=-Math.PI/2; corrFloor.position.set(-26.3,0.04,0); scene.add(corrFloor);
 var offFloor=new THREE.Mesh(floorSeg(7.6,10.0),floorMat(COLD_C,7.6,10.0,1.5));
-offFloor.rotation.x=-Math.PI/2; offFloor.position.set(-36.3,0.01,0); scene.add(offFloor);
+offFloor.rotation.x=-Math.PI/2; offFloor.position.set(-36.3,0.08,0); scene.add(offFloor);
 
 /* ---------- 天花板 ----------
    牆高 3.2、燈管在 3.15，所以 3.21 剛好蓋在牆頂上方一公分：
@@ -2515,7 +2545,20 @@ function ceilMat(w,d){
   var t=mkTex(CEIL_C); t.repeat.set(w/2.4,d/2.4);
   return new THREE.MeshLambertMaterial({map:t});
 }
-[[40,39,0,-3.3],[13.4,4.0,-26.3,0],[7.6,10.0,-36.3,0]].forEach(function(c){
+/* 三塊天花板彼此不能重疊 —— 它們全在同一個 y（3.21）。
+
+   原本賣場那塊是 x −20~20、走廊那塊 x −33~−19.6，在 x −20~−19.6
+   這條 0.4m 的帶子上兩塊疊在一起，同高、同材質、不同 UV 縮放。
+   三塊的交界要**剛好對齊**，不能重疊也不能留縫：
+     賣場  x −20.0 ~ 20.0（寬 40、中心 0）
+     走廊  x −33.0 ~ −20.0（寬 13.0、中心 −26.5）
+     辦公室 x −40.1 ~ −33.0（寬 7.1、中心 −36.55）
+
+   我第一次改的時候把走廊退到 −20.4、辦公室退到 −32.8 ——
+   結果是門口正上方開了一個 0.4m 的洞（那段沒有牆可以擋），
+   同時辦公室又蓋過走廊 0.2m，等於把原本的共面問題搬了個位置。
+   牆的厚度是 0.8，但天花板要對齊的是**房間的淨空**，不是牆的外緣。 */
+[[40,39,0,-3.3],[13.0,4.0,-26.5,0],[7.1,10.0,-36.55,0]].forEach(function(c){
   var m=new THREE.Mesh(new THREE.PlaneGeometry(c[0],c[1]),ceilMat(c[0],c[1]));
   m.rotation.x=Math.PI/2;           // 面朝下
   m.position.set(c[2],CEIL_Y,c[3]);
@@ -2642,7 +2685,17 @@ TUBES.forEach(function(p){
   var pl=new THREE.Mesh(new THREE.PlaneGeometry(5.6,9.0),
     new THREE.MeshBasicMaterial({map:HALO,color:PAL.pool,transparent:true,
       blending:THREE.AdditiveBlending,depthWrite:false,opacity:0}));
-  pl.rotation.x=-Math.PI/2; pl.position.set(p[0],0.035,p[1]);
+  /* y 要高過**所有**地板，不是只高過主地板。
+     冷凍室 0.05、走廊 0.04、辦公室 0.08 都是鋪在主地板上面的 ——
+     這片亮斑原本在 0.035，等於埋在那三塊底下。它是 depthWrite:false
+     但深度測試還在，所以不是穿出來，是整片被擋掉：那三個房間的
+     地面反光會直接消失，而且不會報任何錯。 */
+  /* 0.14：要高過所有地板（最高的是辦公室 0.08），**也**要高過所有
+     地面標記（員工通道的綠墊 0.11、冷凍室門口的光斑 0.10）。
+     它是加色、不寫深度，所以疊在標記上面只是把那塊照亮，不會蓋掉它 ——
+     但貼太近（0.01）的話深度測試會逐像素失敗，亮斑變成一塊一塊的。
+     排序原則：地板 → 地面標記 → 燈光反射，由下而上。 */
+  pl.rotation.x=-Math.PI/2; pl.position.set(p[0],0.14,p[1]);
   scene.add(pl); tubePool.push(pl);
 });
 /* ---------- 日光燈的詭異閃爍 ----------
@@ -2697,7 +2750,9 @@ function stepLights(dt,t){
 // 出口門與標示
 var exitPad=new THREE.Mesh(new THREE.PlaneGeometry(7,1.7),
   new THREE.MeshBasicMaterial({color:0x2FA35A,transparent:true,opacity:.62}));
-exitPad.rotation.x=-Math.PI/2; exitPad.position.set(0,0.06,14.6); scene.add(exitPad);
+// 0.06 → 0.10：導引燈帶在 0.05，而最後一條（0,9.5→0,14.2）的末端
+// 會壓進這塊墊子 0.45m。兩者只差 0.01，就在每一局的終點線上
+exitPad.rotation.x=-Math.PI/2; exitPad.position.set(0,0.10,14.6); scene.add(exitPad);
 var signs=[exitPad];
 function makeSign(x,y,z,w,h){
   var s=new THREE.Mesh(new THREE.PlaneGeometry(w||1.8,h||0.5),MAT.signG.clone());
@@ -3170,7 +3225,9 @@ var frameTop=new THREE.Mesh(GEO.box,itemMat(0x7FE3F5,1.1));
 frameTop.scale.set(3.15,0.15,0.15); frameTop.position.set(-14,3.13,-10.0); scene.add(frameTop);
 var coldPatch=new THREE.Mesh(new THREE.PlaneGeometry(3.0,1.0),
   new THREE.MeshBasicMaterial({color:0x7FE3F5,transparent:true,opacity:.28}));
-coldPatch.rotation.x=-Math.PI/2; coldPatch.position.set(-14,0.05,-10.0); scene.add(coldPatch);
+// 0.05 → 0.10：冷凍室地板已經抬到 0.05，這片光斑有 0.3m 壓在它上面，
+// 兩者同高就是共面。而它正好躺在冷凍室門口，進門低頭就看得到
+coldPatch.rotation.x=-Math.PI/2; coldPatch.position.set(-14,0.10,-10.0); scene.add(coldPatch);
 
 var signStock=textPlane('倉庫',2.4,0.6,'#DCEBD8',80);
 signStock.position.set(9.5,2.78,-9.5); scene.add(signStock);
@@ -3435,7 +3492,8 @@ function buildDecor(){
      rotation.y = π —— PlaneGeometry 的法線是 +Z，而房間在這面牆的 −Z 側。
      y 壓到 1.68：隔牆只有 2.6m 高，而這張放大後是 1.32 × 1.76，
      半高 0.88 —— y 要 ≤ 1.72 頂端才不會凸出牆外。 */
-  addPoster(-16.0,1.68,-17.42, Math.PI, 1.1, 0);   // 冷凍室裡間 · 內隔牆北面 · 店長
+  // z −17.42 → −17.47：離牆面 0.02 太近了（註解自己也寫了），拉到 0.07
+  addPoster(-16.0,1.68,-17.47, Math.PI, 1.1, 0);   // 冷凍室裡間 · 內隔牆北面 · 店長
   /* 鏡子：賣場一面、後場一面。後場那面才是真正會嚇到人的那一面。
      後場這面的 z 要避開冷凍室的內隔間（z −17.4…−16.6，而且高 2.6m）——
      擺在 −16.5 的話鏡框有四成會埋進那道牆裡。 */
@@ -4459,7 +4517,8 @@ backDoor.position.set(-14.6,0,-20.94);
 scene.add(backDoor);
 var backPad=new THREE.Mesh(new THREE.PlaneGeometry(3.0,1.2),
   new THREE.MeshBasicMaterial({color:0x2FA35A,transparent:true,opacity:.62}));
-backPad.rotation.x=-Math.PI/2; backPad.position.set(-14.6,0.06,-20.4);
+// 0.06 → 0.11：它整片躺在冷凍室地板（已抬到 0.05）上面，只差 0.01
+backPad.rotation.x=-Math.PI/2; backPad.position.set(-14.6,0.11,-20.4);
 scene.add(backPad);
 var backSign=textPlane('員工通道',2.0,0.5,'#5CF08A',72,'rgba(6,22,12,.96)');
 backSign.position.set(-14.6,2.72,-20.86); scene.add(backSign);
