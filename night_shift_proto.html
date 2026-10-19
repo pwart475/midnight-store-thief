@@ -1365,7 +1365,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v14.30';
+var BUILD='v14.32';
 
 /* ================================================================
    目錄與凍結狀態
@@ -3676,6 +3676,7 @@ buildDecor();
 function newClerkAI(){
   return {state:'DORMANT',path:[],timer:0,lastSeen:null,stuck:0,
           stepT:0,searchT:0,chaseT:0,calm:0,stunT:0,aware:0,stagger:0,
+          detour:0,
           hideT:0,noiseAt:null,pathFail:0,pathFailAt:null};
 }
 function makeClerk(){
@@ -6402,6 +6403,7 @@ function clerkHome(c){
 function giveUpChase(c,msg){
   var a=c.ai;
   a.state='RETURN'; a.chaseT=0; a.calm=CFG.calmTime; a.path=[]; a.hideT=0;
+  a.detour=0;          // 放棄追擊就不需要繞路了，留著會干擾 RETURN 的走法
   // 「離玩家最遠」幾乎永遠是辦公室最裡面那一格 —— 過濾掉，否則每次放棄
   // 追逐都會派他去撞一扇鎖著的門，然後在走廊口站到下一次事件
   /* 我一度改成「同時遠離玩家與出口」，理由是「他放棄後會跑去站在
@@ -6697,10 +6699,24 @@ function clerkFSM(c,dt){
      現在他是在快步搜店，追逐速度不受影響（那本來就已經比你快）。 */
   if(r.danger&&a.state!=='CHASE')speed*=CFG.alarmPatrolMul;
 
-  // 移動：追逐且視線通暢 → 直接衝；否則沿 waypoint 路徑
+  /* 移動：追逐且視線通暢 → 直接衝；否則沿 waypoint 路徑。
+
+     但「直接衝」有一個洞，而且就是玩家回報的卡點：
+     看得到你不代表走得到你。你站在貨架轉角的另一側，他就會一直把
+     自己往那個角推 —— resolve 每一幀把他推回來，位移幾乎是 0，
+     而下一幀他又朝同一個方向推。他會在那裡磨到你走開為止。
+
+     卡住偵測（下面那段）本來就會清路徑並重新尋路 —— 但在這個狀態下
+     那段程式碼完全沒有作用，因為只要 sees 還是 true，這裡就會再次
+     覆蓋成直線目標。偵測到了、也重排了路，然後被下一行蓋掉。
+
+     detour 就是那個缺的開關：卡住的時候打開它，接下來這幾秒
+     即使看得到你也走 waypoint —— 也就是繞過那個角。 */
   var tx,tz;
-  if(a.state==='CHASE'&&sees){ tx=px; tz=pz; }
+  if(a.detour>0)a.detour-=dt;
+  if(a.state==='CHASE'&&sees&&a.detour<=0){ tx=px; tz=pz; }
   else if(a.path.length){ tx=a.path[0].x; tz=a.path[0].z; }
+  else if(a.state==='CHASE'&&sees){ tx=px; tz=pz; }   // 繞路排不出來就還是直衝
   else { return; }
 
   // 重傷加速：血剩三分之一之後整個人變快，不管在什麼狀態
@@ -6716,10 +6732,25 @@ function clerkFSM(c,dt){
     var want=Math.atan2(-dx,-dz);
     var diff=((want-c.rotation.y+Math.PI*3)%(Math.PI*2))-Math.PI;
     c.rotation.y+=diff*Math.min(1,dt*7);
-    // 卡住偵測
+    /* 卡住偵測。門檻從 1.2 秒降到 0.45 ——
+       1.2 秒對「追逐中磨在角落」來說太久了：那是玩家眼前
+       一個人在原地抖一秒多，看起來就是壞掉。
+       巡邏時卡住無所謂，但追逐時那一秒是你逃走的一秒。 */
+    var stuckMax=(a.state==='CHASE')?0.45:1.2;
     a.stuck = moved<speed*dt*0.25 ? a.stuck+dt : 0;
-    if(a.stuck>1.2){ a.path=[]; a.stuck=0;
-      if(a.state==='CHASE'&&a.lastSeen)setPathTo(c,a.lastSeen.x,a.lastSeen.z); }
+    if(a.stuck>stuckMax){
+      a.stuck=0; a.path=[];
+      if(a.state==='CHASE'){
+        /* 繞路：目標是玩家現在的位置，不是 lastSeen ——
+           看得到你的時候 lastSeen 每一幀都在更新，兩者幾乎一樣；
+           但看不到的時候 lastSeen 才是唯一有意義的線索。
+           排得出路才開 detour，排不出來就讓它繼續直衝（至少會沿牆滑），
+           不然他會站在原地等一個永遠不會來的路徑。 */
+        var ok=setPathTo(c,px,pz);
+        if(!ok&&a.lastSeen)ok=setPathTo(c,a.lastSeen.x,a.lastSeen.z);
+        if(ok)a.detour=2.2;
+      }
+    }
     /* 腳步聲：音量與方向都交給 panner，這裡只決定「聽不聽得到」。
        牆或高貨架擋住就不發聲（7m 內例外 —— 太近了還是會透過來），
        這個遮蔽判定跟視線用的是同一個 blocked()，所以聽覺和視覺的規則一致。 */
@@ -7208,10 +7239,18 @@ var rifleCdT=0;
 function fireRifle(){
   var r=G.run; if(!r||G.phase!=='play')return;
   // 按了就換手，不管這一下有沒有真的打出去（沒槍／沒彈的理由要看得見）
-  if(G.hasRifle){ viewSel='rifle'; syncItemButtons(); }
-  if(!G.hasRifle){ toast('你沒有長槍 · 辦公室牆上那把要 $'+CFG.rifleCost); return; }
-  if(rifleCdT>0)return;                 // 充能中，連點沒有用
-  if(G.rifleAmmo<=0){ toast('長槍空了 · 沒有補給'); return; }
+  if(G.hasRifle){ viewSel='rifle'; syncItemButtons(); updateHUD(); }
+  if(!G.hasRifle){ SFX.deny(); toast('你沒有長槍 · 辦公室牆上那把要 $'+CFG.rifleCost); return; }
+  /* 充能中。原本是直接 return —— 沒有聲音、沒有字、什麼都沒有。
+     那是整支程式裡最容易被誤判成「按鈕壞了」的一行：
+     你按了，畫面一點反應都沒有，而「沒反應」跟「沒接到」長得一模一樣。
+     現在至少有一聲，而且講出剩多久。 */
+  if(rifleCdT>0){
+    SFX.deny();
+    toast('充能中 · '+rifleCdT.toFixed(1)+' 秒');
+    return;
+  }
+  if(G.rifleAmmo<=0){ SFX.deny(); toast('長槍空了 · 沒有補給'); return; }
   /* 一秒的射擊間隔。
      沒有 CD 的話三發可以在半秒內倒出去，「要三槍」這個設計就不存在了 ——
      那只是把一發拆成三發播同一個動畫。有了 CD，第二槍與第三槍之間
@@ -7267,7 +7306,7 @@ function fireRifle(){
 function useTaser(){
   var r=G.run; if(!r||G.phase!=='play')return;
   // 按了就換手。組好了才換 —— 還沒組好的話手上沒有那個東西
-  if(tzReady()){ viewSel='taser'; syncItemButtons(); }
+  if(tzReady()){ viewSel='taser'; syncItemButtons(); updateHUD(); }
   if(!tzReady()){
     toast('電擊槍還沒組好 · '+tzHave()+'/'+TZ_PARTS.length+' 件');
     return;
@@ -7839,14 +7878,24 @@ function updateHUD(){
      沒有按鈕的（部件進度、掙脫、鑰匙、密碼、紫光、整袋加成）才留下來。
      桌機沒有這些按鈕，所以照舊全列。 */
   var noBtn=!IS_TOUCH;
+  /* 手上那一把要標出來。
+
+     自從「同時只拿一把」之後，桌機上完全沒有東西在講你現在拿的是哪一把 ——
+     手機有那顆開火鍵（顏色跟著換），桌機什麼都沒有。
+     而左鍵打的是「手上那一把」，所以「我按了左鍵長槍卻沒反應」的
+     真正原因常常是：手上是電擊槍。這一行就是在回答那個問題。 */
+  var inHand=viewWant();
   if(G.hasRifle&&noBtn)
     it+='<div class="'+(G.rifleAmmo>0&&rifleCdT<=0?'ready':'empty')+'" '+
-        'style="border-color:#5CF08A;color:#5CF08A">'+
-        K('G','雷')+' 長槍 '+G.rifleAmmo+' 發'+
-        (rifleCdT>0?' · 充能':'')+'</div>';
+        'style="border-color:#5CF08A;color:#5CF08A'+
+        (inHand==='rifle'?';box-shadow:0 0 0 2px rgba(92,240,138,.45) inset':'')+'">'+
+        (inHand==='rifle'?'▸ ':'')+K('G','雷')+' 長槍 '+G.rifleAmmo+' 發'+
+        (rifleCdT>0?' · 充能':'')+(inHand==='rifle'?' · 左鍵發射':'')+'</div>';
   if(tzReady()){
-    if(noBtn)it+='<div class="'+(G.tzAmmo>0?'ready':'empty')+'">'+
-        K('Q','電')+' 電擊 '+G.tzAmmo+' 發</div>';
+    if(noBtn)it+='<div class="'+(G.tzAmmo>0?'ready':'empty')+'"'+
+        (inHand==='taser'?' style="box-shadow:0 0 0 2px rgba(155,232,255,.45) inset"':'')+'>'+
+        (inHand==='taser'?'▸ ':'')+K('Q','電')+' 電擊 '+G.tzAmmo+' 發'+
+        (inHand==='taser'?' · 左鍵發射':'')+'</div>';
   }
   /* 「還在收集中」這一行兩邊都要留：按鈕上只有 1/3 這個數字，
      沒講缺哪幾件，而那是玩家下一局的目標。 */
