@@ -812,7 +812,12 @@
   /* 效能疊層。z-index 31 = 在調參面板（30）之上，在密碼鍵盤（24）之上 ——
      量效能的時候常常要一邊開著面板調參數一邊看數字。
      pointer-events:none：它只負責顯示，絕對不能擋到任何操作。 */
-  #perf{position:fixed;left:50%;top:6px;transform:translateX(-50%);z-index:31;
+  /* 靠左上，不是置中。
+     置中會疊到目標列（#objective 也是 top 置中），而且因為 z-index 31
+     在選單層之上，連收據畫面的抬頭都蓋掉 —— 實跑的時候就撞到了。
+     左上角在桌機是空的；手機上會壓到提袋面板，但這是手動開的除錯工具，
+     不是常駐 HUD，看完關掉就好。 */
+  #perf{position:fixed;left:8px;top:6px;z-index:31;
     pointer-events:none;font-family:var(--f-mono);font-size:11px;line-height:1.5;
     color:#9BE8FF;background:rgba(4,8,10,.82);border:1px solid rgba(155,232,255,.35);
     padding:6px 10px;white-space:pre;text-align:left}
@@ -1443,7 +1448,7 @@
 "use strict";
 // 版本號只寫在這裡一個地方，標題頁自己去讀 —— 之前寫死在 HTML，
 // 結果從 v1.7 之後一路都沒更新，畫面上顯示的版本是假的。
-var BUILD='v14.41';
+var BUILD='v14.43';
 
 /* ================================================================
    目錄與凍結狀態
@@ -2583,6 +2588,8 @@ var MAT={
   common:new THREE.MeshLambertMaterial({color:0x8C8A72}),
   rare :new THREE.MeshStandardMaterial({color:0x6B5A1E,emissive:0xFFC93C,emissiveIntensity:0.55,roughness:.6,metalness:.1}),
   forbid:new THREE.MeshStandardMaterial({color:0x3A1E52,emissive:0xC77DFF,emissiveIntensity:0.85,roughness:.5,metalness:.1}),
+  // 燈管改走 InstancedMesh + instanceColor 之後這個就沒人用了。
+  // 留著是因為「燈管是什麼材質」這件事在這張表上找得到比較好查。
   tube :new THREE.MeshBasicMaterial({color:PAL.tubeOn}),
   signG:new THREE.MeshBasicMaterial({color:0x4ADE80,side:THREE.DoubleSide}),
   clerk:new THREE.MeshLambertMaterial({color:0x35564E}),
@@ -2656,14 +2663,42 @@ function ceilMat(w,d){
   scene.add(m);
 });
 
-// 外殼（牆、櫃檯、冷凍室、倉庫）—— 建一次就好
+/* 外殼（牆、櫃檯、冷凍室、倉庫）—— 建一次就好。
+
+   37 個方塊，全部共用 boxGeo、只有 MAT.wall / MAT.shelf 兩種材質，
+   而且一輩子不會動 —— 跟貨架一樣丟進 InstancedMesh，37 → 2。
+
+   只有辦公室那扇門要留成真的 Mesh：它會切 .visible（開門之後整片消失），
+   而 instance 沒有「單獨隱藏」這回事。
+   37 → 2 個 instanced ＋ 1 扇門 = 省 34 次，一個特例換得很划算。 */
 var boxGeo=new THREE.BoxGeometry(1,1,1);
-COL_STATIC.forEach(function(c){
-  var m=new THREE.Mesh(boxGeo,c.kind==='shelf'?MAT.shelf:MAT.wall);
-  m.scale.set(c.x1-c.x0,c.h,c.z1-c.z0);
-  m.position.set((c.x0+c.x1)/2,c.h/2,(c.z0+c.z1)/2);
-  scene.add(m); c.mesh=m;
-});
+(function(){
+  var wallN=0,shelfN=0;
+  COL_STATIC.forEach(function(c){ if(c!==OFFICE_DOOR)(c.kind==='shelf'?shelfN++:wallN++); });
+  var wallIM =new THREE.InstancedMesh(boxGeo,MAT.wall ,Math.max(1,wallN));
+  var shelfSM=new THREE.InstancedMesh(boxGeo,MAT.shelf,Math.max(1,shelfN));
+  var wi=0,si=0, D=new THREE.Object3D();
+  COL_STATIC.forEach(function(c){
+    var sx=c.x1-c.x0, sy=c.h, sz=c.z1-c.z0;
+    var px=(c.x0+c.x1)/2, py=c.h/2, pz=(c.z0+c.z1)/2;
+    if(c===OFFICE_DOOR){                      // 唯一的特例，見上面
+      var m=new THREE.Mesh(boxGeo,MAT.wall);
+      m.scale.set(sx,sy,sz); m.position.set(px,py,pz);
+      scene.add(m); c.mesh=m; return;
+    }
+    D.position.set(px,py,pz); D.rotation.set(0,0,0); D.scale.set(sx,sy,sz);
+    D.updateMatrix();
+    if(c.kind==='shelf')shelfSM.setMatrixAt(si++,D.matrix);
+    else                 wallIM.setMatrixAt(wi++,D.matrix);
+  });
+  // frustumCulled 必須關 —— r128 的 InstancedMesh 用基礎幾何的包圍球算剔除，
+  // 那是原點上的 1m 方塊，鏡頭轉開整間店會憑空消失。
+  [[wallIM,wi],[shelfSM,si]].forEach(function(e){
+    if(!e[1])return;                          // 一個都沒有就別掛上去佔一次 draw
+    e[0].count=e[1]; e[0].frustumCulled=false;
+    e[0].instanceMatrix.needsUpdate=true; scene.add(e[0]);
+  });
+})();
 
 // 貨架區的網格與層板每次重建，統一掛在這個 Group 底下方便整批清除
 // 層板比貨架體再亮一階 —— 真正的超商層板是鍍鋅鐵，邊緣會反光
@@ -2672,13 +2707,52 @@ var shutterMat=new THREE.MeshLambertMaterial({color:0x6B5A32});
 var aisleGroup=new THREE.Group(); scene.add(aisleGroup);
 var layoutSpots=[], layoutName='A';
 
+/* ---------- 貨架用 InstancedMesh ----------
+   這裡原本是每個貨架體一個 Mesh、每片層板一個 Mesh，一局 60 個 draw call。
+   但它們全部共用同一個 boxGeo、只有兩種材質，差別只在 scale 跟 position ——
+   這正是 instancing 的教科書案例。60 → 2。
+
+   兩個細節非做不可：
+
+   一、**frustumCulled 一定要關掉**。r128 的 InstancedMesh 沒有
+       computeBoundingSphere（那是 r147 才加的），視錐剔除算的是
+       「基礎幾何的包圍球 × 物件的 matrixWorld」—— 而 matrixWorld 是單位矩陣，
+       所以它以為整批貨架是原點上的一個 1m 立方體。鏡頭轉開就整片消失。
+       這個 bug 不會報錯，只會「某些角度貨架全不見」。
+
+   二、**容量一次配好，之後只改 .count**。每局重建如果 dispose 再 new，
+       就等於把原本的物件洩漏換成 GPU buffer 洩漏。配一個夠大的上限
+       然後每局重設 count，一個位元組都不用重配。
+
+       上限怎麼來的：六種佈局實際排出來的最大值是 12 排
+       （A 12、B ≤12、C 8、D 18 排裡被 (i+j)%3 挖掉 6 排剩 12、E 7、F 4）。
+       取 32 是留 2.6 倍餘裕給之後新增的佈局 —— 不要照著 12 砍，
+       超過上限時 putInst 是「默默丟掉」，那會變成一排貨架憑空不見。 */
+var DUM=new THREE.Object3D();
+var SHELF_MAX=32, LEDGE_MAX=SHELF_MAX*4, SHUT_MAX=4;
+function mkInst(mat,n){
+  var im=new THREE.InstancedMesh(boxGeo,mat,n);
+  im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  im.count=0; im.frustumCulled=false; aisleGroup.add(im);
+  return im;
+}
+var shelfIM=mkInst(MAT.shelf,SHELF_MAX),
+    ledgeIM=mkInst(ledgeMat,LEDGE_MAX),
+    shutIM =mkInst(shutterMat,SHUT_MAX);
+// 把一個軸對齊方塊寫進第 n 個 instance。回傳 n+1，方便連著用。
+function putInst(im,n,sx,sy,sz,px,py,pz){
+  // 超出容量就默默丟掉，不要讓 setMatrixAt 去寫陣列外面（那會畫出垃圾矩陣）
+  if(n>=im.instanceMatrix.count)return n;
+  DUM.position.set(px,py,pz);
+  DUM.rotation.set(0,0,0);
+  DUM.scale.set(sx,sy,sz);
+  DUM.updateMatrix();
+  im.setMatrixAt(n,DUM.matrix);
+  return n+1;
+}
+
 function buildAisles(seed){
-  // 清掉上一次的貨架
-  while(aisleGroup.children.length){
-    var c=aisleGroup.children.pop();
-    if(c.geometry&&c.geometry!==boxGeo)c.geometry.dispose();
-    aisleGroup.remove(c);
-  }
+  var nShelf=0,nLedge=0,nShut=0;
   var rand=rng(seed*53+17);
   var li=Math.floor(rand()*LAYOUTS.length);
   layoutName='ABCDEF'[li];
@@ -2688,21 +2762,16 @@ function buildAisles(seed){
   COL=COL_STATIC.slice();                       // 碰撞清單從外殼重來
   o.shelves.forEach(function(s){
     COL.push({x0:s[0],z0:s[1],x1:s[2],z1:s[3],h:1.9,kind:'shelf'});
-    var m=new THREE.Mesh(boxGeo,MAT.shelf);
-    m.scale.set(s[2]-s[0],1.9,s[3]-s[1]);
-    m.position.set((s[0]+s[2])/2,0.95,(s[1]+s[3])/2);
-    aisleGroup.add(m);
+    var cx=(s[0]+s[2])/2, cz=(s[1]+s[3])/2;
+    nShelf=putInst(shelfIM,nShelf,s[2]-s[0],1.9,s[3]-s[1],cx,0.95,cz);
     // 兩側層板
     var vertical=(s[3]-s[1])>(s[2]-s[0]);
     var len=vertical?(s[3]-s[1]):(s[2]-s[0]);
-    var cx=(s[0]+s[2])/2, cz=(s[1]+s[3])/2;
     var halfW=vertical?(s[2]-s[0])/2:(s[3]-s[1])/2;
     [-1,1].forEach(function(sgn){
       [0.70,1.26].forEach(function(y){
-        var l=new THREE.Mesh(boxGeo,ledgeMat);
-        if(vertical){ l.scale.set(0.40,0.055,len); l.position.set(cx+sgn*(halfW+0.13),y,cz); }
-        else        { l.scale.set(len,0.055,0.40); l.position.set(cx,y,cz+sgn*(halfW+0.13)); }
-        aisleGroup.add(l);
+        if(vertical)nLedge=putInst(ledgeIM,nLedge,0.40,0.055,len,cx+sgn*(halfW+0.13),y,cz);
+        else        nLedge=putInst(ledgeIM,nLedge,len,0.055,0.40,cx,y,cz+sgn*(halfW+0.13));
       });
     });
   });
@@ -2712,19 +2781,22 @@ function buildAisles(seed){
   // 鐵捲門：隨機封掉 0~2 個橫向缺口，逃脫路線每次不一樣。
   // 只封貨架之間，西側走道與南側通道永遠通行，所以出口不會被鎖死。
   // 只有南北向長排的佈局才放鐵捲門，否則門會插進橫向貨架裡
-  var nShut=('ABF'.indexOf(layoutName)>=0)?Math.floor(rand()*3):0;
+  var wantShut=('ABF'.indexOf(layoutName)>=0)?Math.floor(rand()*3):0;
   var pool=SHUTTER_SPOTS.slice();
   for(var i=pool.length-1;i>0;i--){var j=Math.floor(rand()*(i+1));var t=pool[i];pool[i]=pool[j];pool[j]=t;}
-  for(var k=0;k<nShut;k++){
+  for(var k=0;k<wantShut;k++){
     var sp=pool[k]; if(!sp)break;
     var x0=Math.min(sp[0],sp[2])-0.55, x1=Math.max(sp[0],sp[2])+0.55;
     var z0=Math.min(sp[1],sp[3]), z1=Math.max(sp[1],sp[3]);
     COL.push({x0:x0,z0:z0,x1:x1,z1:z1,h:2.6,kind:'shutter'});
-    var sm=new THREE.Mesh(boxGeo,shutterMat);
-    sm.scale.set(x1-x0,2.6,z1-z0);
-    sm.position.set((x0+x1)/2,1.3,(z0+z1)/2);
-    aisleGroup.add(sm);
+    nShut=putInst(shutIM,nShut,x1-x0,2.6,z1-z0,(x0+x1)/2,1.3,(z0+z1)/2);
   }
+  /* 三批一起定案。count 要在 needsUpdate 之前設好 ——
+     沒用到的那些 instance 矩陣還留著上一局的值，只是 count 不讓它們畫。 */
+  shelfIM.count=nShelf; ledgeIM.count=nLedge; shutIM.count=nShut;
+  shelfIM.instanceMatrix.needsUpdate=true;
+  ledgeIM.instanceMatrix.needsUpdate=true;
+  shutIM.instanceMatrix.needsUpdate=true;
   buildWaypoints();
 }
 
@@ -2747,11 +2819,25 @@ function haloTex(){
 }
 var HALO=haloTex();
 
-var lamps=[],tubeMeshes=[],tubeGlow=[],tubePool=[];
+var lamps=[],tubeGlow=[],tubePool=[];
 var tubeGeo=new THREE.BoxGeometry(3.4,0.12,0.34);
-TUBES.forEach(function(p){
-  var t=new THREE.Mesh(tubeGeo,MAT.tube.clone());
-  t.position.set(p[0],3.15,p[1]); scene.add(t); tubeMeshes.push(t);
+/* 13 根燈管原本是 13 個 Mesh，各自 clone 一份材質好讓顏色能單獨閃。
+   InstancedMesh 的 instanceColor 正好就是為這件事存在的：
+   一個 draw call，13 個各自的顏色。13 → 1。
+
+   材質的 color 必須是純白 —— 最終顏色是 material.color × instanceColor，
+   留著 PAL.tubeOn 的話等於把燈色平方一次，整排會偏暗偏綠。 */
+var tubeIM=new THREE.InstancedMesh(tubeGeo,
+  new THREE.MeshBasicMaterial({color:0xFFFFFF}),TUBES.length);
+tubeIM.frustumCulled=false;
+var TUBE_COL=new THREE.Color();
+var tubeHex=[];                      // 現在每根是什麼顏色，省掉每幀重寫 buffer
+TUBES.forEach(function(p,ti){
+  DUM.position.set(p[0],3.15,p[1]);
+  DUM.rotation.set(0,0,0); DUM.scale.set(1,1,1); DUM.updateMatrix();
+  tubeIM.setMatrixAt(ti,DUM.matrix);
+  tubeIM.setColorAt(ti,TUBE_COL.setHex(PAL.tubeOn));
+  tubeHex.push(PAL.tubeOn);
   // 距離 21→13、衰減 1.4→1.8：光圈收小，燈與燈之間才會真的有暗帶
   var L=new THREE.PointLight(PAL.lamp,LIGHT.lamp,13,1.8);
   L.position.set(p[0],3.0,p[1]); scene.add(L); lamps.push(L);
@@ -2789,6 +2875,18 @@ TUBES.forEach(function(p){
   pl.rotation.x=-Math.PI/2; pl.position.set(p[0],0.14,p[1]);
   scene.add(pl); tubePool.push(pl);
 });
+tubeIM.instanceMatrix.needsUpdate=true;
+if(tubeIM.instanceColor)tubeIM.instanceColor.needsUpdate=true;
+scene.add(tubeIM);
+/* 換一根燈管的顏色。只有真的變了才碰 buffer ——
+   instanceColor.needsUpdate 會讓整條 39 浮點數的陣列重傳一次，
+   每幀無條件重傳 13 次就把省下來的 12 個 draw call 又還回去了。 */
+function setTubeColor(i,hex){
+  if(tubeHex[i]===hex)return;
+  tubeHex[i]=hex;
+  tubeIM.setColorAt(i,TUBE_COL.setHex(hex));
+  if(tubeIM.instanceColor)tubeIM.instanceColor.needsUpdate=true;
+}
 /* ---------- 日光燈的詭異閃爍 ----------
    每一支燈自己一個計時器、自己一個相位，所以不會整店一起眨眼
    （那看起來像遊戲在卡頓，不像燈管快壞了）。
@@ -2829,8 +2927,7 @@ function stepLights(dt,t){
     lamps[i].intensity=LIGHT.lamp*f.lvl;
     // 燈管本體要跟著暗，不然光滅了管子還亮著，一眼就穿幫
     var want=f.lvl<0.5?TUBE_OFF:TUBE_ON;
-    if(tubeMeshes[i]&&tubeMeshes[i].material.color.getHex()!==want)
-      tubeMeshes[i].material.color.setHex(want);
+    setTubeColor(i,want);
     /* 輝光與地面光池跟著同一個 f.lvl。
        不跟的話燈滅了暈還在，看起來像貼圖沒清掉。 */
     if(tubeGlow[i])tubeGlow[i].material.opacity=CFG.bloom*f.lvl;
@@ -3256,7 +3353,16 @@ function makeTag(val,tier){
 }
 
 /* ---------- 區域招牌與警告標示 ---------- */
-function textPlane(text,w,h,css,size,bg){
+/* 文字貼圖快取。
+
+   buildOffice 每一局都會重跑，裡面兩塊「辦公室」牌子每次都新烤一張
+   512×128 的 CanvasTexture，而舊的只被 scene.remove 掉、沒有 dispose ——
+   效能面板上 texture 從 67 一路漂到 75 就是這個。
+   牌子的內容每局都一模一樣，所以貼圖按文字＋樣式記住就好。 */
+var textTexCache={};
+function textTex(text,css,size,bg){
+  var k=text+'|'+css+'|'+(size||66)+'|'+(bg||'');
+  if(textTexCache[k])return textTexCache[k];
   var c=document.createElement('canvas'); c.width=512; c.height=128;
   var g=c.getContext('2d');
   g.fillStyle=bg||'rgba(12,16,12,.92)'; g.fillRect(0,0,512,128);
@@ -3268,10 +3374,12 @@ function textPlane(text,w,h,css,size,bg){
      寧可明確要 700，也不要讓它去合成。 */
   g.font='700 '+(size||66)+'px "Noto Sans TC","Microsoft JhengHei",sans-serif';
   g.textAlign='center'; g.textBaseline='middle'; g.fillText(text,256,68);
-  var m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),
-    new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(c),
+  return (textTexCache[k]=new THREE.CanvasTexture(c));
+}
+function textPlane(text,w,h,css,size,bg){
+  return new THREE.Mesh(new THREE.PlaneGeometry(w,h),
+    new THREE.MeshBasicMaterial({map:textTex(text,css,size,bg),
       transparent:true,side:THREE.DoubleSide}));
-  return m;
 }
 /* 區域招牌。建一次，每次貨架重組時重新掛位置（見 placeAisleSigns）。
 
@@ -3694,38 +3802,60 @@ function updateFeed(dt,now){
 /* 螢幕的正面是 +Z（PlaneGeometry 的法線方向），所以機殼一定要放在 -Z 側，
    否則從前面看到的是被背面剔除掉的那一面 —— 兩邊都會是空的。
    ry 就是「螢幕面向哪個方向」：0 朝南、Math.PI 朝北、Math.PI/2 朝東。 */
-function monitor(x,y,z,ry){
-  var g=new THREE.Group();
-  g.add(P(GEO.box,0x161A17,[1.36,1.02,0.11],[0,0,-0.065]));      // 機殼在螢幕後面
-  g.add(P(GEO.box,0x2A302B,[0.055,1.3,0.055],[0,0.95,-0.065]));  // 吊桿
-  g.add(P(GEO.box,0x4ADE80,[0.05,0.05,0.02],[0.60,-0.44,0.004],1.6)); // 電源指示燈
-  var scr=new THREE.Mesh(new THREE.PlaneGeometry(1.18,0.84),
-    new THREE.MeshBasicMaterial({map:camTex}));
-  scr.position.z=0.004;                                          // 略微凸出機殼前緣
-  g.add(scr);
-  g.position.set(x,y,z); g.rotation.y=ry||0; scene.add(g);
-  return g;
-}
-monitor(0,2.62,0);                  // 中央橫向通道，朝南（走進來時看得到）
-monitor(3.5,2.55,-8.4);             // 後場通道，朝南 —— 進冷凍室前最後一次確認
-monitor(-7,2.50,11.6,Math.PI);      // 收銀區西側櫃檯上方，朝北（跑回來脫身時看得到）
-                                    // 不能放在 x=0：那條是出生點正前方的通道，會整片擋住視野
-// 原本在 z=0，現在那裡是往辦公室的門口 —— 移到 z=-5 免得懸在走道中間
-monitor(-19.15,2.35,-5.0,Math.PI/2);   // 西側牆面，朝東
-monitor(-17.2,2.40,3,Math.PI);      // 西側逃生走道，朝北（往出口跑的時候看得到）
-monitor(14,2.50,-14.8);             // 倉庫，朝南
-/* 兩間房的裡段沒有監視器 —— 走進去就是瞎的，那是它的代價。
-   但缺口「前面」各放一台：你可以先確認他不在裡面再進去，
-   進去之後就只能靠耳朵。偵查與承諾分成兩個動作。 */
-monitor(-9.8,2.45,-16.2);           // 冷凍室內間缺口前，朝南
-monitor(7.0,2.50,-16.2);            // 倉庫內段缺口前，朝南
-/* 西翼兩台。走廊那台裝在門口內側朝東 —— 你踏進走廊前的最後一次確認，
-   因為走廊裡沒有任何掩體，進去之後就沒有回頭的餘裕。
-   辦公室那台在最裡面，拉霸的時候你背對門，它是你唯一的後照鏡。 */
-monitor(-21.0,2.45,0,Math.PI/2);    // 走廊東端，朝東（回頭看賣場）
-monitor(-39.3,2.40,0,Math.PI/2);    // 辦公室西牆，朝東（面對門口）
-// 冷凍室裡面：拿非賣品前後最需要知道他在哪的地方
-monitor(-11.5,2.45,-12.0,Math.PI/2*3);
+var MON_SPOTS=[
+  [0,2.62,0,0],                  // 中央橫向通道，朝南（走進來時看得到）
+  [3.5,2.55,-8.4,0],             // 後場通道，朝南 —— 進冷凍室前最後一次確認
+  [-7,2.50,11.6,Math.PI],        // 收銀區西側櫃檯上方，朝北（跑回來脫身時看得到）
+                                 // 不能放在 x=0：那條是出生點正前方的通道，會整片擋住視野
+  // 原本在 z=0，現在那裡是往辦公室的門口 —— 移到 z=-5 免得懸在走道中間
+  [-19.15,2.35,-5.0,Math.PI/2],  // 西側牆面，朝東
+  [-17.2,2.40,3,Math.PI],        // 西側逃生走道，朝北（往出口跑的時候看得到）
+  [14,2.50,-14.8,0],             // 倉庫，朝南
+  /* 兩間房的裡段沒有監視器 —— 走進去就是瞎的，那是它的代價。
+     但缺口「前面」各放一台：你可以先確認他不在裡面再進去，
+     進去之後就只能靠耳朵。偵查與承諾分成兩個動作。 */
+  [-9.8,2.45,-16.2,0],           // 冷凍室內間缺口前，朝南
+  [7.0,2.50,-16.2,0],            // 倉庫內段缺口前，朝南
+  /* 西翼兩台。走廊那台裝在門口內側朝東 —— 你踏進走廊前的最後一次確認，
+     因為走廊裡沒有任何掩體，進去之後就沒有回頭的餘裕。
+     辦公室那台在最裡面，拉霸的時候你背對門，它是你唯一的後照鏡。 */
+  [-21.0,2.45,0,Math.PI/2],      // 走廊東端，朝東（回頭看賣場）
+  [-39.3,2.40,0,Math.PI/2],      // 辦公室西牆，朝東（面對門口）
+  // 冷凍室裡面：拿非賣品前後最需要知道他在哪的地方
+  [-11.5,2.45,-12.0,Math.PI/2*3]
+];
+/* 11 台 × 4 件 = 44 個 draw call，而且每一台長得一模一樣、只差位置跟朝向。
+   拆成「四件各自一個 InstancedMesh」，44 → 4。
+   螢幕那一片全部共用同一張 camTex，所以連材質都不用分。
+
+   注意這裡的 instance 矩陣是 **群組矩陣 × 零件區域矩陣**：
+   零件的位移要先被 ry 旋轉過，不能直接相加 —— 不然朝東的那幾台
+   機殼會跑到螢幕前面去（而且只有朝東那幾台壞，很難從截圖看出來）。 */
+var MON_PARTS=[
+  {g:GEO.box,c:0x161A17,s:[1.36,1.02,0.11],p:[0,0,-0.065]},      // 機殼在螢幕後面
+  {g:GEO.box,c:0x2A302B,s:[0.055,1.3,0.055],p:[0,0.95,-0.065]},  // 吊桿
+  {g:GEO.box,c:0x4ADE80,s:[0.05,0.05,0.02],p:[0.60,-0.44,0.004],e:1.6}, // 電源指示燈
+  {screen:true,s:[1,1,1],p:[0,0,0.004]}                          // 略微凸出機殼前緣
+];
+(function(){
+  var SCR_GEO=new THREE.PlaneGeometry(1.18,0.84);
+  var SCR_MAT=new THREE.MeshBasicMaterial({map:camTex});
+  var grp=new THREE.Object3D(), part=new THREE.Object3D(), M=new THREE.Matrix4();
+  MON_PARTS.forEach(function(d){
+    var im=new THREE.InstancedMesh(d.screen?SCR_GEO:d.g,
+                                   d.screen?SCR_MAT:itemMat(d.c,d.e),
+                                   MON_SPOTS.length);
+    MON_SPOTS.forEach(function(sp,i){
+      grp.position.set(sp[0],sp[1],sp[2]);
+      grp.rotation.set(0,sp[3]||0,0); grp.scale.set(1,1,1); grp.updateMatrix();
+      part.position.set(d.p[0],d.p[1],d.p[2]);
+      part.rotation.set(0,0,0); part.scale.set(d.s[0],d.s[1],d.s[2]);
+      part.updateMatrix();
+      im.setMatrixAt(i,M.multiplyMatrices(grp.matrix,part.matrix));
+    });
+    im.frustumCulled=false; im.instanceMatrix.needsUpdate=true; scene.add(im);
+  });
+})();
 drawStatic(); camTex.needsUpdate=true;   // 第一格先給雜訊，主迴圈起來後就換成即時畫面
 
 /* ---------- 店員：麥塊風格方塊人形 ----------
@@ -3788,14 +3918,19 @@ function blk(color,w,h,d,x,y,z){ return P(GEO.box,color,[w,h,d],[x,y,z]); }
 
 /* 頭上的狀態符號：? = 聽到了正在過來，! = 已經發現你。
    店員的內部狀態原本完全看不見，玩家沒辦法從行為學到任何東西。 */
+/* 也要快取：buildOffice 每局呼叫一次 markTex('!') 做紙條上那個驚嘆號，
+   每局多一張 64×64 的貼圖，而且從來不 dispose。 */
+var markTexCache={};
 function markTex(ch,css){
+  var mk=ch+'|'+css;
+  if(markTexCache[mk])return markTexCache[mk];
   var c=document.createElement('canvas'); c.width=c.height=64;
   var g=c.getContext('2d');
   g.font='700 56px "Noto Sans TC",sans-serif';
   g.textAlign='center'; g.textBaseline='middle';
   g.lineWidth=8; g.strokeStyle='rgba(6,9,6,.85)'; g.strokeText(ch,32,34);
   g.fillStyle=css; g.fillText(ch,32,34);
-  var t=new THREE.CanvasTexture(c); return t;
+  return (markTexCache[mk]=new THREE.CanvasTexture(c));
 }
 var markQ=markTex('?','#FFC93C'), markX=markTex('!','#FF3B30');
 
@@ -4971,7 +5106,19 @@ function buildOffice(){
   if(COL.indexOf(OFFICE_DOOR)<0)COL.push(OFFICE_DOOR);
   /* 椅子沒有進 itemMeshes，所以 clearItems 不會收它 ——
      不自己清的話每局都會多疊一張椅子在同一個座標上。 */
-  officeProps.forEach(function(m){scene.remove(m);}); officeProps=[];
+  /* 貼圖現在有快取了（見 textTex / markTex），但牌子的 PlaneGeometry
+     還是每局一份新的。只 scene.remove 的話那塊 VBO 會留在 GPU 上，
+     一百局就是一百份。幾何是這裡唯一還需要手動收的東西 ——
+     材質共用、貼圖快取，所以不能跟著 dispose。 */
+  officeProps.forEach(function(m){
+    scene.remove(m);
+    /* 只收 Mesh。**絕對不要碰 Sprite 的 geometry** —— r128 裡所有的
+       Sprite 共用模組層級的同一個四邊形，dispose 一個等於全場的
+       sprite（光暈、價格標、頭頂符號）一起消失，而且不會報錯。 */
+    if(m.isMesh&&m.geometry&&m.geometry!==GEO.box&&m.geometry!==boxGeo)
+      m.geometry.dispose();
+  });
+  officeProps=[];
   /* 紅門。上一版做成藍的，理由是「橘木地板上藍最跳」——
      那是色輪上的答案，不是看畫面得到的答案。藍門在這裡太像冷凍室
      和螢幕，整條走廊的冷色太多，盡頭那扇門反而不像一個目的地。
@@ -5521,7 +5668,7 @@ function setDanger(on){
   // 切換的當下先給一個合理值，免得閃爍計時器還沒跑到就先露出前一個狀態
   tubeGlow.forEach(function(g){g.material.opacity=CFG.bloom*k;});
   tubePool.forEach(function(p){p.material.opacity=CFG.floorGlow*k;});
-  tubeMeshes.forEach(function(t){t.material.color.setHex(on?0x262C33:TUBE_ON);});
+  for(var ti=0;ti<TUBES.length;ti++)setTubeColor(ti,on?0x262C33:TUBE_ON);
   signs.forEach(function(s){s.material.color.setHex(on?0xFF3B30:0x4ADE80);});
   guides.forEach(function(m){
     m.material.color.setHex(on?0xFF3B30:0x3FBF6A);
@@ -9213,6 +9360,20 @@ function frame(now){
   // 每道光柱錯開相位，三根一起呼吸會像裝飾，錯開才像三個獨立的東西
   for(var bi2=0;bi2<beacons.length;bi2++)
     beacons[bi2].material.opacity=0.10+Math.sin(t*1.5+bi2*2.1)*0.045;
+  /* opacity 歸零的 sprite 照樣會畫：一次 draw call、一遍 alpha blend，
+     結果全透明。店員頭上三片（紅光、血條、符號）平常至少兩片是隱形的，
+     三個店員就是每幀白燒 6 次。
+
+     這件事放在這裡而不是 clerkTail 裡面，是因為 opacity 有七八個地方在寫
+     （被抓特寫、變身、電暈、復活…），clerkTail 只跑得到其中一部分 ——
+     掛在畫之前就不會有「某個分支忘了同步，sprite 整段隱形」這種 bug。 */
+  for(var cs=0;cs<CLERKS.length;cs++){
+    var cc=CLERKS[cs];
+    if(!cc.visible)continue;                 // 整個 Group 關掉時子物件本來就不畫
+    cc.halo.visible = cc.halo.material.opacity > 0.004;
+    cc.hpbar.visible= cc.hpbar.material.opacity> 0.004;
+    cc.mark.visible = cc.mark.material.opacity > 0.004;
+  }
   // 批次模擬時不畫 —— 畫一幀的成本是整個模擬的大宗，而且沒人在看
   if(!(SIM.on&&SIM.skipDraw))renderer.render(scene,camera);
   /* 效能取樣擺在 render 之後：renderer.info.render 是這一幀畫完才有值的，
